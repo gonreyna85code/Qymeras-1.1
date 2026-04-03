@@ -1,0 +1,1547 @@
+#include "web.h"
+#include "core.h"
+#include "config.h"
+#include "sensors.h"
+#include "automations.h"
+
+namespace web {
+
+struct __attribute__((packed)) CalibrationPersist {
+  bool pers_state;
+  float min;
+  float max;
+  float correction;
+  uint8_t avail;
+  bool persist;
+  bool pulse;
+  uint32_t pulse_ms;
+  uint32_t fade;
+};
+
+ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
+  CalibrationPersist p = {};
+
+  p.pers_state = c.pers_state;
+  p.min = c.min;
+  p.max = c.max;
+  p.correction = c.correction;
+  p.avail = c.avail;
+  p.persist = c.persist;
+  p.pulse = c.pulse;
+  p.pulse_ms = c.pulse_ms;
+  p.fade = c.fade;
+
+  return p;
+}
+
+void sendStartupJS() {
+  if (WiFi.getMode() == WIFI_AP)
+    core::server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
+  else
+    core::server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
+  core::server.sendContent_P(
+    PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+  core::server.sendContent_P(PSTR(
+    "window.genset={"
+    "broadcast_port:"));
+  core::server.sendContent(String(core::genset.broadcast_port));
+  core::server.sendContent_P(PSTR(
+    ",command_port:"));
+  core::server.sendContent(String(core::genset.command_port));
+  core::server.sendContent_P(PSTR(
+    ",report_interval:"));
+  core::server.sendContent(String(core::genset.report_interval));
+  core::server.sendContent_P(PSTR("};"));
+}
+
+ICACHE_FLASH_ATTR void handleRoot() {
+  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  core::server.send(200, "text/html", "");
+  core::server.sendContent_P(web::HTML_PAGE_1);
+  core::server.sendContent_P(web::HTML_PAGE_2);
+  sendStartupJS();
+  core::server.sendContent_P(web::HTML_PAGE_3);
+  core::server.sendContent_P(web::HTML_PAGE_4);
+  core::server.sendContent("");
+}
+
+ICACHE_FLASH_ATTR void handleSave() {
+  saveCredentials(core::server.arg("ssid"), core::server.arg("pass"));
+  core::server.sendHeader("Location", "/?saved=1");
+  core::server.send(303);
+  delay(1000);
+  ESP.restart();
+}
+
+ICACHE_FLASH_ATTR void loadGeneralSettings() {
+  EEPROM.begin(EEPROM_SIZE);
+  int addr = EEPROM_GENSET_START;
+  EEPROM.get(addr, core::genset.broadcast_port);
+  addr += sizeof(uint16_t);
+  EEPROM.get(addr, core::genset.command_port);
+  addr += sizeof(uint16_t);
+  EEPROM.get(addr, core::genset.report_interval);
+  addr += sizeof(uint32_t);
+  if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
+    core::genset.broadcast_port = BROADCAST_PORT;
+  if (core::genset.command_port < 1024 || core::genset.command_port > 65500)
+    core::genset.command_port = COMMAND_PORT;
+  if (core::genset.report_interval < 5000 || core::genset.report_interval > 600000)  // max 10 min
+    core::genset.report_interval = BROADCAST_INTERVAL;
+}
+
+ICACHE_FLASH_ATTR void loadCredentials() {
+  EEPROM.begin(EEPROM_SIZE);
+  int slen = EEPROM.read(EEPROM_CRED_START);
+  if (slen < 0 || slen > 32) slen = 0;
+  core::ssid = "";
+  for (int i = 0; i < slen; i++) {
+    char c = EEPROM.read(EEPROM_CRED_START + 1 + i);
+    if (c == 0xFF || c == 0) break;
+    core::ssid += c;
+  }
+  int plen_addr = EEPROM_CRED_START + 1 + slen;
+  int plen = EEPROM.read(plen_addr);
+  if (plen < 0 || plen > 64) plen = 0;
+  core::password = "";
+  for (int i = 0; i < plen; i++) {
+    char c = EEPROM.read(plen_addr + 1 + i);
+    if (c == 0xFF || c == 0) break;
+    core::password += c;
+  }
+}
+
+ICACHE_FLASH_ATTR void saveGeneralSettings() {
+  EEPROM.begin(EEPROM_SIZE);
+  int addr = EEPROM_GENSET_START;
+  if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
+    core::genset.broadcast_port = BROADCAST_PORT;
+  if (core::genset.command_port < 1024 || core::genset.command_port > 65500)
+    core::genset.command_port = COMMAND_PORT;
+  if (core::genset.report_interval < 10000 || core::genset.report_interval > 600000)  // max 10 min
+    core::genset.report_interval = BROADCAST_INTERVAL;
+  EEPROM.put(addr, core::genset.broadcast_port);
+  addr += sizeof(uint16_t);
+  EEPROM.put(addr, core::genset.command_port);
+  addr += sizeof(uint16_t);
+  EEPROM.put(addr, core::genset.report_interval);
+  addr += sizeof(uint32_t);
+  EEPROM.commit();
+}
+
+ICACHE_FLASH_ATTR void factoryReset() {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i = 0; i < EEPROM_RELAY_STATE_SIZE; i++) {
+    EEPROM.write(EEPROM_RELAY_STATE_START + i, 0);
+  }
+  for (int i = 0; i < EEPROM_CRED_SIZE; i++) {
+    EEPROM.write(EEPROM_CRED_START + i, 0);
+  }
+  uint16_t def_broadcast = BROADCAST_PORT;
+  uint16_t def_command = COMMAND_PORT;
+  uint32_t def_interval = BROADCAST_INTERVAL;
+  int addr = EEPROM_GENSET_START;
+  EEPROM.put(addr, def_broadcast);
+  addr += sizeof(uint16_t);
+  EEPROM.put(addr, def_command);
+  addr += sizeof(uint16_t);
+  EEPROM.put(addr, def_interval);
+  addr += sizeof(uint32_t);
+  for (int i = EEPROM_CALIB_START; i < EEPROM_SIZE; i++) {
+    EEPROM.write(i, 0);
+  }
+  EEPROM.commit();
+  delay(300);
+  ESP.restart();
+}
+
+
+ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.write(EEPROM_CRED_START, s.length());
+  for (int i = 0; i < s.length(); i++) EEPROM.write(EEPROM_CRED_START + 1 + i, s[i]);
+  int offset = EEPROM_CRED_START + 1 + s.length();
+  EEPROM.write(offset, p.length());
+  for (int i = 0; i < p.length(); i++) EEPROM.write(offset + 1 + i, p[i]);
+  EEPROM.commit();
+}
+
+ICACHE_FLASH_ATTR void handleGenSetSave() {
+  if (core::server.method() != HTTP_POST) {
+    core::server.send(405, "text/plain", "POST required");
+    return;
+  }
+  if (core::server.hasArg("broadcast"))
+    core::genset.broadcast_port = core::server.arg("broadcast").toInt();
+  if (core::server.hasArg("command"))
+    core::genset.command_port = core::server.arg("command").toInt();
+  if (core::server.hasArg("interval"))
+    core::genset.report_interval = core::server.arg("interval").toInt();
+  saveGeneralSettings();
+  core::server.sendHeader("Location", "/");
+  core::server.send(200, "text/plain", "OK");
+}
+
+ICACHE_FLASH_ATTR void handleFactoryReset() {
+  core::server.send(200, "text/plain", "RESET");
+  delay(200);
+  factoryReset();
+}
+
+void handleToggleApi() {
+  if (!core::server.hasArg("key")) {
+    core::server.send(400, "text/plain", "key required");
+    return;
+  }
+  sensors::handleToggle(core::server.arg("key"));
+  core::server.send(200, "text/plain", "OK");
+}
+
+void handleDimmerApi() {
+  if (!core::server.hasArg("value") || !core::server.hasArg("key")) {
+    core::server.send(400, "text/plain", "value required");
+    return;
+  }
+  int value = core::server.arg("value").toInt();
+  sensors::handleDimmer(core::server.arg("key"), value);
+  core::server.send(200, "text/plain", "OK");
+}
+
+ICACHE_FLASH_ATTR void loadCalibration() {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
+    CalibrationPersist p;
+    EEPROM.get(addr, p);
+    auto &c = sensors::calibrations[i];
+    c.pers_state = p.pers_state;
+    c.min = p.min;
+    c.max = p.max;
+    c.correction = p.correction;
+    c.avail = p.avail;
+    c.persist = p.persist;
+    c.pulse = p.pulse;
+    c.pulse_ms = p.pulse_ms;
+    c.fade = p.fade;
+    c.value = 0;
+  }
+}
+
+ICACHE_FLASH_ATTR void saveCalibration() {
+  EEPROM.begin(EEPROM_SIZE);
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
+    CalibrationPersist current = makePersist(sensors::calibrations[i]);
+    CalibrationPersist stored;
+    EEPROM.get(addr, stored);
+    if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
+      EEPROM.put(addr, current);
+    }
+  }
+  EEPROM.commit();
+}
+
+void handleDeleteRule() {
+  if (!core::server.hasArg("id")) {
+    core::server.send(400, "text/plain", "missing id");
+    return;
+  }
+  int id = core::server.arg("id").toInt();
+  if (id < 0 || id >= MAX_RULES) {
+    core::server.send(400, "text/plain", "invalid id");
+    return;
+  }
+  automations::deleteRule((uint8_t)id);
+  core::server.send(200, "text/plain", "ok");
+}
+
+ICACHE_FLASH_ATTR void handleRules() {
+  if (core::server.method() != HTTP_GET) {
+    core::server.send(405, "text/plain", "GET required");
+    return;
+  }
+  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  core::server.send(200, "application/json", "");
+  core::server.sendContent("[");
+  bool first = true;
+  for (int i = 0; i < MAX_RULES; i++) {
+    const automations::Rule &r = automations::rules[i];
+    if (r.sensor_count == 0 && r.actuator_count == 0)
+      continue;
+    if (!first) core::server.sendContent(",");
+    first = false;
+    core::server.sendContent("{");
+    // sensores
+    core::server.sendContent("\"sensors\":[");
+    for (int s = 0; s < r.sensor_count; s++) {
+      if (s) core::server.sendContent(",");
+      core::server.sendContent(String(r.sensor_idxs[s]));
+    }
+    core::server.sendContent("]");
+    // tipo de regla
+    core::server.sendContent(",\"type\":");
+    core::server.sendContent(String(r.type));
+    // lógica AND/OR
+    core::server.sendContent(",\"logical_and\":");
+    core::server.sendContent(String(r.logical_and));
+    // comparadores
+    core::server.sendContent(",\"cmp\":[");
+    for (int s = 0; s < r.sensor_count; s++) {
+      if (s) core::server.sendContent(",");
+      core::server.sendContent(String(r.cmp[s]));
+    }
+    core::server.sendContent("]");
+    // thresholds
+    core::server.sendContent(",\"threshold\":[");
+    for (int s = 0; s < r.sensor_count; s++) {
+      if (s) core::server.sendContent(",");
+      core::server.sendContent(String(r.threshold[s]));
+    }
+    core::server.sendContent("]");
+    // actuadores
+    core::server.sendContent(",\"actuators\":[");
+    for (int a = 0; a < r.actuator_count; a++) {
+      if (a) core::server.sendContent(",");
+      core::server.sendContent(String(r.actuator_idxs[a]));
+    }
+    core::server.sendContent("]");
+    // acciones
+    core::server.sendContent(",\"actions\":[");
+    for (int a = 0; a < r.actuator_count; a++) {
+      if (a) core::server.sendContent(",");
+      core::server.sendContent(String(r.actions[a]));
+    }
+    core::server.sendContent("]");
+    // niveles
+    core::server.sendContent(",\"levels\":[");
+    for (int a = 0; a < r.actuator_count; a++) {
+      if (a) core::server.sendContent(",");
+      core::server.sendContent(String(r.levels[a]));
+    }
+    core::server.sendContent("]");
+    // timing
+    core::server.sendContent(",\"delay_ms\":");
+    core::server.sendContent(String(r.delay_ms));
+    core::server.sendContent(",\"cooldown_ms\":");
+    core::server.sendContent(String(r.cooldown_ms));
+    core::server.sendContent(",\"time_s\":");
+    core::server.sendContent(String(r.time_s));
+    core::server.sendContent(",\"interval_ms\":");
+    core::server.sendContent(String(r.interval_ms));
+    // calendario
+    core::server.sendContent(",\"year_start\":");
+    core::server.sendContent(String(r.year_start));
+    core::server.sendContent(",\"year_end\":");
+    core::server.sendContent(String(r.year_end));
+    core::server.sendContent(",\"month_start\":");
+    core::server.sendContent(String(r.month_start));
+    core::server.sendContent(",\"month_end\":");
+    core::server.sendContent(String(r.month_end));
+    core::server.sendContent(",\"day_start\":");
+    core::server.sendContent(String(r.day_start));
+    core::server.sendContent(",\"day_end\":");
+    core::server.sendContent(String(r.day_end));
+    core::server.sendContent("}");
+  }
+  core::server.sendContent("]");
+  core::server.sendContent("");
+}
+
+void handleSetRule() {
+
+  using namespace automations;
+
+  if (!core::server.hasArg("id")) {
+    core::server.send(400, "text/plain", "missing id");
+    return;
+  }
+
+  int id = core::server.arg("id").toInt();
+
+  // crear slot nuevo
+  if (id < 0) {
+    for (int i = 0; i < MAX_RULES; i++) {
+      if (rules[i].sensor_count == 0 && rules[i].actuator_count == 0) {
+        id = i;
+        break;
+      }
+    }
+  }
+
+  if (id < 0 || id >= MAX_RULES) {
+    core::server.send(400, "text/plain", "invalid id");
+    return;
+  }
+
+  Rule &r = rules[id];
+
+  memset(&r, 0, sizeof(Rule));
+
+  // ---------------- SENSORS ----------------
+  if (core::server.hasArg("sensors")) {
+
+    String s = core::server.arg("sensors");
+    int idx = 0;
+
+    while (s.length() && idx < 5) {
+
+      int comma = s.indexOf(',');
+      String token = (comma == -1) ? s : s.substring(0, comma);
+
+      r.sensor_idxs[idx] = token.toInt();
+      r.cmp[idx] = CMP_GT;
+      r.threshold[idx] = 0;
+
+      idx++;
+
+      if (comma == -1) break;
+      s = s.substring(comma + 1);
+    }
+
+    r.sensor_count = idx;
+  }
+
+  // ---------------- ACTUATORS ----------------
+  if (core::server.hasArg("actuators")) {
+
+    String s = core::server.arg("actuators");
+    int idx = 0;
+
+    while (s.length() && idx < 5) {
+
+      int comma = s.indexOf(',');
+      String token = (comma == -1) ? s : s.substring(0, comma);
+
+      r.actuator_idxs[idx] = token.toInt();
+      r.actions[idx] = ACT_TOGGLE;
+      r.levels[idx] = 0;
+
+      idx++;
+
+      if (comma == -1) break;
+      s = s.substring(comma + 1);
+    }
+
+    r.actuator_count = idx;
+  }
+
+  // ---------------- TYPE ----------------
+  if (core::server.hasArg("type"))
+    r.type = (RuleType)core::server.arg("type").toInt();
+  else
+    r.type = RULE_EDGE;
+
+  // ---------------- LOGIC ----------------
+  if (core::server.hasArg("logic"))
+    r.logical_and = core::server.arg("logic").toInt();
+  else
+    r.logical_and = true;
+
+  // ---------------- DELAY ----------------
+  if (core::server.hasArg("delay"))
+    r.delay_ms = core::server.arg("delay").toInt();
+
+  // ---------------- COOLDOWN ----------------
+  if (core::server.hasArg("cooldown"))
+    r.cooldown_ms = core::server.arg("cooldown").toInt();
+
+  saveRulesToEEPROM();
+
+  core::server.send(200, "text/plain", "ok");
+}
+
+ICACHE_FLASH_ATTR void handleCalib() {
+  if (core::server.method() != HTTP_GET) {
+    core::server.send(405, "text/plain", "Method Not Allowed");
+    return;
+  }
+  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  core::server.send(200, "application/json", "");
+  core::server.sendContent("[");
+  bool firstObj = true;
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    auto &c = sensors::calibrations[i];
+    auto &r = core::reports[i];
+    if (c.uid == 0) continue;
+    if (!firstObj) core::server.sendContent(",");
+    firstObj = false;
+    core::server.sendContent("{");
+    core::server.sendContent("\"id\":");
+    core::server.sendContent(String(i));
+    core::server.sendContent(",\"name\":\"");
+    core::server.sendContent(c.id);
+    core::server.sendContent("\"");
+    core::server.sendContent(",\"value\":");
+    char buf[24];
+    dtostrf(r.value, 0, 4, buf);
+    core::server.sendContent(buf);
+#define SEND_INT(name, val) \
+  core::server.sendContent(",\"" name "\":"); \
+  core::server.sendContent(String(val));
+#define SEND_BOOL(name, val) \
+  core::server.sendContent(",\"" name "\":"); \
+  core::server.sendContent((val) ? "true" : "false");
+    SEND_BOOL("pers_state", c.pers_state);
+    SEND_INT("min", c.min);
+    SEND_INT("max", c.max);
+    SEND_INT("correction", c.correction);
+    SEND_INT("avail", c.avail);
+    SEND_BOOL("pulse", c.pulse);
+    SEND_BOOL("state", r.state);
+    SEND_INT("pulse_ms", c.pulse_ms);
+    SEND_BOOL("persist", c.persist);
+    SEND_INT("fade", c.fade);
+    SEND_INT("type", c.type);
+    SEND_INT("pin", c.pin);
+#undef SEND_INT
+#undef SEND_BOOL
+    core::server.sendContent("}");
+  }
+  core::server.sendContent("]");
+}
+
+
+ICACHE_FLASH_ATTR void handleCalibSet() {
+  if (core::server.method() != HTTP_POST) {
+    core::server.send(405, "text/plain", "POST required");
+    return;
+  }
+  String sensorName = core::server.arg("name");
+  String type = core::server.arg("type");
+  int calibIdx = -1;
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    if (sensors::calibrations[i].id == sensorName) {
+      calibIdx = i;
+      break;
+    }
+  }
+  if (calibIdx < 0) {
+    core::server.send(400, "text/plain", "Sensor not found");
+    return;
+  }
+  auto &c = sensors::calibrations[calibIdx];
+  auto &r = core::reports[calibIdx];
+  float raw = r.raw;
+  float ref = core::server.hasArg("ref") ? core::server.arg("ref").toFloat() : raw;
+  if (type == "ref") {
+    if (ref == 0) c.correction = 0;
+    else {
+      if (c.type == sensors::SENSOR_LUMI)
+        ref = ref * 7074.0f / 108.9432f;
+      c.correction = ref - raw;
+    }
+  } else if (type == "min") {
+    c.min = raw + c.correction;
+  } else if (type == "max") {
+    c.max = raw + c.correction;
+  } else if (type == "fad") {
+    c.fade = ref;
+  } else if (type == "pulse") {
+    c.pulse_ms = ref;
+    c.pulse = (ref > 0);
+    c.persist = false;
+  } else if (type == "persist") {
+    bool enable = core::server.arg("ref") == "1";
+    c.persist = enable;
+    c.pulse = false;
+  } else if (type == "avail") {
+    c.avail = ref ? 1 : 0;
+  } else if (type == "res") {
+    c.min = 0;
+    c.max = 100;
+    c.correction = 0;
+  } else {
+    core::server.send(400, "text/plain", "Bad type");
+    return;
+  }
+  saveCalibration();
+  core::server.send(200, "text/plain", "OK");
+}
+
+// ================= WEB ===================
+const char HTML_PAGE_1[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<style>
+body{font-family:sans-serif;text-align:center;margin:0;background:#f4f4f4}
+.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}
+.tab{flex:1;padding:12px;cursor:pointer}
+.active{background:#444}
+.content{padding:15px}
+.card{background:#fff;margin:10px;padding:15px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.2);text-align:left;border-left:4px solid #d2d4d5}
+.card h3{margin-top:0;text-align:center}
+button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}
+.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}
+.matter-btn.on{background:#2ecc71;color:#000}
+.matter-btn.off{background:#444;color:#bbb}
+.matterLbl{margin-left:20px;font-weight:600}
+.modal{
+position:fixed;
+top:0;
+left:0;
+width:100%;
+height:100%;
+background:rgba(0,0,0,0.6);
+display:none;
+align-items:center;
+justify-content:center;
+z-index:1000;
+}
+.modal-content{
+background:#fff;
+padding:20px;
+border-radius:10px;
+width:320px;
+text-align:left;
+}
+.modal input,
+.modal select{
+width:100%;
+margin-bottom:10px;
+padding:6px;
+border-radius:6px;
+border:1px solid #ccc;
+}
+input[type=range]{width:100%}
+</style></head><body>
+<h2 style='background:#222;margin:0;padding:12px;text-align:center;color:#eee'>AntiMatter Satellite</h2>
+<div class='tabs'>
+<div class='tab' id='t_control'>Devices</div>
+<div class='tab' id='t_auto'>Automations</div>
+<div class='tab' id='t_config'>Settings</div>
+<div class='tab' id='t_wifi'>Network</div>
+</div>
+<div id='control' class='content'><div id='devices_cards'></div></div>
+<div id='auto' class='content' style='display:none'>  
+<table style="width:100%;border-collapse:collapse">
+<thead>
+<tr>
+<th>ID</th>
+<th>Sensors</th>
+<th>Type</th>
+<th>Logic</th>
+<th>Actuators</th>
+<th>Delay</th>
+<th>Cooldown</th>
+<th></th>
+</tr>
+</thead>
+<tbody id="auto_table"></tbody>
+</table>
+<div style="margin-top:10px;text-align:right">
+<button style="float:left" onclick="newRule()">Add Rule</button>
+</div>
+</div>
+<div id='config' class='content' style='display:none'><div id='cards'></div></div>
+<div id='wifi' class='content' style='display:none'>
+<h2>WiFi Setup</h2>
+<form action='/save' method='post'>
+<input name='ssid' placeholder='SSID' style='margin:6px;border-radius:6px;padding:5px;'><br>
+<input name='pass' placeholder='Password' type='password' style='margin:6px;border-radius:6px;padding:5px;'><br>
+<button type='submit' style='margin:10px;'>Save</button>
+</form>
+</div>
+<script>
+function show(tab){
+document.querySelectorAll('.content').forEach(c=>c.style.display='none');
+document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+document.getElementById(tab).style.display='block';
+document.getElementById('t_'+tab).classList.add('active');
+localStorage.setItem('tab',tab);
+if(tab==='auto') loadRules();
+}
+)rawliteral";
+
+const char HTML_PAGE_2[] PROGMEM = R"rawliteral(
+function renderAutomationTable(rules){
+let html = `
+<div class='card'>
+<h3>Rules</h3>
+<table style="width:100%;text-align:left;border-collapse:collapse">
+<tr>
+<th>ID</th>
+<th>Sensors</th>
+<th>Logic</th>
+<th>Actions</th>
+<th>Delay</th>
+<th>Cooldown</th>
+<th></th>
+</tr>
+`;
+rules.forEach((r,i)=>{
+html+=`
+<tr style="border-top:1px solid #ccc">
+<td>${i}</td>
+<td>${r.sensors.join(", ")}</td>
+<td>${r.logic}</td>
+<td>${r.actions.join(", ")}</td>
+<td>${r.delay}</td>
+<td>${r.cooldown}</td>
+<td>
+<button onclick="editRule(${i})">Edit</button>
+<button onclick="deleteRule(${i})">Del</button>
+</td>
+</tr>
+`;
+});
+html+=`</table>
+<button style="margin-top:10px" onclick="newRule()">
+Add Rule
+</button>
+</div>
+`;
+document.getElementById("auto_table").innerHTML = html;
+}
+function newRule(){
+alert("rule editor later");
+}
+function editRule(i){
+alert("edit rule "+i);
+}
+function deleteRule(i){
+alert("delete rule "+i);
+}
+async function loadRules(){
+try{
+const r = await fetch('/rules');
+if(!r.ok) return;
+const rules = await r.json();
+renderAutomationTable(rules);
+}catch(e){
+console.log("rules load fail",e);
+}
+}
+)rawliteral";
+
+const char HTML_PAGE_3[] PROGMEM = R"rawliteral(
+const cardRenderers = {
+
+HUMI: (s, i) => `
+<div class='card'>
+  <h3>HUMIDITY ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Moisture:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value + ' %'}
+    </b>
+  </p>  
+  <input id='ref${i}' placeholder='Value' style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
+  <button onclick='setCalib(${i},"min", "${s.name}")'>Set 0%</button>
+  <button onclick='setCalib(${i},"max", "${s.name}")'>Set 100%</button><br>
+  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}", "${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+LEVE: (s, i) => `
+<div class='card'>
+  <h3>LEVEL ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Level:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value + ' %'}
+    </b>
+  </p>  
+  <input id='ref${i}' placeholder='Value' style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"ref","${s.name}")'>Set Ref Val</button><br>
+  <button onclick='setCalib(${i},"min","${s.name}")'>Set 0%</button>
+  <button onclick='setCalib(${i},"max","${s.name}")'>Set 100%</button><br>
+  <button onclick='setCalib(${i},"res","${s.name}")'>Reset</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+LUMI: (s, i) => `
+<div class='card'>
+  <h3>LUMINOSITY ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Val:
+    <b id='v${i}'>
+      ${
+        s.value === 255 || s.value == null
+          ? 'N/A'
+          : (s.value * 108.9432 / 7074).toFixed(0) + ' lx'
+      }
+    </b>
+  </p>  
+  <input id='ref${i}' placeholder='Value'
+    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
+  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+DIMM: (s, i) => `
+<div class='card'>
+  <h3>DIMMER ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Fade: <b id='v${i}'>${s.fade}</b> ms
+  </p>
+  <input id='ref${i}' placeholder='Fade in/out time(ms)'
+    style='width:122px;margin:0 5px 12px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"fad","${s.name}")'>Set Fade</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+TEMP: (s, i) => `
+<div class='card'>
+  <h3>TEMPERATURE ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Val:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value.toFixed(2) + ' °C'}
+    </b>
+  </p>
+  <input id='ref${i}' placeholder='Value'
+    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
+  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+PRES: (s, i) => `
+<div class='card'>
+  <h3>PRESSURE ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Val:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value.toFixed(2) + ' kPa'}
+    </b>
+  </p>
+  <input id='ref${i}' placeholder='Value'
+    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
+  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
+  <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+AIRQ: (s, i) => `
+<div class='card'>
+  <h3>AIR QUALITY ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Val:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A'}
+    </b>
+  </p>  
+    <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+RAIN: (s, i) => `
+<div class='card'>
+  <h3>RAIN ${s.name}</h3>
+  <p style='margin-left:6px;'>
+    Rain:
+    <b id='v${i}'>
+      ${s.value === 255 || s.value == null ? 'N/A' : s.value ? "YES" : "NO"}
+    </b>
+  </p>  
+    <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+</div>`,
+
+REL: (s, i) => `
+<div class='card'>
+  <h3>RELAY ${s.name}</h3>
+
+  <div style='display:flex;gap:8px;flex-direction:column;align-items:flex-start;'>
+
+    <label>
+      <input type='checkbox' id='persistChk${i}'
+        ${s.persist ? 'checked' : ''}
+        onchange='togglePersist(${i}, "${s.name}")'>
+      Persistence
+    </label>
+
+    <label>
+      <input type='checkbox' id='pulseChk${i}'
+        ${s.pulse ? 'checked' : ''}
+        onchange='togglePulse(${i}, "${s.name}")'>
+      Pulse Mode (ms)
+    </label>    
+    <input id='ref${i}'
+      placeholder='Pulse time(ms)'
+      value='${s.pulse_ms ?? ''}'
+      onchange='setCalib(${i},"pulse", "${s.name}", this.value)'
+      style='width:90px;${s.pulse ? '' : 'display:none;'}margin-left:5px;border-radius:6px;padding:4px;margin-top:10px;'><br>
+    <button
+      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
+      id='matterBtn${i}'
+      data-name='${s.id}'
+      class='matter-btn ${s.avail ? "on" : "off"}'
+      style='margin-top:-10px;'>
+      ${s.avail ? 'ENABLED' : 'DISABLED'}
+    </button>
+  </div>
+</div>`,
+
+DEFAULT: (s, i) => `
+<div class='card'>
+  <h3>GENERAL SETTINGS</h3>
+
+  <p style='margin-left:6px;margin-bottom:0;'>
+    UDP Ports:
+  </p>
+
+  <p style='margin-left:6px;margin-top:1px'>
+    Broadcast: <b>${genset.broadcast_port}</b> |
+    Command: <b>${genset.command_port}</b>
+  </p>
+
+  <p style='margin-left:6px;'>
+    Report Interval: <b>${genset.report_interval} ms</b>
+  </p>
+
+  <input id='broadcast_port' placeholder='Broadcast Port'
+    style='width:101px;margin:5px;margin-left:6px;border-radius:6px;padding:4px'>
+
+  <input id='command_port' placeholder='Command Port'
+    style='width:103px;margin:5px;border-radius:6px;padding:4px'>
+
+  <input id='ref${i}' placeholder='Report Interval(ms)'
+    style='width:127px;margin:5px;border-radius:6px;padding:4px'>
+
+  <div style='display:flex;justify-content:space-between;align-items:center;margin-top:10px;'>
+    <button onclick='setPort(${i})'
+      style='margin:10px;margin-bottom:9px;'>
+      Save
+    </button>
+
+    <button onclick='factoryReset()'
+      style='background:#bd1313;margin-bottom:9px;'>
+      Factory Reset
+    </button>
+  </div>
+</div>`
+};
+)rawliteral";
+
+const char HTML_PAGE_4[] PROGMEM = R"rawliteral(
+
+const SensorType = Object.freeze({
+  SENSOR_NONE: 0,
+  SENSOR_LUMI: 1,
+  SENSOR_HUMI: 2,
+  SENSOR_TEMP: 3,
+  SENSOR_PRESS: 4,
+  SENSOR_LEVEL: 5,
+  SENSOR_AIRQ: 6,
+  SENSOR_RAIN: 7,
+  TYPE_DIMMER: 8,
+  TYPE_RELAY: 9
+});
+
+function deviceCard(name, value, id, state, fade, type) {
+
+  if (type === SensorType.TYPE_RELAY) {
+    return `
+<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
+  <h3>RELAY ${name}</h3>
+  <p>
+    State:
+    <b id='dev_${id}'>${value ? 'ON' : 'OFF'}</b>
+  </p>
+  <button 
+    onclick="toggleDevice('${name}')" 
+    style="margin-top:6px; display:inline-block; margin-right:8px">
+    Toggle
+  </button>
+</div>`;
+  }
+
+  if (type === SensorType.TYPE_DIMMER) {    
+    return `
+<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
+  <h3>DIMMER ${name}</h3>
+  <p>
+    Level:
+    <b id='dev_val_${id}'>${value}</b> %
+  </p>
+  <p>
+    State:
+    <b id='dev_state_${id}'>${(value > 0) ? 'ON' : 'OFF'}</b>
+  </p>
+  <input type='range' min='0' max='100' name='${name}' value='${value}' id='slider_${id}' style='margin-bottom:18px' oninput='onDimmerInput(${id}, this.value)' onchange='onDimmerChange(${id}, this.value, name)'>
+  <button 
+    onclick="toggleDevice('${name}')" 
+    style="margin-top:6px; display:inline-block; margin-right:8px">
+    Toggle
+  </button>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_TEMP) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>TEMPERATURE ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null) ? 'N/A' : value.toFixed(2) + ' °C'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_HUMI) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>HUMIDITY ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' %'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_PRESS) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>PRESSURE ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' kPa'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_LEVEL) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>LEVEL ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' %'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_AIRQ) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>AIR QUALITY ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${value === 255 || value == null ? 'N/A' : value == 0 ? 'GOOD' : value == 1 ? 'WARN' : value == 2 ? 'BAD' : 'N/A'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_RAIN) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>RAIN ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null) ? 'N/A' : value ? "YES" : "NO"}
+    </b>
+  </p>
+</div>`;
+  }
+
+  if (type === SensorType.SENSOR_LUMI) {
+    return `
+<div class='card' style='text-align:center'>
+  <h3>LUMINOSITY ${name}</h3>
+  <p>
+    <b id='dev_${id}'>
+      ${(value === 255 || value == null)
+        ? 'N/A'
+        : (value * 108.9432 / 7074).toFixed(0) + ' lx'}
+    </b>
+  </p>
+</div>`;
+  }
+
+  return `
+<div class='card' style='text-align:center'>
+  <h3>${name}</h3>
+  <p><b id='dev_${id}'>${value}</b></p>
+</div>`;
+}
+
+/* -------------------- DEVICES -------------------- */
+
+async function loadDevices() {
+  try {
+    const r = await fetch('/calib');
+    if (!r.ok) return;
+    const sensors = await r.json();
+    let html = '';
+    sensors.forEach((s, i) => {
+      if (s.avail) html += deviceCard(s.name, s.value, i, s.state, s.fade, s.type);
+    });
+    document.getElementById('devices_cards').innerHTML = html;
+  } catch (e) {
+    console.log('loadDevices err', e);
+  }
+}
+
+/* -------------------- DIMMER -------------------- */
+
+function onDimmerInput(id, value) {
+  document.getElementById('dev_val_' + id).innerText = value;
+}
+
+const dimmerTimeouts = {};
+
+function onDimmerChange(id, value, name) {
+  if (dimmerTimeouts[id]) {
+    clearTimeout(dimmerTimeouts[id]);
+  }
+
+  dimmerTimeouts[id] = setTimeout(() => {
+    sendDimmer(name, value);
+  }, 120);
+}
+
+async function sendDimmer(key, value) {
+  try {
+    await fetch('/dimmer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `key=${key}&value=${value}`
+    });
+  } catch (e) {
+    console.log('sendDimmer err', e);
+  }
+}
+
+/* -------------------- CALIB -------------------- */
+
+async function loadCalib() {
+  const r = await fetch('/calib');
+  const sensors = await r.json();
+  let html = '';
+  sensors.forEach((s, i) => {
+    const render =
+      s.type === SensorType.TYPE_RELAY  ? cardRenderers.REL :
+      s.type === SensorType.TYPE_DIMMER  ? cardRenderers.DIMM :
+      s.type === SensorType.SENSOR_TEMP  ? cardRenderers.TEMP :
+      s.type === SensorType.SENSOR_LUMI  ? cardRenderers.LUMI :
+      s.type === SensorType.SENSOR_PRESS  ? cardRenderers.PRES :
+      s.type === SensorType.SENSOR_RAIN  ? cardRenderers.RAIN :
+      s.type === SensorType.SENSOR_AIRQ  ? cardRenderers.AIRQ :
+      s.type === SensorType.SENSOR_LEVEL  ? cardRenderers.LEVE :
+      s.type === SensorType.SENSOR_HUMI ? cardRenderers.HUMI :
+      cardRenderers[s.name] ?? cardRenderers.DEFAULT;
+    html += render(s, i);
+  });
+  html += cardRenderers.DEFAULT(
+    { value: 0, min: 0, max: 0 },
+    sensors.length
+  );
+  document.getElementById('cards').innerHTML = html;
+}
+
+async function updateSettingsValues() {
+  try {
+    const r = await fetch('/calib');
+    if (!r.ok) return;
+    const sensors = await r.json();
+    sensors.forEach((s, i) => {
+      const el = document.getElementById(`v${i}`);
+      if (!el) return;
+      if (s.type === SensorType.SENSOR_TEMP)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(2) + ' °C';
+      else if (s.type === SensorType.SENSOR_HUMI)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
+      else if (s.type === SensorType.SENSOR_PRESS)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' kPa';
+      else if (s.type === SensorType.SENSOR_RAIN)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value ? "YES" : "NO";
+      else if (s.type === SensorType.SENSOR_AIRQ)
+        el.innerText = s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A';
+      else if (s.type === SensorType.SENSOR_LEVEL)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
+      else if (s.type === SensorType.TYPE_DIMMER)
+        el.innerText = s.fade;
+      else if (s.type === SensorType.SENSOR_LUMI)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : (s.value * 108.9432 / 7074).toFixed(0) + ' lx';
+      else
+        el.innerText = s.value ?? '-';
+    });
+  } catch (e) {}
+}
+
+/* -------------------- ACTIONS -------------------- */
+
+async function toggleMatterSwitch(i, id, name) {
+  const btn = document.getElementById(`matterBtn${i}`);
+  const on = btn.classList.toggle('on');
+
+  btn.classList.toggle('off', !on);
+  btn.textContent = on ? 'ENABLED' : 'DISABLED';
+  
+  await fetch('/calib/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `id=${id}&type=${'avail'}&name=${name}&ref=${encodeURIComponent(on ? 1 : 0)}`
+  });
+}
+
+async function setPort(i) {
+  const b = document.getElementById('broadcast_port').value;
+  const c = document.getElementById('command_port').value;
+  const r = document.getElementById(`ref${i}`).value;
+
+  await fetch('/genset/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `broadcast=${b}&command=${c}&interval=${r}`
+  });
+
+  alert('Guardado');
+}
+
+async function setCalib(i, type, name, refOverride = null) {
+  const ref = refOverride !== null
+    ? refOverride
+    : (document.getElementById(`ref${i}`)?.value ?? '');
+
+  await fetch('/calib/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `id=${i}&type=${type}&name=${name}&ref=${encodeURIComponent(ref)}`
+  });
+}
+
+function togglePersist(i, name) {
+  const persist = document.getElementById(`persistChk${i}`);
+  const pulse   = document.getElementById(`pulseChk${i}`);
+  const input   = document.getElementById(`ref${i}`);
+
+  if (persist.checked) {
+    pulse.checked = false;
+    input.style.display = 'none';
+    setCalib(i, 'pulse', name, 0);
+  }
+
+  setCalib(i, 'persist', name, persist.checked ? 1 : 0);
+}
+
+function togglePulse(i, name) {
+  const pulse   = document.getElementById(`pulseChk${i}`);
+  const persist = document.getElementById(`persistChk${i}`);
+  const input   = document.getElementById(`ref${i}`);
+
+  if (pulse.checked) {
+    persist.checked = false;
+    setCalib(i, 'persist', name, 0);
+    input.style.display = 'inline-block';
+  } else {
+    input.style.display = 'none';
+    setCalib(i, 'pulse',  name, 0);
+  }
+}
+
+function toggleDevice(name) {
+  fetch('/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'key=' + encodeURIComponent(name)
+  });
+  const card = document.querySelector(`.card[data-name="${name}"]`);
+  if (!card) return;
+  const type = parseInt(card.dataset.type);
+  if (type === SensorType.TYPE_RELAY) {
+    const stateEl = card.querySelector('b');
+    if (!stateEl) return;
+    const current = stateEl.innerText === 'ON';
+    stateEl.innerText = current ? 'OFF' : 'ON';  }
+  if (type === SensorType.TYPE_DIMMER) {
+    const stateEl = card.querySelector("[id^='dev_state_']");
+    if (!stateEl) return;
+    const current = stateEl.innerText === 'ON';
+    stateEl.innerText = current ? 'OFF' : 'ON';
+  }
+}
+
+function factoryReset() {
+  if (!confirm('¿Sure? This will delete all settings and information.')) return;
+
+  fetch('/factory', { method: 'POST' })
+    .then(() => alert('Reiniciando...'))
+    .catch(() => alert('Error enviando reset'));
+}
+
+function condRow(data = {}) {
+  const div = document.createElement("div");
+  div.className = "row cond";
+
+  div.innerHTML = `
+    <select class="c_sensor">
+      <option>Temp</option>
+      <option>Hum</option>
+      <option>Pressure</option>
+    </select>
+
+    <select class="c_op">
+      <option>></option>
+      <option><</option>
+      <option>=</option>
+    </select>
+
+    <input class="c_value" style="width:60px" value="${data.value ?? ''}">
+
+    <select class="c_unit">
+      <option>°C</option>
+      <option>%</option>
+      <option>Pa</option>
+    </select>
+
+    <select class="c_trend">
+      <option>Stable</option>
+      <option>Rising</option>
+      <option>Falling</option>
+    </select>
+
+    <button onclick="this.parentNode.remove()">x</button>
+  `;
+
+  return div;
+}
+
+function addCond() {
+  document.getElementById("cond_container").appendChild(condRow());
+}
+
+function newRule(){
+openRuleModal();
+}
+
+function editRule(i){
+openRuleModal(window.rules[i], i);
+}
+
+let editRuleIndex = -1;
+
+function openRuleModal(rule=null, idx=-1){
+editRuleIndex = idx;
+document.getElementById("ruleModal").style.display="flex";
+if(!rule) return;
+document.getElementById("ruleSensors").value = rule.sensors.join(",");
+document.getElementById("ruleType").value = rule.type;
+document.getElementById("ruleLogic").value = rule.logical_and ? 1 : 0;
+document.getElementById("ruleActs").value = rule.actuators.join(",");
+document.getElementById("ruleDelay").value = rule.delay_ms;
+document.getElementById("ruleCooldown").value = rule.cooldown_ms;
+document.getElementById("ruleCmp").value = (rule.cmp||[]).join(",");
+document.getElementById("ruleThreshold").value = (rule.threshold||[]).join(",");
+document.getElementById("ruleActions").value = (rule.actions||[]).join(",");
+document.getElementById("ruleLevels").value = (rule.levels||[]).join(",");
+document.getElementById("ruleInterval").value = rule.interval_ms || 0;
+document.getElementById("ruleTime").value = rule.time_s || 0;
+document.getElementById("ruleYearStart").value = rule.year_start || 0;
+document.getElementById("ruleYearEnd").value = rule.year_end || 0;
+document.getElementById("ruleMonthStart").value = rule.month_start || 0;
+document.getElementById("ruleMonthEnd").value = rule.month_end || 0;
+document.getElementById("ruleDayStart").value = rule.day_start || 0;
+document.getElementById("ruleDayEnd").value = rule.day_end || 0;
+}
+
+function closeRule(){
+  document.getElementById('ruleModal').style.display='none';
+}
+
+async function deleteRule(i){
+if(!confirm("Delete rule "+i+" ?")) return;
+await fetch('/rules/delete',{
+method:'POST',
+headers:{'Content-Type':'application/x-www-form-urlencoded'},
+body:`id=${i}`
+});
+loadRules();
+}
+
+function saveRule() {
+  const conds = [...document.querySelectorAll(".cond")].map(c => ({
+    sensor: c.querySelector(".c_sensor").value,
+    op: c.querySelector(".c_op").value,
+    value: c.querySelector(".c_value").value,
+    unit: c.querySelector(".c_unit").value,
+    trend: c.querySelector(".c_trend").value
+  }));
+
+  const payload = {
+    name: document.getElementById("rule_name").value,
+    enabled: document.getElementById("rule_enabled").checked,
+    logic: document.getElementById("rule_logic").value,
+    conditions: conds,
+    time: {
+      delay: +document.getElementById("t_delay").value,
+      cooldown: +document.getElementById("t_cooldown").value,
+      interval: +document.getElementById("t_interval").value
+    },
+    action: {
+      device: document.getElementById("a_device").value,
+      state: document.getElementById("a_state").value,
+      value: document.getElementById("a_value").value
+    }
+  };
+
+  fetch("/rules/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  closeRule();
+}
+
+async function loadRules(){
+
+const res = await fetch('/rules');
+const rules = await res.json();
+
+window.rules = rules;
+
+const table = document.getElementById("auto_table");
+table.replaceChildren();
+
+rules.forEach((r,i)=>{
+
+let row = document.createElement("tr");
+
+row.innerHTML = `
+<td>${i}</td>
+<td>${r.sensors.join(",")}</td>
+<td>${r.type}</td>
+<td>${r.logical_and ? "AND" : "OR"}</td>
+<td>${r.actuators.join(", ")}</td>
+<td>${r.delay_ms}</td>
+<td>${r.cooldown_ms}</td>
+<td>
+<button onclick="editRule(${i})">Edit</button>
+<button onclick="deleteRule(${i})">Delete</button>
+</td>
+`;
+
+table.appendChild(row);
+
+});
+
+}
+
+/* -------------------- INIT -------------------- */
+
+loadCalib();
+loadRules();
+loadDevices();
+setInterval(() => {
+  loadDevices();
+  updateSettingsValues();
+}, 5000);
+</script>
+<div id="ruleModal" class="modal">
+  <div class="modal-content">
+    <!-- RULE HEADER -->
+    <div class="row">
+      Rule:
+      <input id="rule_name" placeholder="____________________">
+      <input type="checkbox" id="rule_enabled" checked>
+      ✔
+    </div>
+    <!-- LOGIC -->
+    <div class="row">
+      Logic:
+      <select id="rule_logic">
+        <option value="AND">AND</option>
+        <option value="OR">OR</option>
+      </select>
+    </div>
+    <hr>
+    <!-- CONDITIONS -->
+    <div>
+      Cond:
+      <div id="cond_container"></div>
+      <button onclick="addCond()">+</button>
+    </div>
+    <hr>
+    <!-- TIME -->
+    <div class="row">
+      Time:
+      Delay <input id="t_delay" type="number" style="width:80px">
+      Cooldown <input id="t_cooldown" type="number" style="width:80px">
+      Interval <input id="t_interval" type="number" style="width:80px">
+    </div>
+    <hr>
+    <!-- ACTION -->
+    <div class="row">
+      Action:
+      <select id="a_device">
+        <option>Relay_1</option>
+        <option>Relay_2</option>
+      </select>
+      <select id="a_state">
+        <option>ON</option>
+        <option>OFF</option>
+      </select>
+      <input id="a_value" placeholder="___" style="width:60px">
+    </div>
+    <hr>
+    <button onclick="saveRule()">SAVE</button>
+    <button onclick="closeRule()">X</button>
+  </div>
+</div>
+</body>
+</html>
+)rawliteral";
+
+}
