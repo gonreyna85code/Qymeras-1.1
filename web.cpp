@@ -381,13 +381,13 @@ void handleSetRule() {
     String sensors_str = core::server.arg("sensors");
     String cmp_str = core::server.hasArg("cmp") ? core::server.arg("cmp") : "";
     String threshold_str = core::server.hasArg("threshold") ? core::server.arg("threshold") : "";
-    
+
     int idx = 0;
 
     while (sensors_str.length() && idx < 5) {
       int comma = sensors_str.indexOf(',');
       String token = (comma == -1) ? sensors_str : sensors_str.substring(0, comma);
-      
+
       r.sensor_idxs[idx] = token.toInt();
 
       // Parsear comparador
@@ -424,13 +424,13 @@ void handleSetRule() {
     String actuators_str = core::server.arg("actuators");
     String actions_str = core::server.hasArg("actions") ? core::server.arg("actions") : "";
     String levels_str = core::server.hasArg("levels") ? core::server.arg("levels") : "";
-    
+
     int idx = 0;
 
     while (actuators_str.length() && idx < 5) {
       int comma = actuators_str.indexOf(',');
       String token = (comma == -1) ? actuators_str : actuators_str.substring(0, comma);
-      
+
       r.actuator_idxs[idx] = token.toInt();
 
       // Parsear acción
@@ -485,6 +485,20 @@ void handleSetRule() {
   // ========== INTERVAL ==========
   if (core::server.hasArg("interval"))
     r.interval_ms = core::server.arg("interval").toInt();
+
+  // ========== DATE RANGE ==========
+  if (core::server.hasArg("year_start"))
+    r.year_start = core::server.arg("year_start").toInt();
+  if (core::server.hasArg("month_start"))
+    r.month_start = core::server.arg("month_start").toInt();
+  if (core::server.hasArg("day_start"))
+    r.day_start = core::server.arg("day_start").toInt();
+  if (core::server.hasArg("year_end"))
+    r.year_end = core::server.arg("year_end").toInt();
+  if (core::server.hasArg("month_end"))
+    r.month_end = core::server.arg("month_end").toInt();
+  if (core::server.hasArg("day_end"))
+    r.day_end = core::server.arg("day_end").toInt();
 
   saveRulesToEEPROM();
 
@@ -1363,7 +1377,7 @@ function factoryReset() {
 
 /*--------------------------------------------------- WIZARD AUTOMATIONS ------------------------------------------------------------------------*/
 
-let wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0}};
+let wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0,date_start:'',date_end:''}};
 let availableSensors=[];
 
 async function loadSensorsAndActuators(){
@@ -1372,7 +1386,7 @@ async function loadSensorsAndActuators(){
 }
 
 function startWizard(edit=-1){
-  wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0}};
+  wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0,date_start:'',date_end:''}};
   if(edit>=0 && window.rules && window.rules[edit]) {
     const rule = window.rules[edit];
     wizard.data = {
@@ -1388,7 +1402,9 @@ function startWizard(edit=-1){
       levels: Array.isArray(rule.levels) ? rule.levels : [rule.levels || 0],
       conditions: {},
       time_hour: Math.floor((rule.time_s || 0) / 3600),
-      time_minute: Math.floor(((rule.time_s || 0) % 3600) / 60)
+      time_minute: Math.floor(((rule.time_s || 0) % 3600) / 60),
+      date_start: `${rule.year_start}-${String(rule.month_start).padStart(2,'0')}-${String(rule.day_start).padStart(2,'0')}`,
+      date_end: `${rule.year_end}-${String(rule.month_end).padStart(2,'0')}-${String(rule.day_end).padStart(2,'0')}`
     };
     
     if(rule.cmp && rule.threshold) {
@@ -1517,20 +1533,33 @@ function showStep(n){
   }
 
   /* ================= STEP 3 ================= */
-  else if(stepNum === 3) {
+   else if(stepNum === 3) {
 
-    if(wizard.data.type === 2) {
-      // TIME
-      content = `<h3>Hora</h3>
-      <input id="time_hour" type="number" min="0" max="23" value="${wizard.data.time_hour}">
-      <input id="time_minute" type="number" min="0" max="59" value="${wizard.data.time_minute}">`;
-    } else if(wizard.data.sensors.length > 1) {
-      // LOGIC
-      content = `<h3>Lógica</h3>
-      <label><input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''}> AND</label>
-      <label><input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''}> OR</label>`;
-    }
-  }
+     if(wizard.data.type === 2) {
+       // TIME - Ahora con date pickers
+       content = `<h3>⏰ Rango de Fechas y Hora</h3>
+       <div style="margin-bottom:12px">
+         <label style="display:block;margin-bottom:6px"><strong>Desde cuándo:</strong></label>
+         <input id="date_start" type="date" value="${wizard.data.date_start}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ccc">
+       </div>
+       <div style="margin-bottom:12px">
+         <label style="display:block;margin-bottom:6px"><strong>Hasta cuándo:</strong></label>
+         <input id="date_end" type="date" value="${wizard.data.date_end}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ccc">
+       </div>
+       <div style="border-top:1px solid #ddd;padding-top:12px;margin-top:12px">
+         <label style="display:block;margin-bottom:6px"><strong>Hora de ejecución:</strong></label>
+         <div style="display:flex;gap:8px">
+           <input id="time_hour" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs" style="flex:1;padding:6px;border-radius:6px;border:1px solid #ccc">
+           <input id="time_minute" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min" style="flex:1;padding:6px;border-radius:6px;border:1px solid #ccc">
+         </div>
+       </div>`;
+     } else if(wizard.data.sensors.length > 1) {
+       // LOGIC
+       content = `<h3>Lógica</h3>
+       <label><input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''}> AND</label>
+       <label><input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''}> OR</label>`;
+     }
+   }
 
   /* ================= STEP 4 ================= */
   else if(stepNum === 4) {
@@ -1642,7 +1671,9 @@ function nextStep(){
   }
   else if(stepNum === 3) {
     if(wizard.data.type === 2) {
-      // TIME - guardar hora
+      // TIME - guardar hora Y fechas
+      wizard.data.date_start = document.getElementById('date_start').value || '';
+      wizard.data.date_end = document.getElementById('date_end').value || '';
       wizard.data.time_hour = parseInt(document.getElementById('time_hour').value) || 0;
       wizard.data.time_minute = parseInt(document.getElementById('time_minute').value) || 0;
     } else if(wizard.data.sensors.length > 1) {
@@ -1769,23 +1800,48 @@ async function finishWizard(){
     wizard.data.levels.push(0);
   }
 
-  // ✅ Convertir hora:minuto a segundos para TIME
-  let time_s = wizard.data.type === 2 ? wizard.data.time_hour * 3600 + wizard.data.time_minute * 60 : 0;
+     // ✅ Convertir hora:minuto a segundos para TIME
+   let time_s = wizard.data.type === 2 ? wizard.data.time_hour * 3600 + wizard.data.time_minute * 60 : 0;
 
-  const params = new URLSearchParams();
-  params.append('id', wizard.data.id ?? -1);
-  params.append('sensors', wizard.data.sensors.join(','));
-  params.append('actuators', wizard.data.actuators.join(','));
-  params.append('type', wizard.data.type);
-  params.append('logic', wizard.data.logic);
-  params.append('delay', wizard.data.delay);
-  params.append('cooldown', wizard.data.cooldown);
-  params.append('interval', wizard.data.interval || 0);
-  params.append('actions', wizard.data.actions.join(','));
-  params.append('levels', wizard.data.levels.join(','));
-  params.append('cmp', cmps.join(','));
-  params.append('threshold', thresholds.join(','));
-  params.append('time_s', time_s);
+   // ✅ Parsear fechas para enviar year/month/day
+   let year_start = 0, month_start = 0, day_start = 0;
+   let year_end = 0, month_end = 0, day_end = 0;
+   
+   if(wizard.data.type === 2) {
+     if(wizard.data.date_start) {
+       const dateStart = new Date(wizard.data.date_start);
+       year_start = dateStart.getFullYear();
+       month_start = dateStart.getMonth() + 1;
+       day_start = dateStart.getDate();
+     }
+     if(wizard.data.date_end) {
+       const dateEnd = new Date(wizard.data.date_end);
+       year_end = dateEnd.getFullYear();
+       month_end = dateEnd.getMonth() + 1;
+       day_end = dateEnd.getDate();
+     }
+   }
+
+   const params = new URLSearchParams();
+   params.append('id', wizard.data.id ?? -1);
+   params.append('sensors', wizard.data.sensors.join(','));
+   params.append('actuators', wizard.data.actuators.join(','));
+   params.append('type', wizard.data.type);
+   params.append('logic', wizard.data.logic);
+   params.append('delay', wizard.data.delay);
+   params.append('cooldown', wizard.data.cooldown);
+   params.append('interval', wizard.data.interval || 0);
+   params.append('actions', wizard.data.actions.join(','));
+   params.append('levels', wizard.data.levels.join(','));
+   params.append('cmp', cmps.join(','));
+   params.append('threshold', thresholds.join(','));
+   params.append('time_s', time_s);
+   params.append('year_start', year_start);
+   params.append('month_start', month_start);
+   params.append('day_start', day_start);
+   params.append('year_end', year_end);
+   params.append('month_end', month_end);
+   params.append('day_end', day_end);
 
   try {
     const res = await fetch('/rules/set', {
