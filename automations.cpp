@@ -54,6 +54,20 @@ static void executeActions(const Rule &r, uint32_t now_ms) {
   }
 }
 
+static bool isDateInRange(const Rule &r) {
+  if (r.year_start == 0 && r.year_end == 0) {
+    return true;
+  }
+  time_t now = time(nullptr);
+  struct tm *timeinfo = localtime(&now);
+  int current_year = timeinfo->tm_year + 1900;
+  int current_month = timeinfo->tm_mon + 1;
+  int current_day = timeinfo->tm_mday;
+  bool after_start = (r.year_start == 0) || (current_year > r.year_start) || (current_year == r.year_start && current_month > r.month_start) || (current_year == r.year_start && current_month == r.month_start && current_day >= r.day_start);
+  bool before_end = (r.year_end == 0) || (current_year < r.year_end) || (current_year == r.year_end && current_month < r.month_end) || (current_year == r.year_end && current_month == r.month_end && current_day <= r.day_end);
+  return after_start && before_end;
+}
+
 // ----------------- TICK -----------------
 void tick(uint32_t now_ms) {
   if (now_ms - last_run < SAMPLE_MS) return;
@@ -65,6 +79,7 @@ void tick(uint32_t now_ms) {
     RuleState &s = states[i];
 
     if (r.sensor_count == 0 && r.actuator_count == 0) continue;
+    if (!isDateInRange(r)) continue;
 
     bool trigger = r.logical_and ? true : false;
 

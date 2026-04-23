@@ -1442,240 +1442,155 @@ function getStepNumber(globalStep){
 function showStep(n){
   const steps = getRelevantSteps();
   if(n >= steps.length) return;
-  
+
   wizard.step = n;
   const stepNum = steps[n];
-  
+
   let content = '';
-  
+
+  /* ================= STEP 0 ================= */
   if(stepNum === 0) {
     content = `<h3>Tipo de Regla</h3>
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===0?'#27ae60':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===0?'#f0fdf4':'#fff'}">
-          <input type="radio" name="type" value="0" ${wizard.data.type===0?'checked':''} style="margin-right:10px;margin-top:4px">
+    <div style="display:flex;flex-direction:column;gap:12px">
+
+      ${[0,1,2,3].map(t=>{
+        const cfg = [
+          {c:'#27ae60',bg:'#f0fdf4',txt:'🔄 EDGE - Cambios de estado',desc:'Se ejecuta cuando un sensor cambia'},
+          {c:'#2980b9',bg:'#f0f8ff',txt:'📊 THRESHOLD - Valores límite',desc:'Se ejecuta por umbral'},
+          {c:'#e67e22',bg:'#fffaf0',txt:'⏰ TIME - A una hora',desc:'Ejecuta a una hora fija'},
+          {c:'#9b59b6',bg:'#faf5ff',txt:'⏱️ INTERVAL - Cada X tiempo',desc:'Ejecuta periódicamente'}
+        ][t];
+
+        return `
+        <label style="display:flex;padding:10px;border:2px solid ${wizard.data.type===t?cfg.c:'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===t?cfg.bg:'#fff'}">
+          <input type="radio" name="type" value="${t}" ${wizard.data.type===t?'checked':''} style="margin-right:10px">
           <div>
-            <strong>🔄 EDGE - Cambios de estado</strong>
-            <small style="color:#666;display:block">Se ejecuta cuando un sensor cambia (movimiento detectado, puerta abierta, botón presionado)</small>
+            <strong>${cfg.txt}</strong>
+            <small style="color:#666;display:block">${cfg.desc}</small>
           </div>
-        </label>
-        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===1?'#2980b9':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===1?'#f0f8ff':'#fff'}">
-          <input type="radio" name="type" value="1" ${wizard.data.type===1?'checked':''} style="margin-right:10px;margin-top:4px">
-          <div>
-            <strong>📊 THRESHOLD - Valores límite</strong>
-            <small style="color:#666;display:block">Se ejecuta cuando un sensor supera/baja un valor (temperatura > 28°C, luz < 300 lux)</small>
-          </div>
-        </label>
-        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===2?'#e67e22':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===2?'#fffaf0':'#fff'}">
-          <input type="radio" name="type" value="2" ${wizard.data.type===2?'checked':''} style="margin-right:10px;margin-top:4px">
-          <div>
-            <strong>⏰ TIME - A una hora</strong>
-            <small style="color:#666;display:block">Se ejecuta a una hora específica cada día</small>
-          </div>
-        </label>
-        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===3?'#9b59b6':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===3?'#faf5ff':'#fff'}">
-          <input type="radio" name="type" value="3" ${wizard.data.type===3?'checked':''} style="margin-right:10px;margin-top:4px">
-          <div>
-            <strong>⏱️ INTERVAL - Cada X tiempo</strong>
-            <small style="color:#666;display:block">Se ejecuta repetidamente cada X milisegundos</small>
-          </div>
-        </label>
-      </div>`;
+        </label>`;
+      }).join('')}
+
+    </div>`;
   }
+
+  /* ================= STEP 1 ================= */
   else if(stepNum === 1) {
-    let sensorDesc = '';
-    if(wizard.data.type === 0) {
-      sensorDesc = '🔴 Sensores digitales que detectan cambios: movimiento, puertas, botones...';
-    } else if(wizard.data.type === 1) {
-      sensorDesc = '📈 Sensores analógicos que miden valores: temperatura, humedad, luz...';
-    }
-    
     content = `<h3>Seleccionar Sensores</h3>
-      <p style="color:#333;margin:10px 0;background:#f0f0f0;padding:8px;border-radius:4px;font-size:13px">
-        ${sensorDesc}
-      </p>
       <select id="sensorList" multiple size="5" style="width:100%"></select>
-      <small style="color:#999;display:block;margin-top:5px">Ctrl/Cmd + Click para múltiples</small>`;
+      <small>Ctrl/Cmd + Click</small>`;
   }
+
+  /* ================= STEP 2 ================= */
   else if(stepNum === 2) {
-    if(wizard.data.sensors.length === 0) {
-      content = `<h3>⚠️ Sin sensores</h3><p>Debes seleccionar sensores primero</p>`;
+
+    if(wizard.data.sensors.length === 0){
+      content = `<h3>⚠️ Sin sensores</h3>`;
     } else {
-      content = `<h3>Condiciones por Sensor</h3>`;
-      wizard.data.sensors.forEach(sIdx => {
-        const sensor = availableSensors[sIdx];
-        const cond = wizard.data.conditions[sIdx] || {cmp: 0, threshold: sensor.value || 0};
-        
-        let condContent = '';
-        
-        if(wizard.data.type === 0) {
-          condContent = `
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <select id="cmp_${sIdx}" style="padding:6px;border-radius:4px;border:1px solid #ccc">
-                <option value="0" ${cond.cmp===0?'selected':''}>↑ RISING (al activarse)</option>
-                <option value="1" ${cond.cmp===1?'selected':''}>↓ FALLING (al desactivarse)</option>
-              </select>
-            </div>
-            <small style="color:#27ae60;display:block;margin-top:6px">
-              Estado actual: <b>${sensor.state ? '🟢 ACTIVO' : '🔴 INACTIVO'}</b>
-            </small>`;
-        } else if(wizard.data.type === 1) {
-          condContent = `
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <select id="cmp_${sIdx}" style="padding:6px;border-radius:4px;border:1px solid #ccc">
-                <option value="0" ${cond.cmp===0?'selected':''}>Mayor que (&gt;)</option>
-                <option value="1" ${cond.cmp===1?'selected':''}>Menor que (&lt;)</option>
-                <option value="2" ${cond.cmp===2?'selected':''}>Igual a (≈)</option>
-              </select>
-              <input type="number" id="thresh_${sIdx}" value="${cond.threshold}" placeholder="Valor umbral" 
-                style="padding:6px;border-radius:4px;border:1px solid #ccc" step="0.1">
-            </div>
-            <small style="color:#2980b9;display:block;margin-top:6px">
-              Valor actual: <b>${sensor.value?.toFixed ? sensor.value.toFixed(1) : sensor.value}</b>
-            </small>`;
-        }
-        
-        content += `<div style="border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:6px;background:#f9f9f9">
-          <strong style="display:block;margin-bottom:8px">${sensor.name}</strong>
-          ${condContent}
+
+      content = `<h3>Condiciones</h3>`;
+
+      wizard.data.sensors.forEach(sIdx=>{
+        const s = availableSensors[sIdx];
+        const cond = wizard.data.conditions[sIdx] || {cmp:0,threshold:0};
+
+        content += `
+        <div style="border:1px solid #ddd;padding:10px;margin:6px;border-radius:6px">
+          <b>${s.name}</b><br>
+
+          ${wizard.data.type === 0 ? `
+            <select id="cmp_${sIdx}">
+              <option value="0" ${cond.cmp===0?'selected':''}>RISING</option>
+              <option value="1" ${cond.cmp===1?'selected':''}>FALLING</option>
+            </select>
+          ` : `
+            <select id="cmp_${sIdx}">
+              <option value="0" ${cond.cmp===0?'selected':''}>> </option>
+              <option value="1" ${cond.cmp===1?'selected':''}>< </option>
+              <option value="2" ${cond.cmp===2?'selected':''}>= </option>
+            </select>
+            <input id="thresh_${sIdx}" type="number" value="${cond.threshold}">
+          `}
         </div>`;
       });
-    }
-  }
-  else if(stepNum === 3) {
-    // ✅ PASO 3 puede ser LÓGICA (si hay múltiples sensores) o TIME PICKER (si es TIME)
-    if(wizard.data.type === 2) {
-      // TIME PICKER
-      content = `<h3>⏰ Seleccionar Hora</h3>
-        <div style="text-align:center;padding:20px">
-          <div style="display:flex;gap:10px;justify-content:center;align-items:center;margin:20px 0">
-            <div style="text-align:center">
-              <label style="display:block;color:#666;font-size:12px;margin-bottom:5px">Horas</label>
-              <select id="time_hour" style="padding:10px;font-size:20px;border-radius:6px;border:2px solid #e67e22;width:80px;text-align:center">
-                ${Array.from({length:24},(v,i)=>i).map(h=>`<option value="${h}" ${wizard.data.time_hour===h?'selected':''}>${String(h).padStart(2,'0')}</option>`).join('')}
-              </select>
-            </div>
-            <div style="font-size:30px;font-weight:bold;color:#e67e22">:</div>
-            <div style="text-align:center">
-              <label style="display:block;color:#666;font-size:12px;margin-bottom:5px">Minutos</label>
-              <select id="time_minute" style="padding:10px;font-size:20px;border-radius:6px;border:2px solid #e67e22;width:80px;text-align:center">
-                ${Array.from({length:60},(v,i)=>i).map(m=>`<option value="${m}" ${wizard.data.time_minute===m?'selected':''}>${String(m).padStart(2,'0')}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <p style="color:#27ae60;font-size:18px;font-weight:bold">
-            ⏰ Se ejecutará a las <span id="timeDisplay">${String(wizard.data.time_hour).padStart(2,'0')}:${String(wizard.data.time_minute).padStart(2,'0')}</span>
-          </p>
-        </div>
-        <script>
-          document.getElementById('time_hour').addEventListener('change', function() {
-            document.getElementById('timeDisplay').textContent = String(this.value).padStart(2,'0') + ':' + String(document.getElementById('time_minute').value).padStart(2,'0');
-          });
-          document.getElementById('time_minute').addEventListener('change', function() {
-            document.getElementById('timeDisplay').textContent = String(document.getElementById('time_hour').value).padStart(2,'0') + ':' + String(this.value).padStart(2,'0');
-          });
-        </script>`;
-    } else {
-      // LÓGICA (solo si hay múltiples sensores)
-      content = `<h3>Lógica de Condiciones</h3>
-        <p style="color:#666;margin-bottom:15px">¿Cómo deben combinarse las condiciones?</p>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <label style="display:flex;align-items:center;padding:10px;border:2px solid ${wizard.data.logic===1?'#2980b9':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.logic===1?'#f0f8ff':'#fff'}">
-            <input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''} style="margin-right:10px;width:18px;height:18px">
-            <div>
-              <strong>AND (Y) - Todas deben cumplirse</strong>
-              <small style="color:#666;display:block">Se ejecuta solo si TODAS las condiciones son verdaderas</small>
-            </div>
-          </label>
-          <label style="display:flex;align-items:center;padding:10px;border:2px solid ${wizard.data.logic===0?'#e67e22':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.logic===0?'#fffaf0':'#fff'}">
-            <input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''} style="margin-right:10px;width:18px;height:18px">
-            <div>
-              <strong>OR (O) - Cualquiera puede cumplirse</strong>
-              <small style="color:#666;display:block">Se ejecuta si CUALQUIERA de las condiciones es verdadera</small>
-            </div>
-          </label>
-        </div>`;
-    }
-  }
-  else if(stepNum === 4) {
-    content = `<h3>Seleccionar Actuadores</h3>
-      <p style="color:#333;margin:10px 0;background:#f0f0f0;padding:8px;border-radius:4px;font-size:13px">
-        💡 Dispositivos que se controlarán (relés, dimmers)
-      </p>
-      <select id="actuatorList" multiple size="5" style="width:100%"></select>
-      <small style="color:#999;display:block;margin-top:5px">Ctrl/Cmd + Click para múltiples</small>`;
-  }
-  else if(stepNum === 5) {
-    if(wizard.data.actuators.length === 0) {
-      content = `<h3>⚠️ Sin actuadores</h3><p>Debes seleccionar actuadores primero</p>`;
-    } else {
-      content = `<h3>Acciones por Actuador</h3>`;
-      wizard.data.actuators.forEach((aIdx, aPos) => {
-        const actuator = availableSensors[aIdx];
-        const action = wizard.data.actions[aPos] !== undefined ? wizard.data.actions[aPos] : 0;
-        const level = wizard.data.levels[aPos] !== undefined ? wizard.data.levels[aPos] : 0;
-        const isDimmer = actuator.type === 8;
-        
-        content += `<div style="border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:6px;background:#f9f9f9">
-          <strong style="display:block;margin-bottom:8px">${actuator.name}</strong>
-          <select id="action_${aPos}" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ccc;margin-bottom:6px">
-            <option value="0" ${action===0?'selected':''}>✅ ON (Encender)</option>
-            <option value="1" ${action===1?'selected':''}>❌ OFF (Apagar)</option>
-            <option value="2" ${action===2?'selected':''}>🔄 TOGGLE (Alternar)</option>
-            ${isDimmer ? `<option value="3" ${action===3?'selected':''}>🎚️ LEVEL (Nivel)</option>` : ''}
-          </select>
-          ${isDimmer ? `<input type="number" id="level_${aPos}" min="0" max="100" value="${level}" placeholder="%" 
-            style="width:20%;padding:6px;border-radius:4px;border:1px solid #ccc;margin-top:6px;display:${action === 3 ? 'block' : 'none'}" step="1">` : ''}
-        </div>`;
-      });
-    }
-  }
-  else if(stepNum === 6) {
-    if(wizard.data.type === 3) {
-      content = `<h3>Configurar Intervalo</h3>
-        <div style="margin-bottom:10px">
-          <label>Ejecutar cada (ms):</label><br>
-          <input type="number" id="interval" min="100" value="${wizard.data.interval||1000}" style="width:100%;padding:6px;box-sizing:border-box">
-          <small style="color:#666">Ej: 5000 = cada 5 segundos</small>
-        </div>
-        <div style="margin-bottom:10px">
-          <label>Delay antes de ejecutar (ms):</label><br>
-          <input type="number" id="delay" min="0" value="${wizard.data.delay}" style="width:100%;padding:6px;box-sizing:border-box">
-          <small style="color:#666">Espera antes de ejecutar</small>
-        </div>
-        <div>
-          <label>Cooldown entre ejecuciones (ms):</label><br>
-          <input type="number" id="cooldown" min="0" value="${wizard.data.cooldown}" style="width:100%;padding:6px;box-sizing:border-box">
-          <small style="color:#666">Espera mínima entre ejecuciones</small>
-        </div>`;
-    } else {
-      content = `<h3>Timings (opcional)</h3>
-        <div style="margin-bottom:10px">
-          <label>Delay (ms):</label><br>
-          <input type="number" id="delay" min="0" value="${wizard.data.delay}" style="width:100%;padding:6px;box-sizing:border-box">
-          <small style="color:#666">Espera antes de ejecutar la acción</small>
-        </div>
-        <div>
-          <label>Cooldown (ms):</label><br>
-          <input type="number" id="cooldown" min="0" value="${wizard.data.cooldown}" style="width:100%;padding:6px;box-sizing:border-box">
-          <small style="color:#666">Espera mínima antes de poder ejecutar de nuevo</small>
-        </div>`;
     }
   }
 
-  let html = `<div style="max-height:400px;overflow-y:auto;margin-bottom:10px">${content}</div>`;
-  html += `<hr style="margin:10px 0"><div style="display:flex;justify-content:space-between;align-items:center">
-    <small style="color:#999">Paso ${n+1}/${getTotalSteps()}</small>
-    <div style="gap:5px;display:flex">
-      ${n>0?'<button onclick="prevStep()" style="background:#95a5a6">◀ Anterior</button>':''}
-      ${n<getTotalSteps()-1?'<button onclick="nextStep()" style="background:#3498db;color:#fff">Siguiente ▶</button>':'<button onclick="finishWizard()" style="background:#27ae60;color:#fff">✓ Guardar</button>'}
-    </div>
+  /* ================= STEP 3 ================= */
+  else if(stepNum === 3) {
+
+    if(wizard.data.type === 2) {
+      // TIME
+      content = `<h3>Hora</h3>
+      <input id="time_hour" type="number" min="0" max="23" value="${wizard.data.time_hour}">
+      <input id="time_minute" type="number" min="0" max="59" value="${wizard.data.time_minute}">`;
+    } else if(wizard.data.sensors.length > 1) {
+      // LOGIC
+      content = `<h3>Lógica</h3>
+      <label><input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''}> AND</label>
+      <label><input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''}> OR</label>`;
+    }
+  }
+
+  /* ================= STEP 4 ================= */
+  else if(stepNum === 4) {
+    content = `<h3>Actuadores</h3>
+      <select id="actuatorList" multiple size="5" style="width:100%"></select>`;
+  }
+
+  /* ================= STEP 5 ================= */
+  else if(stepNum === 5) {
+
+    if(wizard.data.actuators.length === 0){
+      content = `<h3>⚠️ Sin actuadores</h3>`;
+    } else {
+
+      content = `<h3>Acciones</h3>`;
+
+      wizard.data.actuators.forEach((aIdx,i)=>{
+        const a = availableSensors[aIdx];
+
+        content += `
+        <div style="border:1px solid #ddd;padding:8px;margin:5px;border-radius:6px">
+          <b>${a.name}</b><br>
+          <select id="action_${i}">
+            <option value="0">ON</option>
+            <option value="1">OFF</option>
+            <option value="2">TOGGLE</option>
+            ${a.type===8?'<option value="3">LEVEL</option>':''}
+          </select>
+          ${a.type===8?`<input id="level_${i}" type="number" min="0" max="100">`:''}
+        </div>`;
+      });
+    }
+  }
+
+  /* ================= STEP 6 ================= */
+  else if(stepNum === 6) {
+
+    if(wizard.data.type === 3){
+      content = `<h3>Intervalo</h3>
+      <input id="interval" type="number" value="${wizard.data.interval||1000}">`;
+    }
+
+    content += `<h3>Timing</h3>
+      <input id="delay" type="number" value="${wizard.data.delay}">
+      <input id="cooldown" type="number" value="${wizard.data.cooldown}">`;
+  }
+
+  /* ================= RENDER ================= */
+
+  let html = `<div>${content}</div>`;
+  html += `<hr>
+  <div style="display:flex;justify-content:space-between">
+    ${n>0?'<button onclick="prevStep()">Back</button>':''}
+    ${n<steps.length-1?'<button onclick="nextStep()">Next</button>':'<button onclick="finishWizard()">Save</button>'}
   </div>`;
-  
+
   document.getElementById('wizardContent').innerHTML = html;
-  
+
   if(stepNum===1) populateSensors();
   if(stepNum===4) populateActuators();
-  if(stepNum===5) setupActionListeners();
 }
 
 function setupActionListeners(){
