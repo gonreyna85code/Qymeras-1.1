@@ -9,7 +9,8 @@ enum RuleType : uint8_t { RULE_EDGE,
                           RULE_TIME,
                           RULE_INTERVAL };
 enum Comparator : uint8_t { CMP_GT,
-                            CMP_LT };
+                            CMP_LT,
+                            CMP_EQ };
 enum ActionType : uint8_t { ACT_ON,
                             ACT_OFF,
                             ACT_TOGGLE,

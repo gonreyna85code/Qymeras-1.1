@@ -141,6 +141,7 @@ void loop() {
   }
   if (!wifi_connected) return;
   ArduinoOTA.handle();
+    
   if (first_report) {
     first_report = false;
     ::report();
@@ -154,6 +155,7 @@ void loop() {
     ::report();
     sendBinaryReport();
   }
+
   int packetSize = udp.parsePacket();
   if (packetSize < sizeof(PacketHeader)) return;
   PacketHeader hdr;

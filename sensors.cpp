@@ -9,8 +9,26 @@ Calibration calibrations[MAX_SENSORS];
 
 Fade fadeActuator = { 0, 0, 0, 0, 0, false };
 Fade activeFades[MAX_SENSORS];
+RTCTime currentTime = {0, 0, 0, 0, 0, 0};
 
 // ----------- UTILIDADES -----------
+
+void rtc(const RTCTime &time) {
+  currentTime = time;
+}
+
+RTCTime getTime() {
+  return currentTime;
+}
+
+uint16_t getMinutesOfDay() {
+  return currentTime.hour * 60 + currentTime.minute;
+}
+
+uint32_t getUnixTime() {
+  uint32_t days = (currentTime.year - 1970) * 365 + currentTime.month * 30 + currentTime.day;
+  return days * 86400UL + currentTime.hour * 3600UL + currentTime.minute * 60UL + currentTime.second;
+}
 
 uint32_t hash32(const String &s) {
   uint32_t h = 5381;

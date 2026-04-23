@@ -2,11 +2,6 @@
 #include "sensors.h"
 #include <EEPROM.h>
 
-#ifdef USE_RTC
-#include "RTClib.h"
-RTC_DS3231 rtc;
-#endif
-
 namespace automations {
 
 struct RulesHeader {
@@ -49,7 +44,9 @@ static void executeActions(const Rule &r, uint32_t now_ms) {
       case ACT_OFF:
         if (c.state) sensors::handleToggle(c.id);
         break;
-      case ACT_TOGGLE: sensors::handleToggle(c.id); break;
+      case ACT_TOGGLE:
+        sensors::handleToggle(c.id);
+        break;
       case ACT_LEVEL:
         if (c.type == sensors::TYPE_DIMMER) sensors::handleDimmer(c.id, r.levels[i]);
         break;
@@ -63,24 +60,13 @@ void tick(uint32_t now_ms) {
   last_run = now_ms;
   uint32_t now_time = millis() / 1000;
 
-#ifdef USE_RTC
-  DateTime now = rtc.now();
-  uint16_t rtc_year = now.year();
-  uint8_t rtc_month = now.month();
-  uint8_t rtc_day = now.day();
-#endif
-
   for (int i = 0; i < MAX_RULES; i++) {
     Rule &r = rules[i];
     RuleState &s = states[i];
-    bool trigger = r.logical_and ? true : false;
 
-    // --- CALENDARIO (RTC opcional) ---
-#ifdef USE_RTC
-    if (r.year_start && (rtc_year < r.year_start || rtc_year > r.year_end)) continue;
-    if (r.month_start && (rtc_month < r.month_start || rtc_month > r.month_end)) continue;
-    if (r.day_start && (rtc_day < r.day_start || rtc_day > r.day_end)) continue;
-#endif
+    if (r.sensor_count == 0 && r.actuator_count == 0) continue;
+
+    bool trigger = r.logical_and ? true : false;
 
     // --- SENSORES (EDGE / THRESHOLD) ---
     if (r.type == RULE_EDGE || r.type == RULE_THRESHOLD) {
@@ -88,33 +74,48 @@ void tick(uint32_t now_ms) {
         if (r.sensor_idxs[j] >= MAX_SENSORS) continue;
         auto &sensor = sensors::calibrations[r.sensor_idxs[j]];
 
-        // Anti-bounce
-        bool raw = sensor.state;
-        if (raw == s.last[j]) {
-          if (s.counter[j] < CONFIRM_READS) s.counter[j]++;
-        } else {
-          s.last[j] = raw;
-          s.counter[j] = 1;
-        }
-        if (s.counter[j] < CONFIRM_READS) continue;
-
         bool val_trigger = false;
+
         if (r.type == RULE_EDGE) {
+          bool raw = sensor.state;
+
+          // Anti-bounce
+          if (raw == s.last[j]) {
+            if (s.counter[j] < CONFIRM_READS) s.counter[j]++;
+          } else {
+            s.last[j] = raw;
+            s.counter[j] = 1;
+          }
+          if (s.counter[j] < CONFIRM_READS) continue;
+
           bool rising = (!s.stable[j] && raw);
           bool falling = (s.stable[j] && !raw);
-          switch (r.cmp[j]) {  // EDGE: CMP_GT=Rising, CMP_LT=Falling
+
+          switch (r.cmp[j]) {
             case CMP_GT: val_trigger = rising; break;
             case CMP_LT: val_trigger = falling; break;
+            default: val_trigger = false;
           }
           s.stable[j] = raw;
         } else if (r.type == RULE_THRESHOLD) {
           float val = sensor.value;
-          val_trigger = (r.cmp[j] == CMP_GT) ? (val > r.threshold[j])
-                                             : (val < r.threshold[j]);
-          if (val_trigger == s.stable[j]) val_trigger = false;
-          s.stable[j] = val_trigger;
-        }
+          bool condition_met = false;
 
+          switch (r.cmp[j]) {
+            case CMP_GT:
+              condition_met = (val > r.threshold[j]);
+              break;
+            case CMP_LT:
+              condition_met = (val < r.threshold[j]);
+              break;
+            case CMP_EQ:
+              condition_met = (fabs(val - r.threshold[j]) < 0.5f);
+              break;
+            default:
+              condition_met = false;
+          }
+          val_trigger = condition_met;
+        }
         if (r.logical_and) trigger &= val_trigger;
         else trigger |= val_trigger;
       }
@@ -122,10 +123,15 @@ void tick(uint32_t now_ms) {
 
     // --- TIME ---
     else if (r.type == RULE_TIME) {
-      if (now_time < r.time_s) continue;
-      if (s.last_time_exec == now_time) continue;
-      s.last_time_exec = now_time;
-      trigger = true;
+      uint16_t timeOfDay = sensors::getMinutesOfDay();
+      uint16_t ruleTime = r.time_s / 60;
+
+      if (timeOfDay >= ruleTime && timeOfDay < ruleTime + 1) {
+        if (s.last_time_exec != sensors::getTime().day) {
+          s.last_time_exec = sensors::getTime().day;
+          trigger = true;
+        }
+      }
     }
 
     // --- INTERVAL ---
@@ -138,14 +144,18 @@ void tick(uint32_t now_ms) {
     if (!trigger) continue;
     if (now_ms - s.last_action < r.cooldown_ms) continue;
 
+    // Ejecutar acciones
     if (r.delay_ms == 0) {
       executeActions(r, now_ms);
       s.last_action = now_ms;
     } else {
-      s.pending = true;
-      s.trigger_time = now_ms;
+      if (!s.pending) {
+        s.pending = true;
+        s.trigger_time = now_ms;
+      }
     }
 
+    // Ejecutar acciones pendientes
     if (s.pending && now_ms - s.trigger_time >= r.delay_ms) {
       executeActions(r, now_ms);
       s.pending = false;
@@ -161,6 +171,7 @@ void loadRulesFromEEPROM() {
   addr += sizeof(RulesHeader);
   if (h.magic != RULES_MAGIC || h.version != RULES_VERSION) {
     memset(rules, 0, sizeof(rules));
+    memset(states, 0, sizeof(states));
     return;
   }
   for (int i = 0; i < MAX_RULES; i++) {
@@ -193,16 +204,10 @@ void deleteRule(uint8_t idx) {
 
 // ----------------- INIT -----------------
 void init() {
-#ifdef USE_RTC
-  rtc.begin();  // inicializar RTC si se usa
-#endif
   loadRulesFromEEPROM();
   for (int i = 0; i < MAX_RULES; i++) {
     memset(&states[i], 0, sizeof(RuleState));
   }
 }
-
-// ----------------- EEPROM -----------------
-
 
 }  // namespace automations

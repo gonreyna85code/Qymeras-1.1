@@ -44,6 +44,15 @@ struct Fade {
   bool active;
 };
 
+struct RTCTime {
+  uint16_t year;
+  uint8_t month;
+  uint8_t day;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t second;
+};
+
 extern Calibration calibrations[MAX_SENSORS];
 extern Fade activeFades[MAX_SENSORS];
 void applyPersistedStates();
@@ -52,6 +61,13 @@ extern int findCalib(const String &key);
 extern int findCalibByUid(uint32_t uid);
 void handleDimmer(const String &key, int value);
 void handleToggle(const String &key);
+RTCTime getTime();
+uint16_t getMinutesOfDay();
+uint32_t getUnixTime();
+
+// Time
+
+void rtc(const RTCTime &time);
 
 // Sensores
 void temperature(const String &key, float raw);

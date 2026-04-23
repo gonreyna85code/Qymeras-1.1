@@ -374,76 +374,117 @@ void handleSetRule() {
   }
 
   Rule &r = rules[id];
-
   memset(&r, 0, sizeof(Rule));
 
-  // ---------------- SENSORS ----------------
+  // ========== SENSORS + CONDITIONS ==========
   if (core::server.hasArg("sensors")) {
-
-    String s = core::server.arg("sensors");
+    String sensors_str = core::server.arg("sensors");
+    String cmp_str = core::server.hasArg("cmp") ? core::server.arg("cmp") : "";
+    String threshold_str = core::server.hasArg("threshold") ? core::server.arg("threshold") : "";
+    
     int idx = 0;
 
-    while (s.length() && idx < 5) {
-
-      int comma = s.indexOf(',');
-      String token = (comma == -1) ? s : s.substring(0, comma);
-
+    while (sensors_str.length() && idx < 5) {
+      int comma = sensors_str.indexOf(',');
+      String token = (comma == -1) ? sensors_str : sensors_str.substring(0, comma);
+      
       r.sensor_idxs[idx] = token.toInt();
-      r.cmp[idx] = CMP_GT;
-      r.threshold[idx] = 0;
+
+      // Parsear comparador
+      if (cmp_str.length() > 0) {
+        int cmp_comma = cmp_str.indexOf(',');
+        String cmp_token = (cmp_comma == -1) ? cmp_str : cmp_str.substring(0, cmp_comma);
+        r.cmp[idx] = (Comparator)cmp_token.toInt();
+        if (cmp_comma != -1) cmp_str = cmp_str.substring(cmp_comma + 1);
+        else cmp_str = "";
+      } else {
+        r.cmp[idx] = CMP_GT;
+      }
+
+      // Parsear threshold
+      if (threshold_str.length() > 0) {
+        int thresh_comma = threshold_str.indexOf(',');
+        String thresh_token = (thresh_comma == -1) ? threshold_str : threshold_str.substring(0, thresh_comma);
+        r.threshold[idx] = thresh_token.toInt();
+        if (thresh_comma != -1) threshold_str = threshold_str.substring(thresh_comma + 1);
+        else threshold_str = "";
+      } else {
+        r.threshold[idx] = 0;
+      }
 
       idx++;
-
       if (comma == -1) break;
-      s = s.substring(comma + 1);
+      sensors_str = sensors_str.substring(comma + 1);
     }
-
     r.sensor_count = idx;
   }
 
-  // ---------------- ACTUATORS ----------------
+  // ========== ACTUATORS + ACTIONS + LEVELS ==========
   if (core::server.hasArg("actuators")) {
-
-    String s = core::server.arg("actuators");
+    String actuators_str = core::server.arg("actuators");
+    String actions_str = core::server.hasArg("actions") ? core::server.arg("actions") : "";
+    String levels_str = core::server.hasArg("levels") ? core::server.arg("levels") : "";
+    
     int idx = 0;
 
-    while (s.length() && idx < 5) {
-
-      int comma = s.indexOf(',');
-      String token = (comma == -1) ? s : s.substring(0, comma);
-
+    while (actuators_str.length() && idx < 5) {
+      int comma = actuators_str.indexOf(',');
+      String token = (comma == -1) ? actuators_str : actuators_str.substring(0, comma);
+      
       r.actuator_idxs[idx] = token.toInt();
-      r.actions[idx] = ACT_TOGGLE;
-      r.levels[idx] = 0;
+
+      // Parsear acción
+      if (actions_str.length() > 0) {
+        int action_comma = actions_str.indexOf(',');
+        String action_token = (action_comma == -1) ? actions_str : actions_str.substring(0, action_comma);
+        r.actions[idx] = (ActionType)action_token.toInt();
+        if (action_comma != -1) actions_str = actions_str.substring(action_comma + 1);
+        else actions_str = "";
+      } else {
+        r.actions[idx] = ACT_TOGGLE;
+      }
+
+      // ✅ PARSEAR LEVEL - AQUI ERA EL PROBLEMA
+      if (levels_str.length() > 0) {
+        int level_comma = levels_str.indexOf(',');
+        String level_token = (level_comma == -1) ? levels_str : levels_str.substring(0, level_comma);
+        r.levels[idx] = level_token.toInt();
+        if (level_comma != -1) levels_str = levels_str.substring(level_comma + 1);
+        else levels_str = "";
+      } else {
+        r.levels[idx] = 0;  // ✅ Solo si NO hay levels en la cadena
+      }
 
       idx++;
-
       if (comma == -1) break;
-      s = s.substring(comma + 1);
+      actuators_str = actuators_str.substring(comma + 1);
     }
-
     r.actuator_count = idx;
   }
 
-  // ---------------- TYPE ----------------
+  // ========== TYPE ==========
   if (core::server.hasArg("type"))
     r.type = (RuleType)core::server.arg("type").toInt();
   else
     r.type = RULE_EDGE;
 
-  // ---------------- LOGIC ----------------
+  // ========== LOGIC ==========
   if (core::server.hasArg("logic"))
     r.logical_and = core::server.arg("logic").toInt();
   else
     r.logical_and = true;
 
-  // ---------------- DELAY ----------------
+  // ========== DELAY ==========
   if (core::server.hasArg("delay"))
     r.delay_ms = core::server.arg("delay").toInt();
 
-  // ---------------- COOLDOWN ----------------
+  // ========== COOLDOWN ==========
   if (core::server.hasArg("cooldown"))
     r.cooldown_ms = core::server.arg("cooldown").toInt();
+
+  // ========== INTERVAL ==========
+  if (core::server.hasArg("interval"))
+    r.interval_ms = core::server.arg("interval").toInt();
 
   saveRulesToEEPROM();
 
@@ -595,7 +636,6 @@ text-align:left;
 }
 .modal input,
 .modal select{
-width:100%;
 margin-bottom:10px;
 padding:6px;
 border-radius:6px;
@@ -1321,79 +1361,548 @@ function factoryReset() {
     .catch(() => alert('Error enviando reset'));
 }
 
-function condRow(data = {}) {
-  const div = document.createElement("div");
-  div.className = "row cond";
+/*--------------------------------------------------- WIZARD AUTOMATIONS ------------------------------------------------------------------------*/
 
-  div.innerHTML = `
-    <select class="c_sensor">
-      <option>Temp</option>
-      <option>Hum</option>
-      <option>Pressure</option>
-    </select>
+let wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0}};
+let availableSensors=[];
 
-    <select class="c_op">
-      <option>></option>
-      <option><</option>
-      <option>=</option>
-    </select>
-
-    <input class="c_value" style="width:60px" value="${data.value ?? ''}">
-
-    <select class="c_unit">
-      <option>°C</option>
-      <option>%</option>
-      <option>Pa</option>
-    </select>
-
-    <select class="c_trend">
-      <option>Stable</option>
-      <option>Rising</option>
-      <option>Falling</option>
-    </select>
-
-    <button onclick="this.parentNode.remove()">x</button>
-  `;
-
-  return div;
+async function loadSensorsAndActuators(){
+  const r = await fetch('/calib');
+  availableSensors = await r.json();
 }
 
-function addCond() {
-  document.getElementById("cond_container").appendChild(condRow());
+function startWizard(edit=-1){
+  wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0}};
+  if(edit>=0 && window.rules && window.rules[edit]) {
+    const rule = window.rules[edit];
+    wizard.data = {
+      id: edit,
+      sensors: rule.sensors || [],
+      actuators: rule.actuators || [],
+      type: rule.type || 0,
+      logic: rule.logical_and ? 1 : 0,
+      delay: rule.delay_ms || 0,
+      cooldown: rule.cooldown_ms || 0,
+      interval: rule.interval_ms || 0,
+      actions: Array.isArray(rule.actions) ? rule.actions : [rule.actions || 0],
+      levels: Array.isArray(rule.levels) ? rule.levels : [rule.levels || 0],
+      conditions: {},
+      time_hour: Math.floor((rule.time_s || 0) / 3600),
+      time_minute: Math.floor(((rule.time_s || 0) % 3600) / 60)
+    };
+    
+    if(rule.cmp && rule.threshold) {
+      rule.sensors.forEach((sensorIdx, posIdx) => {
+        wizard.data.conditions[sensorIdx] = {
+          cmp: rule.cmp[posIdx] || 0,
+          threshold: rule.threshold[posIdx] || 0
+        };
+      });
+    }
+  }
+  showStep(0);
+}
+
+function getRelevantSteps(){
+  const steps = [0];
+  
+  if(wizard.data.type === 0 || wizard.data.type === 1) {
+    steps.push(1, 2);
+    // ✅ SOLO agregar paso 3 (lógica) si hay MÁS DE UN sensor
+    if(wizard.data.sensors.length > 1) {
+      steps.push(3);
+    }
+  }
+  
+  if(wizard.data.type === 2) {
+    // TIME - ir directo a actuadores
+    steps.push(3);
+  }
+  
+  steps.push(4, 5);
+  
+  if(wizard.data.type === 0 || wizard.data.type === 1) {
+    steps.push(6);
+  } else if(wizard.data.type === 3) {
+    steps.push(6);
+  }
+  
+  return steps;
+}
+
+function getTotalSteps(){
+  return getRelevantSteps().length;
+}
+
+function getStepNumber(globalStep){
+  const steps = getRelevantSteps();
+  return steps[globalStep] ?? globalStep;
+}
+
+function showStep(n){
+  const steps = getRelevantSteps();
+  if(n >= steps.length) return;
+  
+  wizard.step = n;
+  const stepNum = steps[n];
+  
+  let content = '';
+  
+  if(stepNum === 0) {
+    content = `<h3>Tipo de Regla</h3>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===0?'#27ae60':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===0?'#f0fdf4':'#fff'}">
+          <input type="radio" name="type" value="0" ${wizard.data.type===0?'checked':''} style="margin-right:10px;margin-top:4px">
+          <div>
+            <strong>🔄 EDGE - Cambios de estado</strong>
+            <small style="color:#666;display:block">Se ejecuta cuando un sensor cambia (movimiento detectado, puerta abierta, botón presionado)</small>
+          </div>
+        </label>
+        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===1?'#2980b9':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===1?'#f0f8ff':'#fff'}">
+          <input type="radio" name="type" value="1" ${wizard.data.type===1?'checked':''} style="margin-right:10px;margin-top:4px">
+          <div>
+            <strong>📊 THRESHOLD - Valores límite</strong>
+            <small style="color:#666;display:block">Se ejecuta cuando un sensor supera/baja un valor (temperatura > 28°C, luz < 300 lux)</small>
+          </div>
+        </label>
+        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===2?'#e67e22':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===2?'#fffaf0':'#fff'}">
+          <input type="radio" name="type" value="2" ${wizard.data.type===2?'checked':''} style="margin-right:10px;margin-top:4px">
+          <div>
+            <strong>⏰ TIME - A una hora</strong>
+            <small style="color:#666;display:block">Se ejecuta a una hora específica cada día</small>
+          </div>
+        </label>
+        <label style="display:flex;align-items:flex-start;padding:10px;border:2px solid ${wizard.data.type===3?'#9b59b6':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===3?'#faf5ff':'#fff'}">
+          <input type="radio" name="type" value="3" ${wizard.data.type===3?'checked':''} style="margin-right:10px;margin-top:4px">
+          <div>
+            <strong>⏱️ INTERVAL - Cada X tiempo</strong>
+            <small style="color:#666;display:block">Se ejecuta repetidamente cada X milisegundos</small>
+          </div>
+        </label>
+      </div>`;
+  }
+  else if(stepNum === 1) {
+    let sensorDesc = '';
+    if(wizard.data.type === 0) {
+      sensorDesc = '🔴 Sensores digitales que detectan cambios: movimiento, puertas, botones...';
+    } else if(wizard.data.type === 1) {
+      sensorDesc = '📈 Sensores analógicos que miden valores: temperatura, humedad, luz...';
+    }
+    
+    content = `<h3>Seleccionar Sensores</h3>
+      <p style="color:#333;margin:10px 0;background:#f0f0f0;padding:8px;border-radius:4px;font-size:13px">
+        ${sensorDesc}
+      </p>
+      <select id="sensorList" multiple size="5" style="width:100%"></select>
+      <small style="color:#999;display:block;margin-top:5px">Ctrl/Cmd + Click para múltiples</small>`;
+  }
+  else if(stepNum === 2) {
+    if(wizard.data.sensors.length === 0) {
+      content = `<h3>⚠️ Sin sensores</h3><p>Debes seleccionar sensores primero</p>`;
+    } else {
+      content = `<h3>Condiciones por Sensor</h3>`;
+      wizard.data.sensors.forEach(sIdx => {
+        const sensor = availableSensors[sIdx];
+        const cond = wizard.data.conditions[sIdx] || {cmp: 0, threshold: sensor.value || 0};
+        
+        let condContent = '';
+        
+        if(wizard.data.type === 0) {
+          condContent = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <select id="cmp_${sIdx}" style="padding:6px;border-radius:4px;border:1px solid #ccc">
+                <option value="0" ${cond.cmp===0?'selected':''}>↑ RISING (al activarse)</option>
+                <option value="1" ${cond.cmp===1?'selected':''}>↓ FALLING (al desactivarse)</option>
+              </select>
+            </div>
+            <small style="color:#27ae60;display:block;margin-top:6px">
+              Estado actual: <b>${sensor.state ? '🟢 ACTIVO' : '🔴 INACTIVO'}</b>
+            </small>`;
+        } else if(wizard.data.type === 1) {
+          condContent = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <select id="cmp_${sIdx}" style="padding:6px;border-radius:4px;border:1px solid #ccc">
+                <option value="0" ${cond.cmp===0?'selected':''}>Mayor que (&gt;)</option>
+                <option value="1" ${cond.cmp===1?'selected':''}>Menor que (&lt;)</option>
+                <option value="2" ${cond.cmp===2?'selected':''}>Igual a (≈)</option>
+              </select>
+              <input type="number" id="thresh_${sIdx}" value="${cond.threshold}" placeholder="Valor umbral" 
+                style="padding:6px;border-radius:4px;border:1px solid #ccc" step="0.1">
+            </div>
+            <small style="color:#2980b9;display:block;margin-top:6px">
+              Valor actual: <b>${sensor.value?.toFixed ? sensor.value.toFixed(1) : sensor.value}</b>
+            </small>`;
+        }
+        
+        content += `<div style="border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:6px;background:#f9f9f9">
+          <strong style="display:block;margin-bottom:8px">${sensor.name}</strong>
+          ${condContent}
+        </div>`;
+      });
+    }
+  }
+  else if(stepNum === 3) {
+    // ✅ PASO 3 puede ser LÓGICA (si hay múltiples sensores) o TIME PICKER (si es TIME)
+    if(wizard.data.type === 2) {
+      // TIME PICKER
+      content = `<h3>⏰ Seleccionar Hora</h3>
+        <div style="text-align:center;padding:20px">
+          <div style="display:flex;gap:10px;justify-content:center;align-items:center;margin:20px 0">
+            <div style="text-align:center">
+              <label style="display:block;color:#666;font-size:12px;margin-bottom:5px">Horas</label>
+              <select id="time_hour" style="padding:10px;font-size:20px;border-radius:6px;border:2px solid #e67e22;width:80px;text-align:center">
+                ${Array.from({length:24},(v,i)=>i).map(h=>`<option value="${h}" ${wizard.data.time_hour===h?'selected':''}>${String(h).padStart(2,'0')}</option>`).join('')}
+              </select>
+            </div>
+            <div style="font-size:30px;font-weight:bold;color:#e67e22">:</div>
+            <div style="text-align:center">
+              <label style="display:block;color:#666;font-size:12px;margin-bottom:5px">Minutos</label>
+              <select id="time_minute" style="padding:10px;font-size:20px;border-radius:6px;border:2px solid #e67e22;width:80px;text-align:center">
+                ${Array.from({length:60},(v,i)=>i).map(m=>`<option value="${m}" ${wizard.data.time_minute===m?'selected':''}>${String(m).padStart(2,'0')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <p style="color:#27ae60;font-size:18px;font-weight:bold">
+            ⏰ Se ejecutará a las <span id="timeDisplay">${String(wizard.data.time_hour).padStart(2,'0')}:${String(wizard.data.time_minute).padStart(2,'0')}</span>
+          </p>
+        </div>
+        <script>
+          document.getElementById('time_hour').addEventListener('change', function() {
+            document.getElementById('timeDisplay').textContent = String(this.value).padStart(2,'0') + ':' + String(document.getElementById('time_minute').value).padStart(2,'0');
+          });
+          document.getElementById('time_minute').addEventListener('change', function() {
+            document.getElementById('timeDisplay').textContent = String(document.getElementById('time_hour').value).padStart(2,'0') + ':' + String(this.value).padStart(2,'0');
+          });
+        </script>`;
+    } else {
+      // LÓGICA (solo si hay múltiples sensores)
+      content = `<h3>Lógica de Condiciones</h3>
+        <p style="color:#666;margin-bottom:15px">¿Cómo deben combinarse las condiciones?</p>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <label style="display:flex;align-items:center;padding:10px;border:2px solid ${wizard.data.logic===1?'#2980b9':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.logic===1?'#f0f8ff':'#fff'}">
+            <input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''} style="margin-right:10px;width:18px;height:18px">
+            <div>
+              <strong>AND (Y) - Todas deben cumplirse</strong>
+              <small style="color:#666;display:block">Se ejecuta solo si TODAS las condiciones son verdaderas</small>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;padding:10px;border:2px solid ${wizard.data.logic===0?'#e67e22':'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.logic===0?'#fffaf0':'#fff'}">
+            <input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''} style="margin-right:10px;width:18px;height:18px">
+            <div>
+              <strong>OR (O) - Cualquiera puede cumplirse</strong>
+              <small style="color:#666;display:block">Se ejecuta si CUALQUIERA de las condiciones es verdadera</small>
+            </div>
+          </label>
+        </div>`;
+    }
+  }
+  else if(stepNum === 4) {
+    content = `<h3>Seleccionar Actuadores</h3>
+      <p style="color:#333;margin:10px 0;background:#f0f0f0;padding:8px;border-radius:4px;font-size:13px">
+        💡 Dispositivos que se controlarán (relés, dimmers)
+      </p>
+      <select id="actuatorList" multiple size="5" style="width:100%"></select>
+      <small style="color:#999;display:block;margin-top:5px">Ctrl/Cmd + Click para múltiples</small>`;
+  }
+  else if(stepNum === 5) {
+    if(wizard.data.actuators.length === 0) {
+      content = `<h3>⚠️ Sin actuadores</h3><p>Debes seleccionar actuadores primero</p>`;
+    } else {
+      content = `<h3>Acciones por Actuador</h3>`;
+      wizard.data.actuators.forEach((aIdx, aPos) => {
+        const actuator = availableSensors[aIdx];
+        const action = wizard.data.actions[aPos] !== undefined ? wizard.data.actions[aPos] : 0;
+        const level = wizard.data.levels[aPos] !== undefined ? wizard.data.levels[aPos] : 0;
+        const isDimmer = actuator.type === 8;
+        
+        content += `<div style="border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:6px;background:#f9f9f9">
+          <strong style="display:block;margin-bottom:8px">${actuator.name}</strong>
+          <select id="action_${aPos}" style="width:100%;padding:6px;border-radius:4px;border:1px solid #ccc;margin-bottom:6px">
+            <option value="0" ${action===0?'selected':''}>✅ ON (Encender)</option>
+            <option value="1" ${action===1?'selected':''}>❌ OFF (Apagar)</option>
+            <option value="2" ${action===2?'selected':''}>🔄 TOGGLE (Alternar)</option>
+            ${isDimmer ? `<option value="3" ${action===3?'selected':''}>🎚️ LEVEL (Nivel)</option>` : ''}
+          </select>
+          ${isDimmer ? `<input type="number" id="level_${aPos}" min="0" max="100" value="${level}" placeholder="%" 
+            style="width:20%;padding:6px;border-radius:4px;border:1px solid #ccc;margin-top:6px;display:${action === 3 ? 'block' : 'none'}" step="1">` : ''}
+        </div>`;
+      });
+    }
+  }
+  else if(stepNum === 6) {
+    if(wizard.data.type === 3) {
+      content = `<h3>Configurar Intervalo</h3>
+        <div style="margin-bottom:10px">
+          <label>Ejecutar cada (ms):</label><br>
+          <input type="number" id="interval" min="100" value="${wizard.data.interval||1000}" style="width:100%;padding:6px;box-sizing:border-box">
+          <small style="color:#666">Ej: 5000 = cada 5 segundos</small>
+        </div>
+        <div style="margin-bottom:10px">
+          <label>Delay antes de ejecutar (ms):</label><br>
+          <input type="number" id="delay" min="0" value="${wizard.data.delay}" style="width:100%;padding:6px;box-sizing:border-box">
+          <small style="color:#666">Espera antes de ejecutar</small>
+        </div>
+        <div>
+          <label>Cooldown entre ejecuciones (ms):</label><br>
+          <input type="number" id="cooldown" min="0" value="${wizard.data.cooldown}" style="width:100%;padding:6px;box-sizing:border-box">
+          <small style="color:#666">Espera mínima entre ejecuciones</small>
+        </div>`;
+    } else {
+      content = `<h3>Timings (opcional)</h3>
+        <div style="margin-bottom:10px">
+          <label>Delay (ms):</label><br>
+          <input type="number" id="delay" min="0" value="${wizard.data.delay}" style="width:100%;padding:6px;box-sizing:border-box">
+          <small style="color:#666">Espera antes de ejecutar la acción</small>
+        </div>
+        <div>
+          <label>Cooldown (ms):</label><br>
+          <input type="number" id="cooldown" min="0" value="${wizard.data.cooldown}" style="width:100%;padding:6px;box-sizing:border-box">
+          <small style="color:#666">Espera mínima antes de poder ejecutar de nuevo</small>
+        </div>`;
+    }
+  }
+
+  let html = `<div style="max-height:400px;overflow-y:auto;margin-bottom:10px">${content}</div>`;
+  html += `<hr style="margin:10px 0"><div style="display:flex;justify-content:space-between;align-items:center">
+    <small style="color:#999">Paso ${n+1}/${getTotalSteps()}</small>
+    <div style="gap:5px;display:flex">
+      ${n>0?'<button onclick="prevStep()" style="background:#95a5a6">◀ Anterior</button>':''}
+      ${n<getTotalSteps()-1?'<button onclick="nextStep()" style="background:#3498db;color:#fff">Siguiente ▶</button>':'<button onclick="finishWizard()" style="background:#27ae60;color:#fff">✓ Guardar</button>'}
+    </div>
+  </div>`;
+  
+  document.getElementById('wizardContent').innerHTML = html;
+  
+  if(stepNum===1) populateSensors();
+  if(stepNum===4) populateActuators();
+  if(stepNum===5) setupActionListeners();
+}
+
+function setupActionListeners(){
+  wizard.data.actuators.forEach((aIdx, aPos) => {
+    const actuator = availableSensors[aIdx];
+    const isDimmer = actuator.type === 8;
+    
+    if(isDimmer) {
+      const actionSelect = document.getElementById(`action_${aPos}`);
+      
+      if(actionSelect) {
+        actionSelect.addEventListener('change', function() {
+          const levelInput = document.getElementById(`level_${aPos}`);
+          if(levelInput) {
+            if(this.value === '3') {
+              levelInput.style.display = 'block';
+            } else {
+              levelInput.style.display = 'none';
+            }
+          }
+        });
+      }
+    }
+  });
+}
+
+function nextStep(){
+  const steps = getRelevantSteps();
+  const stepNum = steps[wizard.step];
+  
+  if(stepNum === 0) {
+    const typeRadio = document.querySelector('input[name="type"]:checked');
+    if(typeRadio) wizard.data.type = parseInt(typeRadio.value);
+  }
+  else if(stepNum === 1) {
+    wizard.data.sensors = [...document.querySelectorAll('#sensorList option:checked')].map(o=>parseInt(o.value));
+  }
+  else if(stepNum === 2) {
+    wizard.data.sensors.forEach(sIdx => {
+      const cmpSelect = document.getElementById(`cmp_${sIdx}`);
+      const threshInput = document.getElementById(`thresh_${sIdx}`);
+      if(cmpSelect && threshInput) {
+        wizard.data.conditions[sIdx] = {
+          cmp: parseInt(cmpSelect.value),
+          threshold: parseFloat(threshInput.value) || 0
+        };
+      }
+    });
+  }
+  else if(stepNum === 3) {
+    if(wizard.data.type === 2) {
+      // TIME - guardar hora
+      wizard.data.time_hour = parseInt(document.getElementById('time_hour').value) || 0;
+      wizard.data.time_minute = parseInt(document.getElementById('time_minute').value) || 0;
+    } else if(wizard.data.sensors.length > 1) {
+      // LÓGICA
+      const logicRadio = document.querySelector('input[name="logic"]:checked');
+      if(logicRadio) wizard.data.logic = parseInt(logicRadio.value);
+    }
+  }
+  else if(stepNum === 4) {
+    const newActuators = [...document.querySelectorAll('#actuatorList option:checked')].map(o=>parseInt(o.value));
+    
+    if(JSON.stringify(newActuators) !== JSON.stringify(wizard.data.actuators)) {
+      wizard.data.actuators = newActuators;
+      wizard.data.actions = wizard.data.actuators.map(() => 0);
+      wizard.data.levels = wizard.data.actuators.map(() => 0);
+    } else {
+      wizard.data.actuators = newActuators;
+    }
+  }
+  else if(stepNum === 5) {
+    wizard.data.actions = [];
+    wizard.data.levels = [];
+    
+    wizard.data.actuators.forEach((aIdx, aPos) => {
+      const actionSelect = document.getElementById(`action_${aPos}`);
+      const levelInput = document.getElementById(`level_${aPos}`);
+      
+      const action = actionSelect ? parseInt(actionSelect.value) : 0;
+      let level = 0;
+      
+      if(levelInput) {
+        const levelValue = levelInput.value;
+        level = levelValue && levelValue.trim() !== '' ? parseInt(levelValue) : 0;
+      }
+      
+      wizard.data.actions[aPos] = action;
+      wizard.data.levels[aPos] = level;
+    });
+  }
+  else if(stepNum === 6) {
+    wizard.data.delay = parseInt(document.getElementById('delay').value) || 0;
+    wizard.data.cooldown = parseInt(document.getElementById('cooldown').value) || 0;
+    if(wizard.data.type === 3) {
+      wizard.data.interval = parseInt(document.getElementById('interval').value) || 1000;
+    }
+  }
+  
+  showStep(wizard.step + 1);
+}
+
+function prevStep(){
+  if(wizard.step > 0) showStep(wizard.step - 1);
+}
+
+function populateSensors(){
+  const sel = document.getElementById('sensorList');
+  
+  let filtered = availableSensors;
+  
+  if(wizard.data.type === 0) {
+    filtered = availableSensors.filter((s,i) => [7, 6, 9].includes(s.type));
+  } else if(wizard.data.type === 1) {
+    filtered = availableSensors.filter((s,i) => [1, 2, 3, 4, 5].includes(s.type));
+  }
+  
+  sel.innerHTML = filtered.map((s,i)=>{
+    const origIdx = availableSensors.indexOf(s);
+    return `<option value="${origIdx}">[${origIdx}] ${s.name}</option>`;
+  }).join('');
+  
+  if(wizard.data.sensors && wizard.data.sensors.length > 0) {
+    document.querySelectorAll('#sensorList option').forEach(o=>{
+      if(wizard.data.sensors.includes(parseInt(o.value))) o.selected=true;
+    });
+  }
+}
+
+function populateActuators(){
+  const sel = document.getElementById('actuatorList');
+  const actuators = availableSensors.reduce((acc,s,i)=>{
+    if(s.type===9 || s.type===8) acc.push({...s, idx:i});
+    return acc;
+  },[]);
+  
+  sel.innerHTML = actuators.map(s=>`<option value="${s.idx}">[${s.idx}] ${s.name}</option>`).join('');
+  
+  if(wizard.data.actuators && wizard.data.actuators.length > 0) {
+    document.querySelectorAll('#actuatorList option').forEach(o=>{
+      if(wizard.data.actuators.includes(parseInt(o.value))) o.selected=true;
+    });
+  }
+}
+
+async function finishWizard(){
+  const steps = getRelevantSteps();
+  const stepNum = steps[wizard.step];
+  
+  if(stepNum === 6) {
+    wizard.data.delay = parseInt(document.getElementById('delay').value) || 0;
+    wizard.data.cooldown = parseInt(document.getElementById('cooldown').value) || 0;
+    if(wizard.data.type === 3) {
+      wizard.data.interval = parseInt(document.getElementById('interval').value) || 1000;
+    }
+  }
+  
+  if(wizard.data.actuators.length === 0) {
+    alert('Debes seleccionar al menos un actuador');
+    return;
+  }
+  
+  if((wizard.data.type === 0 || wizard.data.type === 1) && wizard.data.sensors.length === 0) {
+    alert('Debes seleccionar al menos un sensor');
+    return;
+  }
+
+  let cmps = [], thresholds = [];
+  wizard.data.sensors.forEach(sIdx => {
+    const cond = wizard.data.conditions[sIdx] || {cmp: 0, threshold: 0};
+    cmps.push(cond.cmp);
+    thresholds.push(cond.threshold);
+  });
+
+  while(wizard.data.levels.length < wizard.data.actuators.length) {
+    wizard.data.levels.push(0);
+  }
+
+  // ✅ Convertir hora:minuto a segundos para TIME
+  let time_s = wizard.data.type === 2 ? wizard.data.time_hour * 3600 + wizard.data.time_minute * 60 : 0;
+
+  const params = new URLSearchParams();
+  params.append('id', wizard.data.id ?? -1);
+  params.append('sensors', wizard.data.sensors.join(','));
+  params.append('actuators', wizard.data.actuators.join(','));
+  params.append('type', wizard.data.type);
+  params.append('logic', wizard.data.logic);
+  params.append('delay', wizard.data.delay);
+  params.append('cooldown', wizard.data.cooldown);
+  params.append('interval', wizard.data.interval || 0);
+  params.append('actions', wizard.data.actions.join(','));
+  params.append('levels', wizard.data.levels.join(','));
+  params.append('cmp', cmps.join(','));
+  params.append('threshold', thresholds.join(','));
+  params.append('time_s', time_s);
+
+  try {
+    const res = await fetch('/rules/set', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:params.toString()
+    });
+    if(res.ok) {
+      alert('Regla guardada');
+      closeRule();
+      loadRules();
+    } else {
+      alert('Error al guardar');
+    }
+  } catch(e) {
+    console.error('Error', e);
+    alert('Error: ' + e.message);
+  }
 }
 
 function newRule(){
-openRuleModal();
+  loadSensorsAndActuators().then(()=>{
+    startWizard(-1);
+    document.getElementById('ruleModal').style.display='flex';
+  });
 }
 
 function editRule(i){
-openRuleModal(window.rules[i], i);
-}
-
-let editRuleIndex = -1;
-
-function openRuleModal(rule=null, idx=-1){
-editRuleIndex = idx;
-document.getElementById("ruleModal").style.display="flex";
-if(!rule) return;
-document.getElementById("ruleSensors").value = rule.sensors.join(",");
-document.getElementById("ruleType").value = rule.type;
-document.getElementById("ruleLogic").value = rule.logical_and ? 1 : 0;
-document.getElementById("ruleActs").value = rule.actuators.join(",");
-document.getElementById("ruleDelay").value = rule.delay_ms;
-document.getElementById("ruleCooldown").value = rule.cooldown_ms;
-document.getElementById("ruleCmp").value = (rule.cmp||[]).join(",");
-document.getElementById("ruleThreshold").value = (rule.threshold||[]).join(",");
-document.getElementById("ruleActions").value = (rule.actions||[]).join(",");
-document.getElementById("ruleLevels").value = (rule.levels||[]).join(",");
-document.getElementById("ruleInterval").value = rule.interval_ms || 0;
-document.getElementById("ruleTime").value = rule.time_s || 0;
-document.getElementById("ruleYearStart").value = rule.year_start || 0;
-document.getElementById("ruleYearEnd").value = rule.year_end || 0;
-document.getElementById("ruleMonthStart").value = rule.month_start || 0;
-document.getElementById("ruleMonthEnd").value = rule.month_end || 0;
-document.getElementById("ruleDayStart").value = rule.day_start || 0;
-document.getElementById("ruleDayEnd").value = rule.day_end || 0;
+  loadSensorsAndActuators().then(()=>{
+    startWizard(i);
+    document.getElementById('ruleModal').style.display='flex';
+  });
 }
 
 function closeRule(){
@@ -1401,85 +1910,46 @@ function closeRule(){
 }
 
 async function deleteRule(i){
-if(!confirm("Delete rule "+i+" ?")) return;
-await fetch('/rules/delete',{
-method:'POST',
-headers:{'Content-Type':'application/x-www-form-urlencoded'},
-body:`id=${i}`
-});
-loadRules();
-}
-
-function saveRule() {
-  const conds = [...document.querySelectorAll(".cond")].map(c => ({
-    sensor: c.querySelector(".c_sensor").value,
-    op: c.querySelector(".c_op").value,
-    value: c.querySelector(".c_value").value,
-    unit: c.querySelector(".c_unit").value,
-    trend: c.querySelector(".c_trend").value
-  }));
-
-  const payload = {
-    name: document.getElementById("rule_name").value,
-    enabled: document.getElementById("rule_enabled").checked,
-    logic: document.getElementById("rule_logic").value,
-    conditions: conds,
-    time: {
-      delay: +document.getElementById("t_delay").value,
-      cooldown: +document.getElementById("t_cooldown").value,
-      interval: +document.getElementById("t_interval").value
-    },
-    action: {
-      device: document.getElementById("a_device").value,
-      state: document.getElementById("a_state").value,
-      value: document.getElementById("a_value").value
-    }
-  };
-
-  fetch("/rules/set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+  if(!confirm('¿Eliminar regla '+i+'?')) return;
+  await fetch('/rules/delete',{
+    method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:`id=${i}`
   });
-
-  closeRule();
+  loadRules();
 }
 
 async function loadRules(){
-
-const res = await fetch('/rules');
-const rules = await res.json();
-
-window.rules = rules;
-
-const table = document.getElementById("auto_table");
-table.replaceChildren();
-
-rules.forEach((r,i)=>{
-
-let row = document.createElement("tr");
-
-row.innerHTML = `
-<td>${i}</td>
-<td>${r.sensors.join(",")}</td>
-<td>${r.type}</td>
-<td>${r.logical_and ? "AND" : "OR"}</td>
-<td>${r.actuators.join(", ")}</td>
-<td>${r.delay_ms}</td>
-<td>${r.cooldown_ms}</td>
-<td>
-<button onclick="editRule(${i})">Edit</button>
-<button onclick="deleteRule(${i})">Delete</button>
-</td>
-`;
-
-table.appendChild(row);
-
-});
-
+  try {
+    const res = await fetch('/rules');
+    if(!res.ok) return;
+    const rules = await res.json();
+    window.rules = rules;
+    
+    const table = document.getElementById("auto_table");
+    table.innerHTML = '';
+    
+    rules.forEach((r,i)=>{
+      let row = document.createElement("tr");
+      row.innerHTML = `
+      <td>${i}</td>
+      <td>${r.sensors.join(",")}</td>
+      <td>${['EDGE','THRESHOLD','TIME','INTERVAL'][r.type] || r.type}</td>
+      <td>${r.logical_and ? "AND" : "OR"}</td>
+      <td>${r.actuators.join(", ")}</td>
+      <td>${r.delay_ms}</td>
+      <td>${r.cooldown_ms}</td>
+      <td style="text-align:center">
+        <button onclick="editRule(${i})" style="font-size:11px;padding:2px 6px">Edit</button>
+        <button onclick="deleteRule(${i})" style="font-size:11px;padding:2px 6px;background:#c0392b">Del</button>
+      </td>
+      `;
+      table.appendChild(row);
+    });
+  } catch(e) {
+    console.log('loadRules error', e);
+  }
 }
-
-/* -------------------- INIT -------------------- */
 
 loadCalib();
 loadRules();
@@ -1490,54 +1960,10 @@ setInterval(() => {
 }, 5000);
 </script>
 <div id="ruleModal" class="modal">
-  <div class="modal-content">
-    <!-- RULE HEADER -->
-    <div class="row">
-      Rule:
-      <input id="rule_name" placeholder="____________________">
-      <input type="checkbox" id="rule_enabled" checked>
-      ✔
-    </div>
-    <!-- LOGIC -->
-    <div class="row">
-      Logic:
-      <select id="rule_logic">
-        <option value="AND">AND</option>
-        <option value="OR">OR</option>
-      </select>
-    </div>
+  <div class="modal-content" style="width:350px">
+    <div id="wizardContent"></div>
     <hr>
-    <!-- CONDITIONS -->
-    <div>
-      Cond:
-      <div id="cond_container"></div>
-      <button onclick="addCond()">+</button>
-    </div>
-    <hr>
-    <!-- TIME -->
-    <div class="row">
-      Time:
-      Delay <input id="t_delay" type="number" style="width:80px">
-      Cooldown <input id="t_cooldown" type="number" style="width:80px">
-      Interval <input id="t_interval" type="number" style="width:80px">
-    </div>
-    <hr>
-    <!-- ACTION -->
-    <div class="row">
-      Action:
-      <select id="a_device">
-        <option>Relay_1</option>
-        <option>Relay_2</option>
-      </select>
-      <select id="a_state">
-        <option>ON</option>
-        <option>OFF</option>
-      </select>
-      <input id="a_value" placeholder="___" style="width:60px">
-    </div>
-    <hr>
-    <button onclick="saveRule()">SAVE</button>
-    <button onclick="closeRule()">X</button>
+    <button onclick="closeRule()" style="float:right;background:#e74c3c">Cancelar</button>
   </div>
 </div>
 </body>
