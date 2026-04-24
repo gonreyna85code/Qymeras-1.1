@@ -1613,8 +1613,10 @@ function showStep(n){
       <input id="interval" type="number" value="${wizard.data.interval||1000}">`;
     }
 
-    content += `<h3>Timing</h3>
+    content += `
+      <h3>Delay</h3>
       <input id="delay" type="number" value="${wizard.data.delay}">
+      <h3>Cool Down</h3>
       <input id="cooldown" type="number" value="${wizard.data.cooldown}">`;
   }
 
