@@ -271,8 +271,10 @@ ICACHE_FLASH_ATTR void handleRules() {
     if (!first) core::server.sendContent(",");
     first = false;
     core::server.sendContent("{");
+    core::server.sendContent(",\"id\":");
+    core::server.sendContent(String(i));
     // sensores
-    core::server.sendContent("\"sensors\":[");
+    core::server.sendContent(",\"sensors\":[");
     for (int s = 0; s < r.sensor_count; s++) {
       if (s) core::server.sendContent(",");
       core::server.sendContent(String(r.sensor_idxs[s]));
@@ -1394,7 +1396,7 @@ function startWizard(edit=-1){
   if(edit>=0 && window.rules && window.rules[edit]) {
     const rule = window.rules[edit];
     wizard.data = {
-      id: edit,
+      id: rule.id,
       sensors: rule.sensors || [],
       actuators: rule.actuators || [],
       type: rule.type || 0,
@@ -1952,7 +1954,7 @@ async function loadRules(){
     rules.forEach((r,i)=>{
       let row = document.createElement("tr");
       row.innerHTML = `
-      <td>${i}</td>
+      <td>${r.id}</td>
       <td>${r.sensors.join(",")}</td>
       <td>${['EDGE','THRESHOLD','TIME','INTERVAL'][r.type] || r.type}</td>
       <td>${r.logical_and ? "AND" : "OR"}</td>
@@ -1960,8 +1962,8 @@ async function loadRules(){
       <td>${r.delay_ms}</td>
       <td>${r.cooldown_ms}</td>
       <td style="text-align:center">
-        <button onclick="editRule(${i})" style="font-size:11px;padding:2px 6px">Edit</button>
-        <button onclick="deleteRule(${i})" style="font-size:11px;padding:2px 6px;background:#c0392b">Del</button>
+        <button onclick="editRule(${r.id})" style="font-size:11px;padding:2px 6px">Edit</button>
+        <button onclick="deleteRule(${r.id})" style="font-size:11px;padding:2px 6px;background:#c0392b">Del</button>
       </td>
       `;
       table.appendChild(row);
