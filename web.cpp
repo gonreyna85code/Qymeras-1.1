@@ -271,7 +271,7 @@ ICACHE_FLASH_ATTR void handleRules() {
     if (!first) core::server.sendContent(",");
     first = false;
     core::server.sendContent("{");
-    core::server.sendContent(",\"id\":");
+    core::server.sendContent("\"id\":");
     core::server.sendContent(String(i));
     // sensores
     core::server.sendContent(",\"sensors\":[");
