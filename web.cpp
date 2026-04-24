@@ -500,6 +500,10 @@ void handleSetRule() {
   if (core::server.hasArg("day_end"))
     r.day_end = core::server.arg("day_end").toInt();
 
+  // ========== TIME ==========
+   if (core::server.hasArg("time_s"))
+     r.time_s = core::server.arg("time_s").toInt();
+
   saveRulesToEEPROM();
 
   core::server.send(200, "text/plain", "ok");
@@ -1398,8 +1402,8 @@ function startWizard(edit=-1){
       delay: rule.delay_ms || 0,
       cooldown: rule.cooldown_ms || 0,
       interval: rule.interval_ms || 0,
-      actions: Array.isArray(rule.actions) ? rule.actions : [rule.actions || 0],
-      levels: Array.isArray(rule.levels) ? rule.levels : [rule.levels || 0],
+      actions: Array.isArray(rule.actions) ? [...rule.actions] : [rule.actions || 0],
+      levels: Array.isArray(rule.levels) ? [...rule.levels] : [rule.levels || 0],
       conditions: {},
       time_hour: Math.floor((rule.time_s || 0) / 3600),
       time_minute: Math.floor(((rule.time_s || 0) % 3600) / 60),
@@ -1578,19 +1582,24 @@ function showStep(n){
 
       wizard.data.actuators.forEach((aIdx,i)=>{
         const a = availableSensors[aIdx];
+        const action = wizard.data.actions[i] || 0;
+        const level = wizard.data.levels[i] || 0;
 
         content += `
         <div style="border:1px solid #ddd;padding:8px;margin:5px;border-radius:6px">
           <b>${a.name}</b><br>
           <select id="action_${i}">
-            <option value="0">ON</option>
-            <option value="1">OFF</option>
-            <option value="2">TOGGLE</option>
-            ${a.type===8?'<option value="3">LEVEL</option>':''}
+            <option value="0" ${action===0?'selected':''}>ON</option>
+            <option value="1" ${action===1?'selected':''}>OFF</option>
+            <option value="2" ${action===2?'selected':''}>TOGGLE</option>
+            ${a.type===8?`<option value="3" ${action===3?'selected':''}>LEVEL</option>`:''}
           </select>
-          ${a.type===8?`<input id="level_${i}" type="number" min="0" max="100">`:''}
+          ${a.type===8?`<input id="level_${i}" type="number" min="0" max="100" value="${level}" style="${action===3?'':'display:none;'}"`:''}
         </div>`;
       });
+      
+      // Después de renderizar, setup los listeners para mostrar/ocultar level inputs
+      setTimeout(() => setupActionListeners(), 0);
     }
   }
 
@@ -1629,18 +1638,21 @@ function setupActionListeners(){
     
     if(isDimmer) {
       const actionSelect = document.getElementById(`action_${aPos}`);
+      const levelInput = document.getElementById(`level_${aPos}`);
       
       if(actionSelect) {
-        actionSelect.addEventListener('change', function() {
-          const levelInput = document.getElementById(`level_${aPos}`);
+        // Mostrar/ocultar input de level según la opción seleccionada
+        const updateLevelVisibility = () => {
           if(levelInput) {
-            if(this.value === '3') {
-              levelInput.style.display = 'block';
-            } else {
-              levelInput.style.display = 'none';
-            }
+            levelInput.style.display = actionSelect.value === '3' ? 'inline-block' : 'none';
           }
-        });
+        };
+        
+        // Ejecutar al cargar
+        updateLevelVisibility();
+        
+        // Listener para cambios
+        actionSelect.addEventListener('change', updateLevelVisibility);
       }
     }
   });
@@ -1701,17 +1713,23 @@ function nextStep(){
       const actionSelect = document.getElementById(`action_${aPos}`);
       const levelInput = document.getElementById(`level_${aPos}`);
       
-      const action = actionSelect ? parseInt(actionSelect.value) : 0;
-      let level = 0;
+      // Capturar acción (obligatorio)
+      let action = 0;
+      if(actionSelect) {
+        action = parseInt(actionSelect.value);
+      }
       
-      if(levelInput) {
+      // Capturar level si existe y tiene valor
+      let level = 0;
+      if(levelInput && levelInput.style.display !== 'none') {
         const levelValue = levelInput.value;
         level = levelValue && levelValue.trim() !== '' ? parseInt(levelValue) : 0;
       }
       
-      wizard.data.actions[aPos] = action;
-      wizard.data.levels[aPos] = level;
+      wizard.data.actions.push(action);
+      wizard.data.levels.push(level);
     });
+    
   }
   else if(stepNum === 6) {
     wizard.data.delay = parseInt(document.getElementById('delay').value) || 0;
@@ -1771,7 +1789,38 @@ async function finishWizard(){
   const steps = getRelevantSteps();
   const stepNum = steps[wizard.step];
   
-  if(stepNum === 6) {
+  // ✅ CAPTURAR DATOS PENDIENTES DEL PASO ACTUAL ANTES DE GUARDAR
+  if(wizard.data.type === 2 && stepNum === 3) {
+    wizard.data.date_start = document.getElementById('date_start').value || '';
+    wizard.data.date_end = document.getElementById('date_end').value || '';
+    wizard.data.time_hour = parseInt(document.getElementById('time_hour').value) || 0;
+    wizard.data.time_minute = parseInt(document.getElementById('time_minute').value) || 0;
+  }
+  else if(stepNum === 5) {
+    // ✅ CAPTURAR ACCIONES si estamos en paso 5
+    wizard.data.actions = [];
+    wizard.data.levels = [];
+    
+    wizard.data.actuators.forEach((aIdx, aPos) => {
+      const actionSelect = document.getElementById(`action_${aPos}`);
+      const levelInput = document.getElementById(`level_${aPos}`);
+      
+      let action = 0;
+      if(actionSelect) {
+        action = parseInt(actionSelect.value);
+      }
+      
+      let level = 0;
+      if(levelInput && levelInput.style.display !== 'none') {
+        const levelValue = levelInput.value;
+        level = levelValue && levelValue.trim() !== '' ? parseInt(levelValue) : 0;
+      }
+      
+      wizard.data.actions.push(action);
+      wizard.data.levels.push(level);
+    });
+  }
+  else if(stepNum === 6) {
     wizard.data.delay = parseInt(document.getElementById('delay').value) || 0;
     wizard.data.cooldown = parseInt(document.getElementById('cooldown').value) || 0;
     if(wizard.data.type === 3) {
@@ -1800,48 +1849,48 @@ async function finishWizard(){
     wizard.data.levels.push(0);
   }
 
-     // ✅ Convertir hora:minuto a segundos para TIME
-   let time_s = wizard.data.type === 2 ? wizard.data.time_hour * 3600 + wizard.data.time_minute * 60 : 0;
+  // ✅ Convertir hora:minuto a segundos para TIME
+  let time_s = wizard.data.type === 2 ? wizard.data.time_hour * 3600 + wizard.data.time_minute * 60 : 0;
 
-   // ✅ Parsear fechas para enviar year/month/day
-   let year_start = 0, month_start = 0, day_start = 0;
-   let year_end = 0, month_end = 0, day_end = 0;
-   
-   if(wizard.data.type === 2) {
-     if(wizard.data.date_start) {
-       const dateStart = new Date(wizard.data.date_start);
-       year_start = dateStart.getFullYear();
-       month_start = dateStart.getMonth() + 1;
-       day_start = dateStart.getDate();
-     }
-     if(wizard.data.date_end) {
-       const dateEnd = new Date(wizard.data.date_end);
-       year_end = dateEnd.getFullYear();
-       month_end = dateEnd.getMonth() + 1;
-       day_end = dateEnd.getDate();
-     }
-   }
+  // ✅ Parsear fechas para enviar year/month/day (SIN timezone issues)
+  let year_start = 0, month_start = 0, day_start = 0;
+  let year_end = 0, month_end = 0, day_end = 0;
+  
+  if(wizard.data.type === 2) {
+    if(wizard.data.date_start) {
+      const [y, m, d] = wizard.data.date_start.split('-');
+      year_start = parseInt(y);
+      month_start = parseInt(m);
+      day_start = parseInt(d);
+    }
+    if(wizard.data.date_end) {
+      const [y, m, d] = wizard.data.date_end.split('-');
+      year_end = parseInt(y);
+      month_end = parseInt(m);
+      day_end = parseInt(d);
+    }
+  }
 
-   const params = new URLSearchParams();
-   params.append('id', wizard.data.id ?? -1);
-   params.append('sensors', wizard.data.sensors.join(','));
-   params.append('actuators', wizard.data.actuators.join(','));
-   params.append('type', wizard.data.type);
-   params.append('logic', wizard.data.logic);
-   params.append('delay', wizard.data.delay);
-   params.append('cooldown', wizard.data.cooldown);
-   params.append('interval', wizard.data.interval || 0);
-   params.append('actions', wizard.data.actions.join(','));
-   params.append('levels', wizard.data.levels.join(','));
-   params.append('cmp', cmps.join(','));
-   params.append('threshold', thresholds.join(','));
-   params.append('time_s', time_s);
-   params.append('year_start', year_start);
-   params.append('month_start', month_start);
-   params.append('day_start', day_start);
-   params.append('year_end', year_end);
-   params.append('month_end', month_end);
-   params.append('day_end', day_end);
+  const params = new URLSearchParams();  
+  params.append('id', wizard.data.id ?? -1);
+  params.append('sensors', wizard.data.sensors.join(','));
+  params.append('actuators', wizard.data.actuators.join(','));
+  params.append('type', wizard.data.type);
+  params.append('logic', wizard.data.logic);
+  params.append('delay', wizard.data.delay);
+  params.append('cooldown', wizard.data.cooldown);
+  params.append('interval', wizard.data.interval || 0);
+  params.append('actions', wizard.data.actions.join(','));
+  params.append('levels', wizard.data.levels.join(','));
+  params.append('cmp', cmps.join(','));
+  params.append('threshold', thresholds.join(','));
+  params.append('time_s', time_s);
+  params.append('year_start', year_start);
+  params.append('month_start', month_start);
+  params.append('day_start', day_start);
+  params.append('year_end', year_end);
+  params.append('month_end', month_end);
+  params.append('day_end', day_end);
 
   try {
     const res = await fetch('/rules/set', {
