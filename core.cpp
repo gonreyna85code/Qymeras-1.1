@@ -89,17 +89,20 @@ String get_uid() {
 }
 
 void setReport(uint8_t index, uint32_t uid, float value, float raw, bool state) {
-    if (index >= MAX_SENSORS) return;
-    reports[index].uid = uid;
-    reports[index].value = value;
-    reports[index].raw = raw;
-    reports[index].state = state;
+  if (index >= MAX_SENSORS)
+    return;
+  reports[index].uid = uid;
+  reports[index].value = value;
+  reports[index].raw = raw;
+  reports[index].state = state;
 }
 
 uint32_t encodeFloat(float v) {
-    if (v < MIN_VAL) v = MIN_VAL;
-    if (v > MAX_VAL) v = MAX_VAL;
-    return (uint32_t)((v - MIN_VAL) / (MAX_VAL - MIN_VAL) * 0xFFFFFFFF);
+  if (v < MIN_VAL)
+    v = MIN_VAL;
+  if (v > MAX_VAL)
+    v = MAX_VAL;
+  return (uint32_t)((v - MIN_VAL) / (MAX_VAL - MIN_VAL) * 0xFFFFFFFF);
 }
 
 void sendBinaryReport() {
@@ -118,16 +121,17 @@ void sendBinaryReport() {
   udp.write((uint8_t *)&hdr, sizeof(hdr));
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
-    if (c.type == sensors::SENSOR_NONE || !c.avail ) continue;
+    if (c.type == sensors::SENSOR_NONE || !c.avail)
+      continue;
     Packet pkt;
     pkt.id = c.uid;
     pkt.type = c.type;
     pkt.state = c.state ? 1 : 0;
-    if (c.type == sensors::SENSOR_LUMI ) {
-     pkt.value = (uint32_t)c.value; 
+    if (c.type == sensors::SENSOR_LUMI) {
+      pkt.value = (uint32_t)c.value;
     } else {
       pkt.value = encodeFloat(c.value);
-    }       
+    }
     udp.write((uint8_t *)&pkt, sizeof(pkt));
   }
   udp.endPacket();
@@ -139,9 +143,10 @@ void loop() {
     last_attempt = millis();
     connectWiFi();
   }
-  if (!wifi_connected) return;
+  if (!wifi_connected)
+    return;
   ArduinoOTA.handle();
-    
+
   if (first_report) {
     first_report = false;
     ::report();
@@ -157,24 +162,29 @@ void loop() {
   }
 
   int packetSize = udp.parsePacket();
-  if (packetSize < sizeof(PacketHeader)) return;
+  if (packetSize < sizeof(PacketHeader))
+    return;
   PacketHeader hdr;
   udp.read((uint8_t *)&hdr, sizeof(hdr));
-  if (hdr.magic != 0xA5) return;
-  if (hdr.version != 1) return;
-  if (hdr.size != packetSize) return;
+  if (hdr.magic != 0xA5)
+    return;
+  if (hdr.version != 1)
+    return;
+  if (hdr.size != packetSize)
+    return;
   int remaining = hdr.size - sizeof(PacketHeader);
   while (remaining >= sizeof(Packet)) {
     Packet pkt;
     udp.read((uint8_t *)&pkt, sizeof(pkt));
     remaining -= sizeof(Packet);
     int idx = sensors::findCalibByUid(pkt.id);
-    if (idx < 0) continue;
+    if (idx < 0)
+      continue;
     auto &c = sensors::calibrations[idx];
     ::onCommandHook(pkt.id, pkt.type, pkt.value, pkt.state);
     switch (pkt.type) {
       case sensors::TYPE_RELAY:
-        sensors::handleToggle(c.id);
+        sensors::setRelay(c.id, pkt.state);
         break;
       case sensors::TYPE_DIMMER:
         sensors::handleDimmer(c.id, pkt.value);

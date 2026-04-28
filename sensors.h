@@ -59,6 +59,7 @@ void applyPersistedStates();
 void applyFades();
 extern int findCalib(const String &key);
 extern int findCalibByUid(uint32_t uid);
+void setRelay(const String &key, bool target);
 void handleDimmer(const String &key, int value);
 void handleToggle(const String &key);
 RTCTime getTime();

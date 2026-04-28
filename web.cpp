@@ -35,44 +35,35 @@ ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) 
   return p;
 }
 
-ICACHE_FLASH_ATTR void handleRoot() {
-  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  core::server.send(200, "text/html", "");
-  core::server.sendContent_P(html::HTML_START);
-  core::server.sendContent_P(html::HTML_STYLES);
-  core::server.sendContent_P(html::HTML_BODY_START);
-  core::server.sendContent_P(html::HTML_TABS);
-  core::server.sendContent_P(html::HTML_DEVICES_SECTION);
-  core::server.sendContent_P(html::HTML_AUTOMATIONS_SECTION);
-  core::server.sendContent_P(html::HTML_CONFIG_SECTION);
-  core::server.sendContent_P(html::HTML_WIFI_SECTION);
-  core::server.sendContent_P(html::JS_CORE);
-
-  // WiFi mode check
+void sendStartupJS() {
   if (WiFi.getMode() == WIFI_AP)
     core::server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
   else
     core::server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
-
-  // Genset config
-  core::server.sendContent_P(PSTR("window.genset={broadcast_port:"));
+  core::server.sendContent_P(
+    PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+  core::server.sendContent_P(PSTR(
+    "window.genset={"
+    "broadcast_port:"));
   core::server.sendContent(String(core::genset.broadcast_port));
-  core::server.sendContent_P(PSTR(",command_port:"));
+  core::server.sendContent_P(PSTR(
+    ",command_port:"));
   core::server.sendContent(String(core::genset.command_port));
-  core::server.sendContent_P(PSTR(",report_interval:"));
+  core::server.sendContent_P(PSTR(
+    ",report_interval:"));
   core::server.sendContent(String(core::genset.report_interval));
   core::server.sendContent_P(PSTR("};"));
+}
 
-
-  core::server.sendContent_P(html::JS_DEVICES);
-  core::server.sendContent_P(html::JS_CARD_RENDERERS);
-  core::server.sendContent_P(html::JS_WIZARD_CORE);
-  core::server.sendContent_P(html::JS_WIZARD_STEPS);
-  core::server.sendContent_P(html::JS_WIZARD_VALIDATION);
-  core::server.sendContent_P(html::JS_WIZARD_HANDLERS);
-  core::server.sendContent_P(html::JS_INIT);
-  core::server.sendContent_P(html::HTML_BODY_END);
-  core::server.sendContent_P(html::HTML_END);
+ICACHE_FLASH_ATTR void handleRoot() {
+  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  core::server.send(200, "text/html", "");
+  core::server.sendContent_P(html::HTML_PAGE_1);
+  core::server.sendContent_P(html::HTML_PAGE_2);
+  sendStartupJS();
+  core::server.sendContent_P(html::HTML_PAGE_3);
+  core::server.sendContent_P(html::HTML_PAGE_4);
+  core::server.sendContent("");
 }
 
 ICACHE_FLASH_ATTR void handleSave() {

@@ -144,6 +144,14 @@ float calibrate(const String &key, float raw) {
 
 // ----------- ACTUADORES -----------
 
+void setRelay(const String &key, bool target) {
+  Calibration *c = getCalib(key);
+  if (!c || c->pin == 255) return;
+  if (c->type != TYPE_RELAY) return;
+  if (c->state == target) return;
+  handleToggle(key);
+}
+
 void handleDimmer(const String &key, int value) {
   Calibration *c = getCalib(key);
   if (!c || c->pin == 255) return;
