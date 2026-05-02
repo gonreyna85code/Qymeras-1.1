@@ -58,11 +58,13 @@ static bool isDateInRange(const Rule &r) {
   if (r.year_start == 0 && r.year_end == 0) {
     return true;
   }
-  time_t now = time(nullptr);
-  struct tm *timeinfo = localtime(&now);
-  int current_year = timeinfo->tm_year + 1900;
-  int current_month = timeinfo->tm_mon + 1;
-  int current_day = timeinfo->tm_mday;
+  if (!sensors::timeValid()) {
+    return false;
+  }
+  sensors::RTCTime now = sensors::getTime();
+  int current_year = now.year;
+  int current_month = now.month;
+  int current_day = now.day;
   bool after_start = (r.year_start == 0) || (current_year > r.year_start) || (current_year == r.year_start && current_month > r.month_start) || (current_year == r.year_start && current_month == r.month_start && current_day >= r.day_start);
   bool before_end = (r.year_end == 0) || (current_year < r.year_end) || (current_year == r.year_end && current_month < r.month_end) || (current_year == r.year_end && current_month == r.month_end && current_day <= r.day_end);
   return after_start && before_end;
@@ -138,12 +140,15 @@ void tick(uint32_t now_ms) {
 
     // --- TIME ---
     else if (r.type == RULE_TIME) {
+      if (!sensors::timeValid()) continue;
+      sensors::RTCTime now = sensors::getTime();
       uint16_t timeOfDay = sensors::getMinutesOfDay();
       uint16_t ruleTime = r.time_s / 60;
+      uint32_t currentDate = now.year * 10000UL + now.month * 100UL + now.day;
 
       if (timeOfDay >= ruleTime && timeOfDay < ruleTime + 1) {
-        if (s.last_time_exec != sensors::getTime().day) {
-          s.last_time_exec = sensors::getTime().day;
+        if (s.last_time_exec != currentDate) {
+          s.last_time_exec = currentDate;
           trigger = true;
         }
       }

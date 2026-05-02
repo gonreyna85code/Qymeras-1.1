@@ -2,7 +2,7 @@
 
 namespace html {
 // ================= WEB ===================
-const char HTML_PAGE_1[] PROGMEM = R"rawliteral(
+const char Styles[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <style>
 body{font-family:sans-serif;text-align:center;margin:0;background:#f4f4f4}
@@ -45,6 +45,9 @@ border:1px solid #ccc;
 }
 input[type=range]{width:100%}
 </style></head><body>
+)rawliteral";
+
+const char Tabs[] PROGMEM = R"rawliteral(
 <h2 style='background:#222;margin:0;padding:12px;text-align:center;color:#eee'>AntiMatter Satellite</h2>
 <div class='tabs'>
 <div class='tab' id='t_control'>Devices</div>
@@ -93,7 +96,7 @@ if(tab==='auto') loadRules();
 }
 )rawliteral";
 
-const char HTML_PAGE_2[] PROGMEM = R"rawliteral(
+const char Rules[] PROGMEM = R"rawliteral(
 function renderAutomationTable(rules){
 let html = `
 <div class='card'>
@@ -147,7 +150,7 @@ alert("delete rule "+i);
 }
 )rawliteral";
 
-const char HTML_PAGE_3[] PROGMEM = R"rawliteral(
+const char CardsSettings[] PROGMEM = R"rawliteral(
 const cardRenderers = {
 
 HUMI: (s, i) => `
@@ -404,7 +407,7 @@ DEFAULT: (s, i) => `
 };
 )rawliteral";
 
-const char HTML_PAGE_4[] PROGMEM = R"rawliteral(
+const char DeviceCards[] PROGMEM = R"rawliteral(
 
 const SensorType = Object.freeze({
   SENSOR_NONE: 0,
@@ -550,6 +553,9 @@ function deviceCard(name, value, id, state, fade, type) {
   <p><b id='dev_${id}'>${value}</b></p>
 </div>`;
 }
+)rawliteral";
+
+const char JS[] PROGMEM = R"rawliteral(
 
 /* -------------------- DEVICES -------------------- */
 
@@ -755,6 +761,10 @@ function factoryReset() {
     .then(() => alert('Reiniciando...'))
     .catch(() => alert('Error enviando reset'));
 }
+
+)rawliteral";
+
+const char AutoWizJS[] PROGMEM = R"rawliteral(
 
 /*--------------------------------------------------- WIZARD AUTOMATIONS ------------------------------------------------------------------------*/
 
@@ -1089,7 +1099,7 @@ function validateStep(stepNum) {
             alert(`⚠️ Debes completar el threshold para el sensor`);
             return false;
           }
-          const threshVal = parseInt(threshInput.value);
+          const threshVal = parseFloat(threshInput.value);
           if(isNaN(threshVal) || threshVal < -1000 || threshVal > 10000) {
             alert(`⚠️ El threshold debe estar entre -1000 y 10000`);
             return false;

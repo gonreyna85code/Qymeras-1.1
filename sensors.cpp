@@ -9,25 +9,72 @@ Calibration calibrations[MAX_SENSORS];
 
 Fade fadeActuator = { 0, 0, 0, 0, 0, false };
 Fade activeFades[MAX_SENSORS];
-RTCTime currentTime = {0, 0, 0, 0, 0, 0};
+static RTCTime currentTime = {0, 0, 0, 0, 0, 0};
+static RTCTime currentTimeRTC = {0, 0, 0, 0, 0, 0};
+static RTCTime currentTimeNTP = {0, 0, 0, 0, 0, 0};
+static bool rtcInitialized = false;
+static bool ntpInitialized = false;
+
+static bool isValidTime(const RTCTime &time) {
+  return time.year >= 2020 &&
+         time.month >= 1 && time.month <= 12 &&
+         time.day >= 1 && time.day <= 31 &&
+         time.hour <= 23 &&
+         time.minute <= 59 &&
+         time.second <= 59;
+}
+
+static void refreshCurrentTime() {
+  if (rtcInitialized && isValidTime(currentTimeRTC)) {
+    currentTime = currentTimeRTC;
+    return;
+  }
+  if (ntpInitialized && isValidTime(currentTimeNTP)) {
+    currentTime = currentTimeNTP;
+    return;
+  }
+  currentTime = {0, 0, 0, 0, 0, 0};
+}
+
 
 // ----------- UTILIDADES -----------
 
 void rtc(const RTCTime &time) {
-  currentTime = time;
+  currentTimeRTC = time;
+  rtcInitialized = isValidTime(time);
+  refreshCurrentTime();
+}
+
+void ntp(const RTCTime &time) {
+  currentTimeNTP = time;
+  ntpInitialized = isValidTime(time);
+  refreshCurrentTime();
 }
 
 RTCTime getTime() {
   return currentTime;
 }
 
+bool timeValid() {
+  return isValidTime(currentTime);
+}
+
+TimeSource getTimeSource() {
+  if (rtcInitialized && isValidTime(currentTimeRTC)) return TIME_RTC;
+  if (ntpInitialized && isValidTime(currentTimeNTP)) return TIME_NTP;
+  return TIME_NONE;
+}
+
 uint16_t getMinutesOfDay() {
-  return currentTime.hour * 60 + currentTime.minute;
+  RTCTime now = getTime();
+  return now.hour * 60 + now.minute;
 }
 
 uint32_t getUnixTime() {
-  uint32_t days = (currentTime.year - 1970) * 365 + currentTime.month * 30 + currentTime.day;
-  return days * 86400UL + currentTime.hour * 3600UL + currentTime.minute * 60UL + currentTime.second;
+  RTCTime now = getTime();
+  if (!isValidTime(now)) return 0;
+  uint32_t days = (now.year - 1970) * 365 + now.month * 30 + now.day;
+  return days * 86400UL + now.hour * 3600UL + now.minute * 60UL + now.second;
 }
 
 uint32_t hash32(const String &s) {

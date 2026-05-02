@@ -4,8 +4,11 @@
 #include <EEPROM.h>
 
 namespace html {
-extern const char HTML_PAGE_1[];
-extern const char HTML_PAGE_2[];
-extern const char HTML_PAGE_3[];
-extern const char HTML_PAGE_4[];
+extern const char Styles[];
+extern const char Tabs[];
+extern const char Rules[];
+extern const char CardsSettings[];
+extern const char DeviceCards[];
+extern const char JS[];
+extern const char AutoWizJS[];
 }

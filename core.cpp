@@ -6,6 +6,7 @@
 #include "web.h"
 #include "sensors.h"
 #include "automations.h"
+#include <time.h>
 
 namespace core {
 
@@ -30,6 +31,31 @@ static void startAP() {
   server.close();
   delay(50);
   server.begin();
+
+}
+
+static void initNTP() {
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+}
+
+static void updateNTPTime() {
+  if (sensors::getTimeSource() == sensors::TIME_RTC)
+    return;
+  time_t now = time(nullptr);
+  if (now < 1704067200)  // 2024-01-01
+    return;
+  struct tm *timeinfo = localtime(&now);
+  if (!timeinfo)
+    return;
+  sensors::RTCTime ntpTime = {
+    static_cast<uint16_t>(timeinfo->tm_year + 1900),
+    static_cast<uint8_t>(timeinfo->tm_mon + 1),
+    static_cast<uint8_t>(timeinfo->tm_mday),
+    static_cast<uint8_t>(timeinfo->tm_hour),
+    static_cast<uint8_t>(timeinfo->tm_min),
+    static_cast<uint8_t>(timeinfo->tm_sec)
+  };
+  sensors::ntp(ntpTime);
 }
 
 static void connectWiFi() {
@@ -47,6 +73,7 @@ static void connectWiFi() {
     if (WiFi.status() == WL_CONNECTED) {
       wifi_connected = true;
       udp.begin(genset.command_port);
+      initNTP();
       ArduinoOTA.begin();
       return;
     }
@@ -146,6 +173,7 @@ void loop() {
   if (!wifi_connected)
     return;
   ArduinoOTA.handle();
+  updateNTPTime();
 
   if (first_report) {
     first_report = false;

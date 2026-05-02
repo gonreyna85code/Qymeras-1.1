@@ -58,11 +58,14 @@ void sendStartupJS() {
 ICACHE_FLASH_ATTR void handleRoot() {
   core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   core::server.send(200, "text/html", "");
-  core::server.sendContent_P(html::HTML_PAGE_1);
-  core::server.sendContent_P(html::HTML_PAGE_2);
+  core::server.sendContent_P(html::Styles);
+  core::server.sendContent_P(html::Tabs);
   sendStartupJS();
-  core::server.sendContent_P(html::HTML_PAGE_3);
-  core::server.sendContent_P(html::HTML_PAGE_4);
+  core::server.sendContent_P(html::Rules);
+  core::server.sendContent_P(html::CardsSettings);
+  core::server.sendContent_P(html::DeviceCards);
+  core::server.sendContent_P(html::JS);
+  core::server.sendContent_P(html::AutoWizJS);
   core::server.sendContent("");
 }
 

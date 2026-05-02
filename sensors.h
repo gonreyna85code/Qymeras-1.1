@@ -53,6 +53,12 @@ struct RTCTime {
   uint8_t second;
 };
 
+enum TimeSource : uint8_t {
+  TIME_NONE,
+  TIME_NTP,
+  TIME_RTC
+};
+
 extern Calibration calibrations[MAX_SENSORS];
 extern Fade activeFades[MAX_SENSORS];
 void applyPersistedStates();
@@ -65,10 +71,14 @@ void handleToggle(const String &key);
 RTCTime getTime();
 uint16_t getMinutesOfDay();
 uint32_t getUnixTime();
+bool timeValid();
+TimeSource getTimeSource();
+
 
 // Time
 
 void rtc(const RTCTime &time);
+void ntp(const RTCTime &time);
 
 // Sensores
 void temperature(const String &key, float raw);
