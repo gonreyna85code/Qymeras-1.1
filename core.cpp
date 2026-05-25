@@ -12,7 +12,7 @@ namespace core {
 
 // ================= VARS ===================
 static WiFiUDP udp;
-WebServerCompat server(80);
+WebServerCompat* server = nullptr;
 static String uid;
 String ssid, password;
 static bool wifi_connected = false;
@@ -28,9 +28,9 @@ static void startAP() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);
   wifi_connected = false;
-  server.close();
+  if (server) server->close();
   delay(50);
-  server.begin();
+  if (server) server->begin();
 
 }
 
@@ -88,21 +88,22 @@ void begin() {
   web::loadGeneralSettings();
   automations::init();
   connectWiFi();
+  server = new WebServerCompat(80);
 
   ////////////////API//////////////////
 
-  server.on("/", web::handleRoot);
-  server.on("/save", HTTP_POST, web::handleSave);
-  server.on("/calib", web::handleCalib);
-  server.on("/calib/set", HTTP_POST, web::handleCalibSet);
-  server.on("/genset/save", HTTP_POST, web::handleGenSetSave);
-  server.on("/rules", web::handleRules);
-  server.on("/rules/set", HTTP_POST, web::handleSetRule);
-  server.on("/rules/delete", HTTP_POST, web::handleDeleteRule);
-  server.on("/factory", HTTP_POST, web::handleFactoryReset);
-  server.on("/toggle", HTTP_POST, web::handleToggleApi);
-  server.on("/dimmer", HTTP_POST, web::handleDimmerApi);
-  server.begin();
+  server->on("/", web::handleRoot);
+  server->on("/save", HTTP_POST, web::handleSave);
+  server->on("/calib", web::handleCalib);
+  server->on("/calib/set", HTTP_POST, web::handleCalibSet);
+  server->on("/genset/save", HTTP_POST, web::handleGenSetSave);
+  server->on("/rules", web::handleRules);
+  server->on("/rules/set", HTTP_POST, web::handleSetRule);
+  server->on("/rules/delete", HTTP_POST, web::handleDeleteRule);
+  server->on("/factory", HTTP_POST, web::handleFactoryReset);
+  server->on("/toggle", HTTP_POST, web::handleToggleApi);
+  server->on("/dimmer", HTTP_POST, web::handleDimmerApi);
+  server->begin();
   ::initSatellite();
 }
 
@@ -164,7 +165,8 @@ void sendBinaryReport() {
 }
 
 void loop() {
-  server.handleClient();
+  if (!server) return;
+  server->handleClient();
   if (!wifi_connected && millis() - last_attempt > WIFI_RETRY_INTERVAL) {
     last_attempt = millis();
     connectWiFi();
