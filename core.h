@@ -5,7 +5,7 @@
 #include "config.h"
 
 namespace core {
-extern WebServerCompat* server;
+extern WebServerCompat server;
 
 void begin();
 void loop();

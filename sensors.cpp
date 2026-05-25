@@ -111,7 +111,10 @@ void registerCalib(const String &key) {
       c.pin = 255;
       c.type = SENSOR_NONE;
       c.state = false;
-      c.value = 0;
+      c.value = 0;           
+      c.min = 0;            
+      c.max = 0;             
+      c.correction = 0;      
       c.pulse = false;
       c.fade = 0;
       c.pulse_ms = 0;
