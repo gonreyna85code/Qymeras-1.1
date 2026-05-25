@@ -74,7 +74,7 @@ ICACHE_FLASH_ATTR void handleSave() {
   core::server.sendHeader("Location", "/?saved=1");
   core::server.send(303);
   delay(1000);
-  ESP.restart();
+  RESET_MCU();
 }
 
 ICACHE_FLASH_ATTR void loadGeneralSettings() {
@@ -156,7 +156,7 @@ ICACHE_FLASH_ATTR void factoryReset() {
   }
   EEPROM.commit();
   delay(300);
-  ESP.restart();
+  RESET_MCU();
 }
 
 

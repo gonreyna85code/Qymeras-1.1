@@ -1,13 +1,11 @@
 #pragma once
 #include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
 #include <functional>
 #include "config.h"
 
 namespace core {
-extern ESP8266WebServer server;
+extern WebServerCompat server;
 
 void begin();
 void loop();

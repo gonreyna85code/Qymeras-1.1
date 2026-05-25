@@ -12,7 +12,7 @@ namespace core {
 
 // ================= VARS ===================
 static WiFiUDP udp;
-ESP8266WebServer server(80);
+WebServerCompat server(80);
 static String uid;
 String ssid, password;
 static bool wifi_connected = false;
@@ -65,9 +65,8 @@ static void connectWiFi() {
   }
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid.c_str(), password.c_str());
-  WiFi.setAutoConnect(true);
-  WiFi.setAutoReconnect(true);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  SET_AUTO_CONNECT();
+  SET_WIFI_SLEEP();
   unsigned long start = millis();
   while (millis() - start < 15000) {
     if (WiFi.status() == WL_CONNECTED) {
@@ -83,7 +82,7 @@ static void connectWiFi() {
 }
 
 void begin() {
-  uid = String(ESP.getChipId(), HEX);
+  uid = String(GET_CHIP_ID(), HEX);
   web::loadCredentials();
   web::loadCalibration();
   web::loadGeneralSettings();
@@ -136,7 +135,7 @@ void sendBinaryReport() {
   PacketHeader hdr;
   hdr.magic = 0xA5;
   hdr.version = 1;
-  hdr.uid = ESP.getChipId();
+  hdr.uid = GET_CHIP_ID();
   uint8_t count = 0;
   for (int i = 0; i < MAX_SENSORS; i++) {
     if (sensors::calibrations[i].type != sensors::SENSOR_NONE && sensors::calibrations[i].avail)

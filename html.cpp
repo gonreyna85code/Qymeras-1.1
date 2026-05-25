@@ -929,7 +929,7 @@ function showStep(n){
               <option value="1" ${cond.cmp===1?'selected':''}>< </option>
               <option value="2" ${cond.cmp===2?'selected':''}>= </option>
             </select>
-            <input id="thresh_${sIdx}" type="number" value="${cond.threshold}">
+            <input id="thresh_${sIdx}" type="number" step="any" value="${cond.threshold}">
           `}
         </div>`;
       });
