@@ -33,6 +33,10 @@ struct Calibration {
   uint8_t pin;
   String id;
   uint32_t uid = 0;
+  bool local = true;              // true=local, false=remote mirror
+  String device_ip = "";          // IP del device remoto si local=false
+  uint32_t device_uid = 0;        // UID del device remoto
+  unsigned long last_update = 0;  // Timestamp último update
 };
 
 struct Fade {
@@ -102,5 +106,9 @@ void updateFades();
 // Calibración
 float calibrate(const String &key, float raw);
 Calibration* getCalib(const String &key);
+
+// Remote sensors (mesh) - Procesadas por sensor.cpp
+void processRemoteSensor(uint32_t remote_uid, const String &remote_ip, uint8_t sensor_id, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value);
+void handleRemoteActuator(uint32_t remote_uid, const String &remote_ip, const String &actuator_name, bool action, int level = 0);
 
 }  // namespace sensors
