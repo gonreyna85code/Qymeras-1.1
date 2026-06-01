@@ -12,7 +12,7 @@ struct RemoteDevice {
   bool online;                 // true = visto en último intervalo
 };
 
-// Callback inyectable para procesar sensores descubiertos
+// Callback para sensores descubiertos (broadcasts remotos)
 typedef void (*SensorDiscoveryCallback)(
   uint32_t device_uid,
   const String &device_ip,
@@ -22,10 +22,21 @@ typedef void (*SensorDiscoveryCallback)(
   uint32_t sensor_value
 );
 
-// Discovery y sincronización
+// Callback para comandos recibidos (relés, dimmers)
+typedef void (*CommandCallback)(
+  uint8_t command_type,
+  uint32_t sensor_id,
+  uint32_t value,
+  bool state
+);
+
+// Inicialización y tick
 void init();                                          // Inicializa mesh listener
-void tick(uint32_t now_ms);                          // Tick principal (discovery, cleanup)
-void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);  // Inyector de callback
+void tick(uint32_t now_ms);                          // Tick principal (parse UDP)
+
+// Inyectores de callbacks
+void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);  // Para sensores remotos
+void setCommandCallback(CommandCallback cb);                 // Para comandos
 
 // Utilidades
 RemoteDevice* getRemoteDevice(uint32_t uid);

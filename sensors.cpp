@@ -20,8 +20,9 @@ void init() {
     calibrations[i].local = true;
   }
   
-  // Registrar callback de descubrimiento de mesh
-  mesh::setSensorDiscoveryCallback(processRemoteSensor);
+  // Registrar callbacks de mesh
+  mesh::setSensorDiscoveryCallback(onRemoteSensorDiscovered);
+  mesh::setCommandCallback(onRemoteCommand);
 }
 
 void applyPersistedStates() {
@@ -30,7 +31,6 @@ void applyPersistedStates() {
     if (calibrations[i].type != TYPE_RELAY) continue;
     if (!calibrations[i].persist) continue;
     if (calibrations[i].local) {
-      // Solo aplicar en actuadores locales
       pinMode(calibrations[i].pin, OUTPUT);
       digitalWrite(calibrations[i].pin, calibrations[i].pers_state ? HIGH : LOW);
     }
@@ -40,7 +40,7 @@ void applyPersistedStates() {
 void applyFades() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     if (!activeFades[i].active) continue;
-    if (!calibrations[i].local) continue;  // Solo fades locales
+    if (!calibrations[i].local) continue;
     
     unsigned long elapsed = millis() - activeFades[i].startTime;
     if (elapsed >= activeFades[i].duration) {
@@ -80,7 +80,6 @@ void setRelay(const String &key, bool target) {
     // Relé local
     c.state = target;
     if (c.pulse && target) {
-      // Pulso
       digitalWrite(c.pin, HIGH);
       delay(c.pulse_ms);
       digitalWrite(c.pin, LOW);
@@ -90,7 +89,7 @@ void setRelay(const String &key, bool target) {
     }
     if (c.persist) c.pers_state = target;
   } else {
-    // Relé remoto - POST a device remoto
+    // Relé remoto
     handleRemoteActuator(c.device_uid, c.device_ip, c.id, target);
   }
 }
@@ -115,7 +114,7 @@ void handleDimmer(const String &key, int value) {
     c.value = value;
     c.state = (value > 0);
   } else {
-    // Dimmer remoto - POST a device remoto
+    // Dimmer remoto
     handleRemoteActuator(c.device_uid, c.device_ip, c.id, true, value);
   }
 }
@@ -166,7 +165,7 @@ void temperature(const String &key, float raw) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);  // Simple hash
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_TEMP;
   c.local = true;
   c.value = calibrate(key, raw);
@@ -186,7 +185,7 @@ void humidity(const String &key, int raw) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_HUMI;
   c.local = true;
   c.value = calibrate(key, raw);
@@ -206,7 +205,7 @@ void luminosity(const String &key, int raw) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_LUMI;
   c.local = true;
   c.value = raw;
@@ -226,7 +225,7 @@ void level(const String &key, int raw) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_LEVEL;
   c.local = true;
   c.value = calibrate(key, raw);
@@ -246,7 +245,7 @@ void pressure(const String &key, float raw) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_PRESS;
   c.local = true;
   c.value = calibrate(key, raw);
@@ -266,7 +265,7 @@ void airQ(const String &key, const int &v) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_AIRQ;
   c.local = true;
   c.value = v;
@@ -286,7 +285,7 @@ void rain(const String &key, bool v) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = SENSOR_RAIN;
   c.local = true;
   c.state = v;
@@ -306,7 +305,7 @@ void relay(const String &key, uint8_t pin) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = TYPE_RELAY;
   c.pin = pin;
   c.local = true;
@@ -328,7 +327,7 @@ void dimmer(const String &key, uint8_t pin) {
   
   auto &c = calibrations[idx];
   c.id = key;
-  c.uid = core::GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
+  c.uid = GET_CHIP_ID() ^ ((uint32_t)key.c_str()[0] << 16);
   c.type = TYPE_DIMMER;
   c.pin = pin;
   c.local = true;
@@ -375,7 +374,7 @@ uint32_t getUnixTime() {
 
 bool timeValid() {
   time_t now = time(nullptr);
-  return now > 1704067200;  // After 2024-01-01
+  return now > 1704067200;
 }
 
 TimeSource getTimeSource() {
@@ -384,19 +383,17 @@ TimeSource getTimeSource() {
 
 void rtc(const RTCTime &t) {
   time_source = TIME_RTC;
-  // Set system time (plataforma-específica)
 }
 
 void ntp(const RTCTime &t) {
   time_source = TIME_NTP;
-  // Set system time (plataforma-específica)
 }
 
 // ========================================
-// MESH FUNCTIONS - Procesadas por sensors.cpp
+// MESH CALLBACKS - Procesadas por sensors.cpp
 // ========================================
 
-void processRemoteSensor(uint32_t remote_uid, const String &remote_ip, uint8_t sensor_id, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value) {
+void onRemoteSensorDiscovered(uint32_t remote_uid, const String &remote_ip, uint8_t sensor_id, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value) {
   // Buscar o crear sensor remoto en calibrations[]
   int idx = -1;
   for (int i = 0; i < MAX_SENSORS; i++) {
@@ -443,18 +440,41 @@ void processRemoteSensor(uint32_t remote_uid, const String &remote_ip, uint8_t s
   }
 }
 
+void onRemoteCommand(uint8_t command_type, uint32_t sensor_id, uint32_t value, bool state) {
+  // Procesar comando recibido (relay o dimmer)
+  int idx = findCalibByUid(sensor_id);
+  if (idx < 0) return;
+  
+  auto &c = calibrations[idx];
+  
+  switch (command_type) {
+    case TYPE_RELAY:
+      setRelay(c.id, state);
+      break;
+    case TYPE_DIMMER:
+      handleDimmer(c.id, (int)value);
+      break;
+  }
+  
+  // Llamar custom hook si existe
+  extern void onCommandHook(uint32_t id, uint8_t type, uint32_t value, bool state);
+  onCommandHook(sensor_id, command_type, value, state);
+}
+
 void handleRemoteActuator(uint32_t remote_uid, const String &remote_ip, const String &actuator_name, bool action, int level) {
   // Hacer POST HTTP al device remoto
   if (!WiFi.isConnected()) return;
   
   WiFiClient client;
   if (!client.connect(remote_ip.c_str(), 80)) {
-    return;  // No se puede conectar
+    return;
   }
   
-  String url = "/toggle?key=" + actuator_name;
+  String url;
   if (level >= 0) {
     url = "/dimmer?key=" + actuator_name + "&value=" + String(level);
+  } else {
+    url = "/toggle?key=" + actuator_name;
   }
   
   String request = "POST " + url + " HTTP/1.1\r\n";
