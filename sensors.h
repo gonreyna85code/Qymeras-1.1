@@ -33,6 +33,10 @@ struct Calibration {
   uint8_t pin;
   String id;
   uint32_t uid = 0;
+  bool local = true;              // true=local, false=remote mirror
+  String device_ip = "";          // IP del device remoto si local=false
+  uint32_t device_uid = 0;        // UID del device remoto
+  unsigned long last_update = 0;  // Timestamp último update
 };
 
 struct Fade {
@@ -61,6 +65,7 @@ enum TimeSource : uint8_t {
 
 extern Calibration calibrations[MAX_SENSORS];
 extern Fade activeFades[MAX_SENSORS];
+void init();
 void applyPersistedStates();
 void applyFades();
 extern int findCalib(const String &key);
@@ -74,9 +79,7 @@ uint32_t getUnixTime();
 bool timeValid();
 TimeSource getTimeSource();
 
-
 // Time
-
 void rtc(const RTCTime &time);
 void ntp(const RTCTime &time);
 
@@ -102,5 +105,10 @@ void updateFades();
 // Calibración
 float calibrate(const String &key, float raw);
 Calibration* getCalib(const String &key);
+
+// Mesh callbacks - Procesadas por sensors.cpp
+void onRemoteSensorDiscovered(uint32_t remote_uid, const String &remote_ip, uint8_t sensor_id, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value);
+void onRemoteCommand(uint8_t command_type, uint32_t sensor_id, uint32_t value, bool state);
+void handleRemoteActuator(uint32_t remote_uid, const String &remote_ip, const String &actuator_name, bool action, int level = 0);
 
 }  // namespace sensors
