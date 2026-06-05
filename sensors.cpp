@@ -1,8 +1,7 @@
-#include "sensors.h"
 #include "config.h"
+#include "sensors.h"
 #include "core.h"
 #include "mesh.h"
-#include <WiFi.h>
 #include <WiFiClient.h>
 #include <time.h>
 

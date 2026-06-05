@@ -19,7 +19,7 @@ struct __attribute__((packed)) CalibrationPersist {
   uint32_t fade;
 };
 
-PROGMEM_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
+ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
   CalibrationPersist p = {};
 
   p.pers_state = c.pers_state;
@@ -55,7 +55,7 @@ void sendStartupJS() {
   core::server.sendContent_P(PSTR("};"));
 }
 
-PROGMEM_ATTR void handleRoot() {
+ICACHE_FLASH_ATTR void handleRoot() {
   core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   core::server.send(200, "text/html", "");
   core::server.sendContent_P(html_content::Styles);
@@ -69,7 +69,7 @@ PROGMEM_ATTR void handleRoot() {
   core::server.sendContent("");
 }
 
-PROGMEM_ATTR void handleSave() {
+ICACHE_FLASH_ATTR void handleSave() {
   saveCredentials(core::server.arg("ssid"), core::server.arg("pass"));
   core::server.sendHeader("Location", "/?saved=1");
   core::server.send(303);
@@ -77,7 +77,7 @@ PROGMEM_ATTR void handleSave() {
   RESET_MCU();
 }
 
-PROGMEM_ATTR void loadGeneralSettings() {
+ICACHE_FLASH_ATTR void loadGeneralSettings() {
   EEPROM.begin(EEPROM_SIZE);
   int addr = EEPROM_GENSET_START;
   EEPROM.get(addr, core::genset.broadcast_port);
@@ -94,7 +94,7 @@ PROGMEM_ATTR void loadGeneralSettings() {
     core::genset.report_interval = BROADCAST_INTERVAL;
 }
 
-PROGMEM_ATTR void loadCredentials() {
+ICACHE_FLASH_ATTR void loadCredentials() {
   EEPROM.begin(EEPROM_SIZE);
   int slen = EEPROM.read(EEPROM_CRED_START);
   if (slen < 0 || slen > 32) slen = 0;
@@ -115,7 +115,7 @@ PROGMEM_ATTR void loadCredentials() {
   }
 }
 
-PROGMEM_ATTR void saveGeneralSettings() {
+ICACHE_FLASH_ATTR void saveGeneralSettings() {
   EEPROM.begin(EEPROM_SIZE);
   int addr = EEPROM_GENSET_START;
   if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
@@ -133,7 +133,7 @@ PROGMEM_ATTR void saveGeneralSettings() {
   EEPROM.commit();
 }
 
-PROGMEM_ATTR void factoryReset() {
+ICACHE_FLASH_ATTR void factoryReset() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < EEPROM_RELAY_STATE_SIZE; i++) {
     EEPROM.write(EEPROM_RELAY_STATE_START + i, 0);
@@ -160,7 +160,7 @@ PROGMEM_ATTR void factoryReset() {
 }
 
 
-PROGMEM_ATTR void saveCredentials(const String &s, const String &p) {
+ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.write(EEPROM_CRED_START, s.length());
   for (int i = 0; i < s.length(); i++) EEPROM.write(EEPROM_CRED_START + 1 + i, s[i]);
@@ -170,7 +170,7 @@ PROGMEM_ATTR void saveCredentials(const String &s, const String &p) {
   EEPROM.commit();
 }
 
-PROGMEM_ATTR void handleGenSetSave() {
+ICACHE_FLASH_ATTR void handleGenSetSave() {
   if (core::server.method() != HTTP_POST) {
     core::server.send(405, "text/plain", "POST required");
     return;
@@ -186,7 +186,7 @@ PROGMEM_ATTR void handleGenSetSave() {
   core::server.send(200, "text/plain", "OK");
 }
 
-PROGMEM_ATTR void handleFactoryReset() {
+ICACHE_FLASH_ATTR void handleFactoryReset() {
   core::server.send(200, "text/plain", "RESET");
   delay(200);
   factoryReset();
@@ -211,7 +211,7 @@ void handleDimmerApi() {
   core::server.send(200, "text/plain", "OK");
 }
 
-PROGMEM_ATTR void loadCalibration() {
+ICACHE_FLASH_ATTR void loadCalibration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < MAX_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
@@ -231,7 +231,7 @@ PROGMEM_ATTR void loadCalibration() {
   }
 }
 
-PROGMEM_ATTR void saveCalibration() {
+ICACHE_FLASH_ATTR void saveCalibration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < MAX_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
@@ -259,7 +259,7 @@ void handleDeleteRule() {
   core::server.send(200, "text/plain", "ok");
 }
 
-PROGMEM_ATTR void handleRules() {
+ICACHE_FLASH_ATTR void handleRules() {
   if (core::server.method() != HTTP_GET) {
     core::server.send(405, "text/plain", "GET required");
     return;
@@ -638,7 +638,7 @@ void handleSetRule() {
   core::server.send(200, "text/plain", "ok");
 }
 
-PROGMEM_ATTR void handleCalib() {
+ICACHE_FLASH_ATTR void handleCalib() {
   if (core::server.method() != HTTP_GET) {
     core::server.send(405, "text/plain", "Method Not Allowed");
     return;
@@ -661,18 +661,32 @@ PROGMEM_ATTR void handleCalib() {
     core::server.sendContent("\"");
     core::server.sendContent(",\"value\":");
     char buf[24];
-    dtostrf(r.value, 0, 4, buf);
+    if (isnan(r.value) || isinf(r.value)) {
+      strcpy(buf, "0");
+    } else {
+      dtostrf(r.value, 0, 4, buf);
+    }
     core::server.sendContent(buf);
+
 #define SEND_INT(name, val) \
   core::server.sendContent(",\"" name "\":"); \
   core::server.sendContent(String(val));
+#define SEND_FLOAT(name, val) \
+  core::server.sendContent(",\"" name "\":"); \
+  { \
+    char fb[24]; \
+    if (isnan(val) || isinf(val)) strcpy(fb, "0"); \
+    else dtostrf(val, 0, 4, fb); \
+    core::server.sendContent(fb); \
+  }
 #define SEND_BOOL(name, val) \
   core::server.sendContent(",\"" name "\":"); \
   core::server.sendContent((val) ? "true" : "false");
+
     SEND_BOOL("pers_state", c.pers_state);
-    SEND_INT("min", c.min);
-    SEND_INT("max", c.max);
-    SEND_INT("correction", c.correction);
+    SEND_FLOAT("min", c.min);
+    SEND_FLOAT("max", c.max);
+    SEND_FLOAT("correction", c.correction);
     SEND_INT("avail", c.avail);
     SEND_BOOL("pulse", c.pulse);
     SEND_BOOL("state", r.state);
@@ -681,15 +695,18 @@ PROGMEM_ATTR void handleCalib() {
     SEND_INT("fade", c.fade);
     SEND_INT("type", c.type);
     SEND_INT("pin", c.pin);
+
 #undef SEND_INT
+#undef SEND_FLOAT
 #undef SEND_BOOL
+
     core::server.sendContent("}");
   }
   core::server.sendContent("]");
 }
 
 
-PROGMEM_ATTR void handleCalibSet() {
+ICACHE_FLASH_ATTR void handleCalibSet() {
   if (core::server.method() != HTTP_POST) {
     core::server.send(405, "text/plain", "POST required");
     return;
