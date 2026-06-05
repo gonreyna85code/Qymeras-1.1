@@ -19,7 +19,7 @@ struct __attribute__((packed)) CalibrationPersist {
   uint32_t fade;
 };
 
-ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
+PROGMEM_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
   CalibrationPersist p = {};
 
   p.pers_state = c.pers_state;
@@ -55,21 +55,21 @@ void sendStartupJS() {
   core::server.sendContent_P(PSTR("};"));
 }
 
-ICACHE_FLASH_ATTR void handleRoot() {
+PROGMEM_ATTR void handleRoot() {
   core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   core::server.send(200, "text/html", "");
-  core::server.sendContent_P(html::Styles);
-  core::server.sendContent_P(html::Tabs);
+  core::server.sendContent_P(html_content::Styles);
+  core::server.sendContent_P(html_content::Tabs);
   sendStartupJS();
-  core::server.sendContent_P(html::Rules);
-  core::server.sendContent_P(html::CardsSettings);
-  core::server.sendContent_P(html::DeviceCards);
-  core::server.sendContent_P(html::JS);
-  core::server.sendContent_P(html::AutoWizJS);
+  core::server.sendContent_P(html_content::Rules);
+  core::server.sendContent_P(html_content::CardsSettings);
+  core::server.sendContent_P(html_content::DeviceCards);
+  core::server.sendContent_P(html_content::JS);
+  core::server.sendContent_P(html_content::AutoWizJS);
   core::server.sendContent("");
 }
 
-ICACHE_FLASH_ATTR void handleSave() {
+PROGMEM_ATTR void handleSave() {
   saveCredentials(core::server.arg("ssid"), core::server.arg("pass"));
   core::server.sendHeader("Location", "/?saved=1");
   core::server.send(303);
@@ -77,7 +77,7 @@ ICACHE_FLASH_ATTR void handleSave() {
   RESET_MCU();
 }
 
-ICACHE_FLASH_ATTR void loadGeneralSettings() {
+PROGMEM_ATTR void loadGeneralSettings() {
   EEPROM.begin(EEPROM_SIZE);
   int addr = EEPROM_GENSET_START;
   EEPROM.get(addr, core::genset.broadcast_port);
@@ -94,7 +94,7 @@ ICACHE_FLASH_ATTR void loadGeneralSettings() {
     core::genset.report_interval = BROADCAST_INTERVAL;
 }
 
-ICACHE_FLASH_ATTR void loadCredentials() {
+PROGMEM_ATTR void loadCredentials() {
   EEPROM.begin(EEPROM_SIZE);
   int slen = EEPROM.read(EEPROM_CRED_START);
   if (slen < 0 || slen > 32) slen = 0;
@@ -115,7 +115,7 @@ ICACHE_FLASH_ATTR void loadCredentials() {
   }
 }
 
-ICACHE_FLASH_ATTR void saveGeneralSettings() {
+PROGMEM_ATTR void saveGeneralSettings() {
   EEPROM.begin(EEPROM_SIZE);
   int addr = EEPROM_GENSET_START;
   if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
@@ -133,7 +133,7 @@ ICACHE_FLASH_ATTR void saveGeneralSettings() {
   EEPROM.commit();
 }
 
-ICACHE_FLASH_ATTR void factoryReset() {
+PROGMEM_ATTR void factoryReset() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < EEPROM_RELAY_STATE_SIZE; i++) {
     EEPROM.write(EEPROM_RELAY_STATE_START + i, 0);
@@ -160,7 +160,7 @@ ICACHE_FLASH_ATTR void factoryReset() {
 }
 
 
-ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
+PROGMEM_ATTR void saveCredentials(const String &s, const String &p) {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.write(EEPROM_CRED_START, s.length());
   for (int i = 0; i < s.length(); i++) EEPROM.write(EEPROM_CRED_START + 1 + i, s[i]);
@@ -170,7 +170,7 @@ ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
   EEPROM.commit();
 }
 
-ICACHE_FLASH_ATTR void handleGenSetSave() {
+PROGMEM_ATTR void handleGenSetSave() {
   if (core::server.method() != HTTP_POST) {
     core::server.send(405, "text/plain", "POST required");
     return;
@@ -186,7 +186,7 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
   core::server.send(200, "text/plain", "OK");
 }
 
-ICACHE_FLASH_ATTR void handleFactoryReset() {
+PROGMEM_ATTR void handleFactoryReset() {
   core::server.send(200, "text/plain", "RESET");
   delay(200);
   factoryReset();
@@ -211,7 +211,7 @@ void handleDimmerApi() {
   core::server.send(200, "text/plain", "OK");
 }
 
-ICACHE_FLASH_ATTR void loadCalibration() {
+PROGMEM_ATTR void loadCalibration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < MAX_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
@@ -231,7 +231,7 @@ ICACHE_FLASH_ATTR void loadCalibration() {
   }
 }
 
-ICACHE_FLASH_ATTR void saveCalibration() {
+PROGMEM_ATTR void saveCalibration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < MAX_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
@@ -259,7 +259,7 @@ void handleDeleteRule() {
   core::server.send(200, "text/plain", "ok");
 }
 
-ICACHE_FLASH_ATTR void handleRules() {
+PROGMEM_ATTR void handleRules() {
   if (core::server.method() != HTTP_GET) {
     core::server.send(405, "text/plain", "GET required");
     return;
@@ -638,7 +638,7 @@ void handleSetRule() {
   core::server.send(200, "text/plain", "ok");
 }
 
-ICACHE_FLASH_ATTR void handleCalib() {
+PROGMEM_ATTR void handleCalib() {
   if (core::server.method() != HTTP_GET) {
     core::server.send(405, "text/plain", "Method Not Allowed");
     return;
@@ -689,7 +689,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
 }
 
 
-ICACHE_FLASH_ATTR void handleCalibSet() {
+PROGMEM_ATTR void handleCalibSet() {
   if (core::server.method() != HTTP_POST) {
     core::server.send(405, "text/plain", "POST required");
     return;

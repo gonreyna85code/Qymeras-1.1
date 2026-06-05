@@ -7,7 +7,7 @@
 
 
 
-// #define Relay_pin 6
+// #define Relay_pin 0
 // #define N_CH 4
 // #define PCF8591_ADDR 0x48
 // uint8_t ain[N_CH];
@@ -120,13 +120,13 @@ void report() {
   // sensors::humidity("HUMI2", soil1);          // 0-100
   // sensors::humidity("HUMI3", soil2);          // 0-100  
 
-  // sensors::relay("Switch", Relay_pin);        // pin number
+  //sensors::relay("Switch", Relay_pin);        // pin number
   sensors::luminosity("LUMI0", 15535);         // uint16_t, 0–65535 (normalized, Google Home expected range)
   sensors::airQ("AIRQ0", 2);                  // 0(GOOD)/1(WARN)/2(BAD)
   sensors::pressure("PRES0", 101);             // float
   sensors::level("LEVE0", 58);                // 0/100
   sensors::rain("RAIN0", true);               // true/false
-  // sensors::dimmer("DIMM0", 2);                // pin number
+  //sensors::dimmer("DIMM0", 2);                // pin number
 }
 
 

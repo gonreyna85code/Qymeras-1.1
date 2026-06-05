@@ -1,6 +1,6 @@
 #include "html.h"
 
-namespace html {
+namespace html_content {
 // ================= WEB ===================
 const char Styles[] PROGMEM = R"rawliteral(
 <!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>

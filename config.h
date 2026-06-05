@@ -11,7 +11,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 typedef ESP8266WebServer WebServerCompat;
-#define ICACHE_FLASH ICACHE_FLASH_ATTR
+#define PROGMEM_ATTR ICACHE_FLASH_ATTR
 #define GET_CHIP_ID() ESP.getChipId()
 #define SET_WIFI_SLEEP() WiFi.setSleepMode(WIFI_NONE_SLEEP)
 #define SET_AUTO_CONNECT() WiFi.setAutoConnect(true)

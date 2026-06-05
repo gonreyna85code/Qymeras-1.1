@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 
-namespace html {
+namespace html_content {
 extern const char Styles[];
 extern const char Tabs[];
 extern const char Rules[];
