@@ -5,6 +5,7 @@
 #include <string>
 #include "web.h"
 #include "sensors.h"
+#include "mesh.h"
 #include "automations.h"
 #include <time.h>
 
@@ -86,8 +87,10 @@ void begin() {
   web::loadCredentials();
   web::loadCalibration();
   web::loadGeneralSettings();
+  sensors::init();      // ← Inicializar sensors (registra callbacks de mesh)
   automations::init();
   connectWiFi();
+  mesh::init();         // ← Inicializar mesh (escucha UDP)
 
   ////////////////API//////////////////
 
@@ -179,45 +182,19 @@ void loop() {
     ::report();
     sensors::applyPersistedStates();
   }
+  
+  // Procesar broadcasts y comandos (locales y remotos)
+  mesh::tick(millis());
+  
   automations::tick(millis());
   sensors::applyFades();
   sensors::updateFades();
+  
   if (millis() - last_report >= genset.report_interval) {
     last_report = millis();
     ::report();
     sendBinaryReport();
   }
-
-  int packetSize = udp.parsePacket();
-  if (packetSize < sizeof(PacketHeader))
-    return;
-  PacketHeader hdr;
-  udp.read((uint8_t *)&hdr, sizeof(hdr));
-  if (hdr.magic != 0xA5)
-    return;
-  if (hdr.version != 1)
-    return;
-  if (hdr.size != packetSize)
-    return;
-  int remaining = hdr.size - sizeof(PacketHeader);
-  while (remaining >= sizeof(Packet)) {
-    Packet pkt;
-    udp.read((uint8_t *)&pkt, sizeof(pkt));
-    remaining -= sizeof(Packet);
-    int idx = sensors::findCalibByUid(pkt.id);
-    if (idx < 0)
-      continue;
-    auto &c = sensors::calibrations[idx];
-    ::onCommandHook(pkt.id, pkt.type, pkt.value, pkt.state);
-    switch (pkt.type) {
-      case sensors::TYPE_RELAY:
-        sensors::setRelay(c.id, pkt.state);
-        break;
-      case sensors::TYPE_DIMMER:
-        sensors::handleDimmer(c.id, pkt.value);
-        break;
-    }
-  }
 }
 
-}  // namespace satellite
+}  // namespace core
