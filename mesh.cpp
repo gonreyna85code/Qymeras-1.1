@@ -1,7 +1,6 @@
-#include "mesh.h"
 #include "config.h"
+#include "mesh.h"
 #include "core.h"
-#include <WiFi.h>
 #include <WiFiUdp.h>
 
 namespace mesh {
