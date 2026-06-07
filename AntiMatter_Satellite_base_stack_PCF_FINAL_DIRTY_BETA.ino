@@ -2,8 +2,8 @@
 #include "core.h"
 #include "sensors.h"
 //#include <Wire.h>
-#include <math.h>
-#include <stdint.h>
+//#include <math.h>
+//#include <stdint.h>
 
 
 

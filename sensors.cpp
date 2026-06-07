@@ -456,8 +456,7 @@ void onRemoteCommand(uint8_t command_type, uint32_t sensor_id, uint32_t value, b
   }
   
   // Llamar custom hook si existe
-  extern void onCommandHook(uint32_t id, uint8_t type, uint32_t value, bool state);
-  onCommandHook(sensor_id, command_type, value, state);
+  ::onCommandHook(sensor_id, command_type, value, state);
 }
 
 void handleRemoteActuator(uint32_t remote_uid, const String &remote_ip, const String &actuator_name, bool action, int level) {
