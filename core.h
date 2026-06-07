@@ -31,17 +31,27 @@ extern ReportEntry reports[MAX_SENSORS];
 void setReport(uint8_t index, uint32_t uid, float value, float raw, bool state);
 
 #pragma pack(push, 1)
+static const uint8_t PACKET_VERSION = 2;
+static const uint8_t SENSOR_NAME_LEN = 24;
+
 struct PacketHeader {
   uint8_t magic;
   uint8_t version;
   uint16_t size;
   uint32_t uid;
 };
-struct Packet {
-  uint8_t id;
+struct PacketV1 {
+  uint32_t id;
   uint8_t type;
   uint32_t value;
   uint8_t state;
+};
+struct Packet {
+  uint32_t id;
+  uint8_t type;
+  uint32_t value;
+  uint8_t state;
+  char name[SENSOR_NAME_LEN];
 };
 #pragma pack(pop)
 }

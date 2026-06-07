@@ -702,6 +702,29 @@ ICACHE_FLASH_ATTR void handleCalib() {
 
     core::server.sendContent("}");
   }
+  if (sensors::timeValid()) {
+    if (!firstObj) core::server.sendContent(",");
+    sensors::RTCTime now = sensors::getTime();
+    core::server.sendContent("{\"id\":");
+    core::server.sendContent(String(MAX_SENSORS));
+    core::server.sendContent(",\"name\":\"TIME\",\"value\":");
+    core::server.sendContent(String(sensors::getUnixTime()));
+    core::server.sendContent(",\"year\":");
+    core::server.sendContent(String(now.year));
+    core::server.sendContent(",\"month\":");
+    core::server.sendContent(String(now.month));
+    core::server.sendContent(",\"day\":");
+    core::server.sendContent(String(now.day));
+    core::server.sendContent(",\"hour\":");
+    core::server.sendContent(String(now.hour));
+    core::server.sendContent(",\"minute\":");
+    core::server.sendContent(String(now.minute));
+    core::server.sendContent(",\"second\":");
+    core::server.sendContent(String(now.second));
+    core::server.sendContent(",\"avail\":1,\"state\":true,\"type\":");
+    core::server.sendContent(String(sensors::SENSOR_TIME));
+    core::server.sendContent(",\"pin\":0}");
+  }
   core::server.sendContent("]");
 }
 

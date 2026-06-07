@@ -16,7 +16,8 @@ struct RemoteDevice {
 typedef void (*SensorDiscoveryCallback)(
   uint32_t device_uid,
   const String &device_ip,
-  uint8_t sensor_id,
+  uint32_t sensor_id,
+  const String &sensor_name,
   uint8_t sensor_type,
   bool sensor_state,
   uint32_t sensor_value

@@ -5,7 +5,7 @@
 
 namespace mesh {
 
-static RemoteDevice remote_devices[10];
+static RemoteDevice remote_devices[MAX_SENSORS];
 static int remote_device_count = 0;
 static unsigned long last_cleanup = 0;
 static WiFiUDP mesh_udp;
@@ -13,7 +13,7 @@ static SensorDiscoveryCallback sensor_callback = nullptr;
 static CommandCallback command_callback = nullptr;
 
 void init() {
-  mesh_udp.begin(BROADCAST_PORT);
+  mesh_udp.begin(core::genset.broadcast_port);
 }
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
@@ -36,7 +36,7 @@ void tick(uint32_t now_ms) {
   
   // Validar header
   if (hdr.magic != 0xA5) return;
-  if (hdr.version != 1) return;
+  if (hdr.version != 1 && hdr.version != core::PACKET_VERSION) return;
   if (hdr.size != packet_size) return;
   
   uint32_t local_uid = GET_CHIP_ID();
@@ -46,16 +46,28 @@ void tick(uint32_t now_ms) {
   
   // Procesar paquetes
   int remaining = hdr.size - sizeof(core::PacketHeader);
-  while (remaining >= (int)sizeof(core::Packet)) {
+  int packet_len = (hdr.version == 1) ? sizeof(core::PacketV1) : sizeof(core::Packet);
+  while (remaining >= packet_len) {
     core::Packet pkt;
-    mesh_udp.read((uint8_t*)&pkt, sizeof(pkt));
-    remaining -= sizeof(core::Packet);
+    memset(&pkt, 0, sizeof(pkt));
+    if (hdr.version == 1) {
+      core::PacketV1 pkt_v1;
+      mesh_udp.read((uint8_t*)&pkt_v1, sizeof(pkt_v1));
+      pkt.id = pkt_v1.id;
+      pkt.type = pkt_v1.type;
+      pkt.value = pkt_v1.value;
+      pkt.state = pkt_v1.state;
+    } else {
+      mesh_udp.read((uint8_t*)&pkt, sizeof(pkt));
+      pkt.name[sizeof(pkt.name) - 1] = '\0';
+    }
+    remaining -= packet_len;
     
     if (is_remote) {
       // ===== PRESENCIA REMOTA =====
       // Llamar sensor discovery callback
       if (sensor_callback) {
-        sensor_callback(hdr.uid, remote_ip, pkt.id, pkt.type, pkt.state, pkt.value);
+        sensor_callback(hdr.uid, remote_ip, pkt.id, String(pkt.name), pkt.type, pkt.state, pkt.value);
       }
       
       // Actualizar tabla de devices remotos
@@ -67,7 +79,7 @@ void tick(uint32_t now_ms) {
         }
       }
       
-      if (idx == -1 && remote_device_count < 10) {
+      if (idx == -1 && remote_device_count < MAX_SENSORS) {
         idx = remote_device_count++;
       }
       

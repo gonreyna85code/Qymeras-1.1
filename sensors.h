@@ -14,7 +14,10 @@ enum SensorType : uint8_t {
   SENSOR_AIRQ,
   SENSOR_RAIN,
   TYPE_DIMMER,
-  TYPE_RELAY
+  TYPE_RELAY,
+  SENSOR_TIME,
+  SENSOR_GENERIC,
+  SENSOR_CONTACT
 };
 
 struct Calibration {
@@ -91,6 +94,8 @@ void level(const String &key, int raw);
 void pressure(const String &key, float raw);
 void airQ(const String &key, const int &v);
 void rain(const String &key, bool v);
+void generic(const String &key, float raw);
+void contact(const String &key, bool v);
 
 // Actuadores
 void relay(const String &key, uint8_t pin);
@@ -107,7 +112,7 @@ float calibrate(const String &key, float raw);
 Calibration* getCalib(const String &key);
 
 // Mesh callbacks - Procesadas por sensors.cpp
-void onRemoteSensorDiscovered(uint32_t remote_uid, const String &remote_ip, uint8_t sensor_id, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value);
+void onRemoteSensorDiscovered(uint32_t remote_uid, const String &remote_ip, uint32_t sensor_id, const String &sensor_name, uint8_t sensor_type, bool sensor_state, uint32_t sensor_value);
 void onRemoteCommand(uint8_t command_type, uint32_t sensor_id, uint32_t value, bool state);
 void handleRemoteActuator(uint32_t remote_uid, const String &remote_ip, const String &actuator_name, bool action, int level = 0);
 

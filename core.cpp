@@ -85,9 +85,9 @@ static void connectWiFi() {
 void begin() {
   uid = String(GET_CHIP_ID(), HEX);
   web::loadCredentials();
-  web::loadCalibration();
   web::loadGeneralSettings();
   sensors::init();      // ← Inicializar sensors (registra callbacks de mesh)
+  web::loadCalibration();
   automations::init();
   connectWiFi();
   mesh::init();         // ← Inicializar mesh (escucha UDP)
@@ -137,11 +137,12 @@ uint32_t encodeFloat(float v) {
 void sendBinaryReport() {
   PacketHeader hdr;
   hdr.magic = 0xA5;
-  hdr.version = 1;
+  hdr.version = PACKET_VERSION;
   hdr.uid = GET_CHIP_ID();
   uint8_t count = 0;
   for (int i = 0; i < MAX_SENSORS; i++) {
-    if (sensors::calibrations[i].type != sensors::SENSOR_NONE && sensors::calibrations[i].avail)
+    auto &c = sensors::calibrations[i];
+    if (c.local && c.type != sensors::SENSOR_NONE && c.uid != 0)
       count++;
   }
   uint16_t payloadSize = count * sizeof(Packet);
@@ -150,12 +151,14 @@ void sendBinaryReport() {
   udp.write((uint8_t *)&hdr, sizeof(hdr));
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
-    if (c.type == sensors::SENSOR_NONE || !c.avail)
+    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0)
       continue;
     Packet pkt;
+    memset(&pkt, 0, sizeof(pkt));
     pkt.id = c.uid;
     pkt.type = c.type;
     pkt.state = c.state ? 1 : 0;
+    strncpy(pkt.name, c.id.c_str(), sizeof(pkt.name) - 1);
     if (c.type == sensors::SENSOR_LUMI) {
       pkt.value = (uint32_t)c.value;
     } else {
