@@ -96,7 +96,7 @@ void setRelay(const String &key, bool target) {
       digitalWrite(c.pin, target ? HIGH : LOW);
     }
     if (c.persist) c.pers_state = target;
-    core::setReport(idx, c.uid, c.value, c.value, c.state);
+    mesh::setReport(idx, c.uid, c.value, c.value, c.state);
   } else {
     // Relé remoto
     handleRemoteActuator(c.device_uid, c.device_ip, c.id, target);
@@ -122,7 +122,7 @@ void handleDimmer(const String &key, int value) {
     }
     c.value = value;
     c.state = (value > 0);
-    core::setReport(idx, c.uid, c.value, c.value, c.state);
+    mesh::setReport(idx, c.uid, c.value, c.value, c.state);
   } else {
     // Dimmer remoto
     handleRemoteActuator(c.device_uid, c.device_ip, c.id, true, value);
@@ -179,7 +179,7 @@ void temperature(const String &key, float raw) {
   c.type = SENSOR_TEMP;
   c.local = true;
   c.value = calibrate(key, raw);
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void humidity(const String &key, int raw) {
@@ -200,7 +200,7 @@ void humidity(const String &key, int raw) {
   c.type = SENSOR_HUMI;
   c.local = true;
   c.value = calibrate(key, raw);
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void luminosity(const String &key, int raw) {
@@ -221,7 +221,7 @@ void luminosity(const String &key, int raw) {
   c.type = SENSOR_LUMI;
   c.local = true;
   c.value = raw;
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void level(const String &key, int raw) {
@@ -242,7 +242,7 @@ void level(const String &key, int raw) {
   c.type = SENSOR_LEVEL;
   c.local = true;
   c.value = calibrate(key, raw);
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void pressure(const String &key, float raw) {
@@ -263,7 +263,7 @@ void pressure(const String &key, float raw) {
   c.type = SENSOR_PRESS;
   c.local = true;
   c.value = calibrate(key, raw);
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void airQ(const String &key, const int &v) {
@@ -284,7 +284,7 @@ void airQ(const String &key, const int &v) {
   c.type = SENSOR_AIRQ;
   c.local = true;
   c.value = v;
-  core::setReport(idx, c.uid, c.value, v, c.state);
+  mesh::setReport(idx, c.uid, c.value, v, c.state);
 }
 
 void rain(const String &key, bool v) {
@@ -306,7 +306,7 @@ void rain(const String &key, bool v) {
   c.local = true;
   c.state = v;
   c.value = v ? 1.0f : 0.0f;
-  core::setReport(idx, c.uid, c.value, c.value, c.state);
+  mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
 void generic(const String &key, float raw) {
@@ -327,7 +327,7 @@ void generic(const String &key, float raw) {
   c.type = SENSOR_GENERIC;
   c.local = true;
   c.value = calibrate(key, raw);
-  core::setReport(idx, c.uid, c.value, raw, c.state);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
 }
 
 void contact(const String &key, bool v) {
@@ -349,7 +349,7 @@ void contact(const String &key, bool v) {
   c.local = true;
   c.state = v;
   c.value = v ? 1.0f : 0.0f;
-  core::setReport(idx, c.uid, c.value, c.value, c.state);
+  mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
 void relay(const String &key, uint8_t pin) {
@@ -372,7 +372,7 @@ void relay(const String &key, uint8_t pin) {
   c.local = true;
   pinMode(pin, OUTPUT);
   digitalWrite(pin, LOW);
-  core::setReport(idx, c.uid, c.value, c.value, c.state);
+  mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
 void dimmer(const String &key, uint8_t pin) {
@@ -395,7 +395,7 @@ void dimmer(const String &key, uint8_t pin) {
   c.local = true;
   pinMode(pin, OUTPUT);
   analogWrite(pin, 0);
-  core::setReport(idx, c.uid, c.value, c.value, c.state);
+  mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
 float calibrate(const String &key, float raw) {
@@ -505,7 +505,7 @@ void onRemoteSensorDiscovered(uint32_t remote_uid, const String &remote_ip, uint
     } else if (c.id == "") {
       c.id = "Remote_" + String(remote_uid, HEX) + "_" + String(sensor_id);
     }
-    core::setReport(idx, c.uid, c.value, c.value, c.state);
+    mesh::setReport(idx, c.uid, c.value, c.value, c.state);
   }
 }
 

@@ -12,27 +12,22 @@
 namespace core {
 
 // ================= VARS ===================
-static WiFiUDP udp;
-WebServerCompat server(80);
+
 static String uid;
 String ssid, password;
 static bool wifi_connected = false;
-ReportEntry reports[MAX_SENSORS];
 static unsigned long last_attempt = 0;
 static unsigned long last_report = 0;
 bool first_report = true;
 GeneralSettings genset;
-float MIN_VAL = -50.0f;
-float MAX_VAL = 150.0f;
 
 static void startAP() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);
   wifi_connected = false;
-  server.close();
+  web::server.close();
   delay(50);
-  server.begin();
-
+  web::server.begin();
 }
 
 static void initNTP() {
@@ -72,7 +67,7 @@ static void connectWiFi() {
   while (millis() - start < 15000) {
     if (WiFi.status() == WL_CONNECTED) {
       wifi_connected = true;
-      udp.begin(genset.command_port);
+      mesh::udp.begin(genset.command_port);
       initNTP();
       ArduinoOTA.begin();
       return;
@@ -86,26 +81,12 @@ void begin() {
   uid = String(GET_CHIP_ID(), HEX);
   web::loadCredentials();
   web::loadGeneralSettings();
-  sensors::init();      // ← Inicializar sensors (registra callbacks de mesh)
+  sensors::init();
   web::loadCalibration();
   automations::init();
   connectWiFi();
-  mesh::init();         // ← Inicializar mesh (escucha UDP)
-
-  ////////////////API//////////////////
-
-  server.on("/", web::handleRoot);
-  server.on("/save", HTTP_POST, web::handleSave);
-  server.on("/calib", web::handleCalib);
-  server.on("/calib/set", HTTP_POST, web::handleCalibSet);
-  server.on("/genset/save", HTTP_POST, web::handleGenSetSave);
-  server.on("/rules", web::handleRules);
-  server.on("/rules/set", HTTP_POST, web::handleSetRule);
-  server.on("/rules/delete", HTTP_POST, web::handleDeleteRule);
-  server.on("/factory", HTTP_POST, web::handleFactoryReset);
-  server.on("/toggle", HTTP_POST, web::handleToggleApi);
-  server.on("/dimmer", HTTP_POST, web::handleDimmerApi);
-  server.begin();
+  mesh::init();
+  web::init();
   ::initSatellite();
 }
 
@@ -113,91 +94,35 @@ bool is_connected() {
   return wifi_connected;
 }
 
-String get_uid() {
-  return uid;
-}
-
-void setReport(uint8_t index, uint32_t uid, float value, float raw, bool state) {
-  if (index >= MAX_SENSORS)
-    return;
-  reports[index].uid = uid;
-  reports[index].value = value;
-  reports[index].raw = raw;
-  reports[index].state = state;
-}
-
-uint32_t encodeFloat(float v) {
-  if (v < MIN_VAL)
-    v = MIN_VAL;
-  if (v > MAX_VAL)
-    v = MAX_VAL;
-  return (uint32_t)((v - MIN_VAL) / (MAX_VAL - MIN_VAL) * 0xFFFFFFFF);
-}
-
-void sendBinaryReport() {
-  PacketHeader hdr;
-  hdr.magic = 0xA5;
-  hdr.version = PACKET_VERSION;
-  hdr.uid = GET_CHIP_ID();
-  uint8_t count = 0;
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    auto &c = sensors::calibrations[i];
-    if (c.local && c.type != sensors::SENSOR_NONE && c.uid != 0)
-      count++;
-  }
-  uint16_t payloadSize = count * sizeof(Packet);
-  hdr.size = sizeof(PacketHeader) + payloadSize;
-  udp.beginPacket("255.255.255.255", genset.broadcast_port);
-  udp.write((uint8_t *)&hdr, sizeof(hdr));
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    auto &c = sensors::calibrations[i];
-    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0)
-      continue;
-    Packet pkt;
-    memset(&pkt, 0, sizeof(pkt));
-    pkt.id = c.uid;
-    pkt.type = c.type;
-    pkt.state = c.state ? 1 : 0;
-    strncpy(pkt.name, c.id.c_str(), sizeof(pkt.name) - 1);
-    if (c.type == sensors::SENSOR_LUMI) {
-      pkt.value = (uint32_t)c.value;
-    } else {
-      pkt.value = encodeFloat(c.value);
-    }
-    udp.write((uint8_t *)&pkt, sizeof(pkt));
-  }
-  udp.endPacket();
-}
-
 void loop() {
-  server.handleClient();
+
   if (!wifi_connected && millis() - last_attempt > WIFI_RETRY_INTERVAL) {
     last_attempt = millis();
     connectWiFi();
   }
+
   if (!wifi_connected)
     return;
-  ArduinoOTA.handle();
-  updateNTPTime();
-
+  
   if (first_report) {
     first_report = false;
     ::report();
     sensors::applyPersistedStates();
   }
-  
-  // Procesar broadcasts y comandos (locales y remotos)
-  mesh::tick(millis());
-  
+
+  web::server.handleClient();
+  updateNTPTime(); 
+  mesh::tick(millis());  
   automations::tick(millis());
   sensors::applyFades();
   sensors::updateFades();
-  
+  ArduinoOTA.handle();
+
   if (millis() - last_report >= genset.report_interval) {
     last_report = millis();
     ::report();
-    sendBinaryReport();
-  }
+    mesh::sendBinaryReport();
+  }  
 }
 
 }  // namespace core

@@ -1,11 +1,12 @@
 #include "web.h"
 #include "html.h"
 #include "core.h"
-#include "config.h"
+#include "mesh.h"
 #include "sensors.h"
 #include "automations.h"
 
 namespace web {
+WebServerCompat server(80);
 
 struct __attribute__((packed)) CalibrationPersist {
   bool pers_state;
@@ -37,42 +38,42 @@ ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) 
 
 void sendStartupJS() {
   if (WiFi.getMode() == WIFI_AP)
-    core::server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
+    server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
   else
-    core::server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
-  core::server.sendContent_P(
+    server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
+  server.sendContent_P(
     PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
-  core::server.sendContent_P(PSTR(
+  server.sendContent_P(PSTR(
     "window.genset={"
     "broadcast_port:"));
-  core::server.sendContent(String(core::genset.broadcast_port));
-  core::server.sendContent_P(PSTR(
+  server.sendContent(String(core::genset.broadcast_port));
+  server.sendContent_P(PSTR(
     ",command_port:"));
-  core::server.sendContent(String(core::genset.command_port));
-  core::server.sendContent_P(PSTR(
+  server.sendContent(String(core::genset.command_port));
+  server.sendContent_P(PSTR(
     ",report_interval:"));
-  core::server.sendContent(String(core::genset.report_interval));
-  core::server.sendContent_P(PSTR("};"));
+  server.sendContent(String(core::genset.report_interval));
+  server.sendContent_P(PSTR("};"));
 }
 
 ICACHE_FLASH_ATTR void handleRoot() {
-  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  core::server.send(200, "text/html", "");
-  core::server.sendContent_P(html_content::Styles);
-  core::server.sendContent_P(html_content::Tabs);
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", "");
+  server.sendContent_P(html_content::Styles);
+  server.sendContent_P(html_content::Tabs);
   sendStartupJS();
-  core::server.sendContent_P(html_content::Rules);
-  core::server.sendContent_P(html_content::CardsSettings);
-  core::server.sendContent_P(html_content::DeviceCards);
-  core::server.sendContent_P(html_content::JS);
-  core::server.sendContent_P(html_content::AutoWizJS);
-  core::server.sendContent("");
+  server.sendContent_P(html_content::Rules);
+  server.sendContent_P(html_content::CardsSettings);
+  server.sendContent_P(html_content::DeviceCards);
+  server.sendContent_P(html_content::JS);
+  server.sendContent_P(html_content::AutoWizJS);
+  server.sendContent("");
 }
 
 ICACHE_FLASH_ATTR void handleSave() {
-  saveCredentials(core::server.arg("ssid"), core::server.arg("pass"));
-  core::server.sendHeader("Location", "/?saved=1");
-  core::server.send(303);
+  saveCredentials(server.arg("ssid"), server.arg("pass"));
+  server.sendHeader("Location", "/?saved=1");
+  server.send(303);
   delay(1000);
   RESET_MCU();
 }
@@ -171,44 +172,44 @@ ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
 }
 
 ICACHE_FLASH_ATTR void handleGenSetSave() {
-  if (core::server.method() != HTTP_POST) {
-    core::server.send(405, "text/plain", "POST required");
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "POST required");
     return;
   }
-  if (core::server.hasArg("broadcast"))
-    core::genset.broadcast_port = core::server.arg("broadcast").toInt();
-  if (core::server.hasArg("command"))
-    core::genset.command_port = core::server.arg("command").toInt();
-  if (core::server.hasArg("interval"))
-    core::genset.report_interval = core::server.arg("interval").toInt();
+  if (server.hasArg("broadcast"))
+    core::genset.broadcast_port = server.arg("broadcast").toInt();
+  if (server.hasArg("command"))
+    core::genset.command_port = server.arg("command").toInt();
+  if (server.hasArg("interval"))
+    core::genset.report_interval = server.arg("interval").toInt();
   saveGeneralSettings();
-  core::server.sendHeader("Location", "/");
-  core::server.send(200, "text/plain", "OK");
+  server.sendHeader("Location", "/");
+  server.send(200, "text/plain", "OK");
 }
 
 ICACHE_FLASH_ATTR void handleFactoryReset() {
-  core::server.send(200, "text/plain", "RESET");
+  server.send(200, "text/plain", "RESET");
   delay(200);
   factoryReset();
 }
 
 void handleToggleApi() {
-  if (!core::server.hasArg("key")) {
-    core::server.send(400, "text/plain", "key required");
+  if (!server.hasArg("key")) {
+    server.send(400, "text/plain", "key required");
     return;
   }
-  sensors::handleToggle(core::server.arg("key"));
-  core::server.send(200, "text/plain", "OK");
+  sensors::handleToggle(server.arg("key"));
+  server.send(200, "text/plain", "OK");
 }
 
 void handleDimmerApi() {
-  if (!core::server.hasArg("value") || !core::server.hasArg("key")) {
-    core::server.send(400, "text/plain", "value required");
+  if (!server.hasArg("value") || !server.hasArg("key")) {
+    server.send(400, "text/plain", "value required");
     return;
   }
-  int value = core::server.arg("value").toInt();
-  sensors::handleDimmer(core::server.arg("key"), value);
-  core::server.send(200, "text/plain", "OK");
+  int value = server.arg("value").toInt();
+  sensors::handleDimmer(server.arg("key"), value);
+  server.send(200, "text/plain", "OK");
 }
 
 ICACHE_FLASH_ATTR void loadCalibration() {
@@ -246,123 +247,123 @@ ICACHE_FLASH_ATTR void saveCalibration() {
 }
 
 void handleDeleteRule() {
-  if (!core::server.hasArg("id")) {
-    core::server.send(400, "text/plain", "missing id");
+  if (!server.hasArg("id")) {
+    server.send(400, "text/plain", "missing id");
     return;
   }
-  int id = core::server.arg("id").toInt();
+  int id = server.arg("id").toInt();
   if (id < 0 || id >= MAX_RULES) {
-    core::server.send(400, "text/plain", "invalid id");
+    server.send(400, "text/plain", "invalid id");
     return;
   }
   automations::deleteRule((uint8_t)id);
-  core::server.send(200, "text/plain", "ok");
+  server.send(200, "text/plain", "ok");
 }
 
 ICACHE_FLASH_ATTR void handleRules() {
-  if (core::server.method() != HTTP_GET) {
-    core::server.send(405, "text/plain", "GET required");
+  if (server.method() != HTTP_GET) {
+    server.send(405, "text/plain", "GET required");
     return;
   }
-  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  core::server.send(200, "application/json", "");
-  core::server.sendContent("[");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+  server.sendContent("[");
   bool first = true;
   for (int i = 0; i < MAX_RULES; i++) {
     const automations::Rule &r = automations::rules[i];
     if (r.sensor_count == 0 && r.actuator_count == 0)
       continue;
-    if (!first) core::server.sendContent(",");
+    if (!first) server.sendContent(",");
     first = false;
-    core::server.sendContent("{");
-    core::server.sendContent("\"id\":");
-    core::server.sendContent(String(i));
+    server.sendContent("{");
+    server.sendContent("\"id\":");
+    server.sendContent(String(i));
     // sensores
-    core::server.sendContent(",\"sensors\":[");
+    server.sendContent(",\"sensors\":[");
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) core::server.sendContent(",");
-      core::server.sendContent(String(r.sensor_idxs[s]));
+      if (s) server.sendContent(",");
+      server.sendContent(String(r.sensor_idxs[s]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // tipo de regla
-    core::server.sendContent(",\"type\":");
-    core::server.sendContent(String(r.type));
+    server.sendContent(",\"type\":");
+    server.sendContent(String(r.type));
     // lógica AND/OR
-    core::server.sendContent(",\"logical_and\":");
-    core::server.sendContent(String(r.logical_and));
+    server.sendContent(",\"logical_and\":");
+    server.sendContent(String(r.logical_and));
     // comparadores
-    core::server.sendContent(",\"cmp\":[");
+    server.sendContent(",\"cmp\":[");
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) core::server.sendContent(",");
-      core::server.sendContent(String(r.cmp[s]));
+      if (s) server.sendContent(",");
+      server.sendContent(String(r.cmp[s]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // thresholds
-    core::server.sendContent(",\"threshold\":[");
+    server.sendContent(",\"threshold\":[");
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) core::server.sendContent(",");
-      core::server.sendContent(String(r.threshold[s]));
+      if (s) server.sendContent(",");
+      server.sendContent(String(r.threshold[s]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // actuadores
-    core::server.sendContent(",\"actuators\":[");
+    server.sendContent(",\"actuators\":[");
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) core::server.sendContent(",");
-      core::server.sendContent(String(r.actuator_idxs[a]));
+      if (a) server.sendContent(",");
+      server.sendContent(String(r.actuator_idxs[a]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // acciones
-    core::server.sendContent(",\"actions\":[");
+    server.sendContent(",\"actions\":[");
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) core::server.sendContent(",");
-      core::server.sendContent(String(r.actions[a]));
+      if (a) server.sendContent(",");
+      server.sendContent(String(r.actions[a]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // niveles
-    core::server.sendContent(",\"levels\":[");
+    server.sendContent(",\"levels\":[");
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) core::server.sendContent(",");
-      core::server.sendContent(String(r.levels[a]));
+      if (a) server.sendContent(",");
+      server.sendContent(String(r.levels[a]));
     }
-    core::server.sendContent("]");
+    server.sendContent("]");
     // timing
-    core::server.sendContent(",\"delay_ms\":");
-    core::server.sendContent(String(r.delay_ms));
-    core::server.sendContent(",\"cooldown_ms\":");
-    core::server.sendContent(String(r.cooldown_ms));
-    core::server.sendContent(",\"time_s\":");
-    core::server.sendContent(String(r.time_s));
-    core::server.sendContent(",\"interval_ms\":");
-    core::server.sendContent(String(r.interval_ms));
+    server.sendContent(",\"delay_ms\":");
+    server.sendContent(String(r.delay_ms));
+    server.sendContent(",\"cooldown_ms\":");
+    server.sendContent(String(r.cooldown_ms));
+    server.sendContent(",\"time_s\":");
+    server.sendContent(String(r.time_s));
+    server.sendContent(",\"interval_ms\":");
+    server.sendContent(String(r.interval_ms));
     // calendario
-    core::server.sendContent(",\"year_start\":");
-    core::server.sendContent(String(r.year_start));
-    core::server.sendContent(",\"year_end\":");
-    core::server.sendContent(String(r.year_end));
-    core::server.sendContent(",\"month_start\":");
-    core::server.sendContent(String(r.month_start));
-    core::server.sendContent(",\"month_end\":");
-    core::server.sendContent(String(r.month_end));
-    core::server.sendContent(",\"day_start\":");
-    core::server.sendContent(String(r.day_start));
-    core::server.sendContent(",\"day_end\":");
-    core::server.sendContent(String(r.day_end));
-    core::server.sendContent("}");
+    server.sendContent(",\"year_start\":");
+    server.sendContent(String(r.year_start));
+    server.sendContent(",\"year_end\":");
+    server.sendContent(String(r.year_end));
+    server.sendContent(",\"month_start\":");
+    server.sendContent(String(r.month_start));
+    server.sendContent(",\"month_end\":");
+    server.sendContent(String(r.month_end));
+    server.sendContent(",\"day_start\":");
+    server.sendContent(String(r.day_start));
+    server.sendContent(",\"day_end\":");
+    server.sendContent(String(r.day_end));
+    server.sendContent("}");
   }
-  core::server.sendContent("]");
-  core::server.sendContent("");
+  server.sendContent("]");
+  server.sendContent("");
 }
 
 void handleSetRule() {
 
   using namespace automations;
 
-  if (!core::server.hasArg("id")) {
-    core::server.send(400, "text/plain", "missing id");
+  if (!server.hasArg("id")) {
+    server.send(400, "text/plain", "missing id");
     return;
   }
 
-  int id = core::server.arg("id").toInt();
+  int id = server.arg("id").toInt();
 
   if (id < 0) {
     for (int i = 0; i < MAX_RULES; i++) {
@@ -374,7 +375,7 @@ void handleSetRule() {
   }
 
   if (id < 0 || id >= MAX_RULES) {
-    core::server.send(400, "text/plain", "invalid id");
+    server.send(400, "text/plain", "invalid id");
     return;
   }
 
@@ -382,25 +383,25 @@ void handleSetRule() {
   memset(&r, 0, sizeof(Rule));
 
   // ================= TYPE =================
-  if (!core::server.hasArg("type")) {
-    core::server.send(400, "text/plain", "type required");
+  if (!server.hasArg("type")) {
+    server.send(400, "text/plain", "type required");
     return;
   }
 
-  int ruleType = core::server.arg("type").toInt();
+  int ruleType = server.arg("type").toInt();
   if (ruleType < 0 || ruleType > 3) {
-    core::server.send(400, "text/plain", "invalid type");
+    server.send(400, "text/plain", "invalid type");
     return;
   }
 
   r.type = (RuleType)ruleType;
 
   // ================= SENSORS =================
-  if (core::server.hasArg("sensors")) {
+  if (server.hasArg("sensors")) {
 
-    String sensors_str = core::server.arg("sensors");
-    String cmp_str = core::server.arg("cmp");
-    String threshold_str = core::server.arg("threshold");
+    String sensors_str = server.arg("sensors");
+    String cmp_str = server.arg("cmp");
+    String threshold_str = server.arg("threshold");
 
     int idx = 0;
 
@@ -411,12 +412,12 @@ void handleSetRule() {
       int sensor_id = token.toInt();
 
       if (sensor_id < 0 || sensor_id >= MAX_SENSORS) {
-        core::server.send(400, "text/plain", "invalid sensor index");
+        server.send(400, "text/plain", "invalid sensor index");
         return;
       }
 
       if (sensors::calibrations[sensor_id].uid == 0) {
-        core::server.send(400, "text/plain", "sensor not configured");
+        server.send(400, "text/plain", "sensor not configured");
         return;
       }
 
@@ -429,7 +430,7 @@ void handleSetRule() {
         String t = (c == -1) ? cmp_str : cmp_str.substring(0, c);
         cmp_val = t.toInt();
         if (cmp_val < 0 || cmp_val > 2) {
-          core::server.send(400, "text/plain", "invalid comparator");
+          server.send(400, "text/plain", "invalid comparator");
           return;
         }
         if (c != -1) cmp_str = cmp_str.substring(c + 1);
@@ -444,7 +445,7 @@ void handleSetRule() {
         String t = (c == -1) ? threshold_str : threshold_str.substring(0, c);
         th = t.toInt();
         if (th < -1000 || th > 10000) {
-          core::server.send(400, "text/plain", "threshold out of range");
+          server.send(400, "text/plain", "threshold out of range");
           return;
         }
         if (c != -1) threshold_str = threshold_str.substring(c + 1);
@@ -461,11 +462,11 @@ void handleSetRule() {
   }
 
   // ================= ACTUATORS =================
-  if (core::server.hasArg("actuators")) {
+  if (server.hasArg("actuators")) {
 
-    String actuators_str = core::server.arg("actuators");
-    String actions_str = core::server.arg("actions");
-    String levels_str = core::server.arg("levels");
+    String actuators_str = server.arg("actuators");
+    String actions_str = server.arg("actions");
+    String levels_str = server.arg("levels");
 
     int idx = 0;
 
@@ -477,19 +478,19 @@ void handleSetRule() {
       int actuator_id = token.toInt();
 
       if (actuator_id < 0 || actuator_id >= MAX_SENSORS) {
-        core::server.send(400, "text/plain", "invalid actuator index");
+        server.send(400, "text/plain", "invalid actuator index");
         return;
       }
 
       auto &cal = sensors::calibrations[actuator_id];
 
       if (cal.uid == 0) {
-        core::server.send(400, "text/plain", "actuator not configured");
+        server.send(400, "text/plain", "actuator not configured");
         return;
       }
 
       if (cal.type != sensors::TYPE_RELAY && cal.type != sensors::TYPE_DIMMER) {
-        core::server.send(400, "text/plain", "invalid actuator type");
+        server.send(400, "text/plain", "invalid actuator type");
         return;
       }
 
@@ -502,12 +503,12 @@ void handleSetRule() {
         action = t.toInt();
 
         if (action < 0 || action > 3) {
-          core::server.send(400, "text/plain", "invalid action");
+          server.send(400, "text/plain", "invalid action");
           return;
         }
 
         if (action == ACT_LEVEL && cal.type != sensors::TYPE_DIMMER) {
-          core::server.send(400, "text/plain", "LEVEL only for dimmers");
+          server.send(400, "text/plain", "LEVEL only for dimmers");
           return;
         }
 
@@ -524,7 +525,7 @@ void handleSetRule() {
         level = t.toInt();
 
         if (level < 0 || level > 100) {
-          core::server.send(400, "text/plain", "level out of range");
+          server.send(400, "text/plain", "level out of range");
           return;
         }
 
@@ -545,61 +546,61 @@ void handleSetRule() {
   // ================= VALIDACIONES GENERALES =================
 
   if (r.actuator_count == 0) {
-    core::server.send(400, "text/plain", "at least one actuator required");
+    server.send(400, "text/plain", "at least one actuator required");
     return;
   }
 
   if ((r.type == RULE_EDGE || r.type == RULE_THRESHOLD) && r.sensor_count == 0) {
-    core::server.send(400, "text/plain", "sensors required");
+    server.send(400, "text/plain", "sensors required");
     return;
   }
 
   // ================= TIME =================
   if (r.type == RULE_TIME) {
 
-    int time_s = core::server.arg("time_s").toInt();
+    int time_s = server.arg("time_s").toInt();
     if (time_s < 0 || time_s > 86400) {
-      core::server.send(400, "text/plain", "invalid time_s");
+      server.send(400, "text/plain", "invalid time_s");
       return;
     }
     r.time_s = time_s;
 
-    int ys = core::server.arg("year_start").toInt();
-    int ms = core::server.arg("month_start").toInt();
-    int ds = core::server.arg("day_start").toInt();
+    int ys = server.arg("year_start").toInt();
+    int ms = server.arg("month_start").toInt();
+    int ds = server.arg("day_start").toInt();
 
-    int ye = core::server.arg("year_end").toInt();
-    int me = core::server.arg("month_end").toInt();
-    int de = core::server.arg("day_end").toInt();
+    int ye = server.arg("year_end").toInt();
+    int me = server.arg("month_end").toInt();
+    int de = server.arg("day_end").toInt();
 
     bool hasDate = ys || ms || ds || ye || me || de;
 
     if (hasDate) {
 
       if (ys && (ys < 1970 || ys > 2100)) {
-        core::server.send(400, "text/plain", "invalid year_start");
+        server.send(400, "text/plain", "invalid year_start");
         return;
       }
       if (ye && (ye < 1970 || ye > 2100)) {
-        core::server.send(400, "text/plain", "invalid year_end");
+        server.send(400, "text/plain", "invalid year_end");
         return;
       }
 
       if (ms && (ms < 1 || ms > 12)) {
-        core::server.send(400, "text/plain", "invalid month_start");
+        server.send(400, "text/plain", "invalid month_start");
         return;
       }
       if (me && (me < 1 || me > 12)) {
-        core::server.send(400, "text/plain", "invalid month_end");
+        server.send(400, "text/plain", "invalid month_end");
         return;
       }
 
       if (ds && (ds < 1 || ds > 31)) {
-        core::server.send(400, "text/plain", "invalid day_start");
+        server.send(400, "text/plain", "invalid day_start");
         return;
       }
       if (de && (de < 1 || de > 31)) {
-        core::server.send(400, "text/plain", "invalid day_end");
+        server.send(400, "text/plain", "invalid day_end");
         return;
       }
 
@@ -613,7 +614,7 @@ void handleSetRule() {
 
       // coherencia básica
       if (ys && ye && ys > ye) {
-        core::server.send(400, "text/plain", "start > end");
+        server.send(400, "text/plain", "start > end");
         return;
       }
     }
@@ -621,9 +622,9 @@ void handleSetRule() {
 
   // ================= INTERVAL =================
   if (r.type == RULE_INTERVAL) {
-    int interval = core::server.arg("interval").toInt();
+    int interval = server.arg("interval").toInt();
     if (interval < 1000 || interval > 3600000) {
-      core::server.send(400, "text/plain", "invalid interval");
+      server.send(400, "text/plain", "invalid interval");
       return;
     }
     r.interval_ms = interval;
@@ -631,57 +632,57 @@ void handleSetRule() {
 
   // ================= DELAY / COOLDOWN =================
 
-  r.delay_ms = core::server.arg("delay").toInt();
-  r.cooldown_ms = core::server.arg("cooldown").toInt();
+  r.delay_ms = server.arg("delay").toInt();
+  r.cooldown_ms = server.arg("cooldown").toInt();
 
   saveRulesToEEPROM();
-  core::server.send(200, "text/plain", "ok");
+  server.send(200, "text/plain", "ok");
 }
 
 ICACHE_FLASH_ATTR void handleCalib() {
-  if (core::server.method() != HTTP_GET) {
-    core::server.send(405, "text/plain", "Method Not Allowed");
+  if (server.method() != HTTP_GET) {
+    server.send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  core::server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  core::server.send(200, "application/json", "");
-  core::server.sendContent("[");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+  server.sendContent("[");
   bool firstObj = true;
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
-    auto &r = core::reports[i];
+    auto &r = mesh::reports[i];
     if (c.uid == 0) continue;
-    if (!firstObj) core::server.sendContent(",");
+    if (!firstObj) server.sendContent(",");
     firstObj = false;
-    core::server.sendContent("{");
-    core::server.sendContent("\"id\":");
-    core::server.sendContent(String(i));
-    core::server.sendContent(",\"name\":\"");
-    core::server.sendContent(c.id);
-    core::server.sendContent("\"");
-    core::server.sendContent(",\"value\":");
+    server.sendContent("{");
+    server.sendContent("\"id\":");
+    server.sendContent(String(i));
+    server.sendContent(",\"name\":\"");
+    server.sendContent(c.id);
+    server.sendContent("\"");
+    server.sendContent(",\"value\":");
     char buf[24];
     if (isnan(r.value) || isinf(r.value)) {
       strcpy(buf, "0");
     } else {
       dtostrf(r.value, 0, 4, buf);
     }
-    core::server.sendContent(buf);
+    server.sendContent(buf);
 
 #define SEND_INT(name, val) \
-  core::server.sendContent(",\"" name "\":"); \
-  core::server.sendContent(String(val));
+  server.sendContent(",\"" name "\":"); \
+  server.sendContent(String(val));
 #define SEND_FLOAT(name, val) \
-  core::server.sendContent(",\"" name "\":"); \
+  server.sendContent(",\"" name "\":"); \
   { \
     char fb[24]; \
     if (isnan(val) || isinf(val)) strcpy(fb, "0"); \
     else dtostrf(val, 0, 4, fb); \
-    core::server.sendContent(fb); \
+    server.sendContent(fb); \
   }
 #define SEND_BOOL(name, val) \
-  core::server.sendContent(",\"" name "\":"); \
-  core::server.sendContent((val) ? "true" : "false");
+  server.sendContent(",\"" name "\":"); \
+  server.sendContent((val) ? "true" : "false");
 
     SEND_BOOL("pers_state", c.pers_state);
     SEND_FLOAT("min", c.min);
@@ -700,42 +701,42 @@ ICACHE_FLASH_ATTR void handleCalib() {
 #undef SEND_FLOAT
 #undef SEND_BOOL
 
-    core::server.sendContent("}");
+    server.sendContent("}");
   }
   if (sensors::timeValid()) {
-    if (!firstObj) core::server.sendContent(",");
+    if (!firstObj) server.sendContent(",");
     sensors::RTCTime now = sensors::getTime();
-    core::server.sendContent("{\"id\":");
-    core::server.sendContent(String(MAX_SENSORS));
-    core::server.sendContent(",\"name\":\"TIME\",\"value\":");
-    core::server.sendContent(String(sensors::getUnixTime()));
-    core::server.sendContent(",\"year\":");
-    core::server.sendContent(String(now.year));
-    core::server.sendContent(",\"month\":");
-    core::server.sendContent(String(now.month));
-    core::server.sendContent(",\"day\":");
-    core::server.sendContent(String(now.day));
-    core::server.sendContent(",\"hour\":");
-    core::server.sendContent(String(now.hour));
-    core::server.sendContent(",\"minute\":");
-    core::server.sendContent(String(now.minute));
-    core::server.sendContent(",\"second\":");
-    core::server.sendContent(String(now.second));
-    core::server.sendContent(",\"avail\":1,\"state\":true,\"type\":");
-    core::server.sendContent(String(sensors::SENSOR_TIME));
-    core::server.sendContent(",\"pin\":0}");
+    server.sendContent("{\"id\":");
+    server.sendContent(String(MAX_SENSORS));
+    server.sendContent(",\"name\":\"TIME\",\"value\":");
+    server.sendContent(String(sensors::getUnixTime()));
+    server.sendContent(",\"year\":");
+    server.sendContent(String(now.year));
+    server.sendContent(",\"month\":");
+    server.sendContent(String(now.month));
+    server.sendContent(",\"day\":");
+    server.sendContent(String(now.day));
+    server.sendContent(",\"hour\":");
+    server.sendContent(String(now.hour));
+    server.sendContent(",\"minute\":");
+    server.sendContent(String(now.minute));
+    server.sendContent(",\"second\":");
+    server.sendContent(String(now.second));
+    server.sendContent(",\"avail\":1,\"state\":true,\"type\":");
+    server.sendContent(String(sensors::SENSOR_TIME));
+    server.sendContent(",\"pin\":0}");
   }
-  core::server.sendContent("]");
+  server.sendContent("]");
 }
 
 
 ICACHE_FLASH_ATTR void handleCalibSet() {
-  if (core::server.method() != HTTP_POST) {
-    core::server.send(405, "text/plain", "POST required");
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "POST required");
     return;
   }
-  String sensorName = core::server.arg("name");
-  String type = core::server.arg("type");
+  String sensorName = server.arg("name");
+  String type = server.arg("type");
   int calibIdx = -1;
   for (int i = 0; i < MAX_SENSORS; i++) {
     if (sensors::calibrations[i].id == sensorName) {
@@ -744,13 +745,13 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     }
   }
   if (calibIdx < 0) {
-    core::server.send(400, "text/plain", "Sensor not found");
+    server.send(400, "text/plain", "Sensor not found");
     return;
   }
   auto &c = sensors::calibrations[calibIdx];
-  auto &r = core::reports[calibIdx];
+  auto &r = mesh::reports[calibIdx];
   float raw = r.raw;
-  float ref = core::server.hasArg("ref") ? core::server.arg("ref").toFloat() : raw;
+  float ref = server.hasArg("ref") ? server.arg("ref").toFloat() : raw;
   if (type == "ref") {
     if (ref == 0) c.correction = 0;
     else {
@@ -769,7 +770,7 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     c.pulse = (ref > 0);
     c.persist = false;
   } else if (type == "persist") {
-    bool enable = core::server.arg("ref") == "1";
+    bool enable = server.arg("ref") == "1";
     c.persist = enable;
     c.pulse = false;
   } else if (type == "avail") {
@@ -779,11 +780,26 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     c.max = 100;
     c.correction = 0;
   } else {
-    core::server.send(400, "text/plain", "Bad type");
+    server.send(400, "text/plain", "Bad type");
     return;
   }
   saveCalibration();
-  core::server.send(200, "text/plain", "OK");
+  server.send(200, "text/plain", "OK");
+}
+
+void init() {
+  server.on("/", handleRoot);
+  server.on("/save", handleSave);
+  server.on("/calib", handleCalib);
+  server.on("/calib/set", HTTP_POST, handleCalibSet);
+  server.on("/genset/save", HTTP_POST, handleGenSetSave);
+  server.on("/rules", handleRules);
+  server.on("/rules/set", HTTP_POST, handleSetRule);
+  server.on("/rules/delete", HTTP_POST, handleDeleteRule);
+  server.on("/factory", HTTP_POST, handleFactoryReset);
+  server.on("/toggle", HTTP_POST, handleToggleApi);
+  server.on("/dimmer", HTTP_POST, handleDimmerApi);
+  server.begin();
 }
 
 }

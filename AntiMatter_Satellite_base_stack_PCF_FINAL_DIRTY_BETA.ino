@@ -120,7 +120,7 @@ void report() {
   // sensors::humidity("HUMI2", soil1);          // 0-100
   // sensors::humidity("HUMI3", soil2);          // 0-100  
 
-  sensors::relay("Switch", 14);                 // pin number
+  sensors::relay("Switch", 0);                 // pin number
   sensors::humidity("HUMI3", 35);               // 0-100
   sensors::luminosity("LUMI0", 15535);          // uint16_t, 0–65535 (normalized, Google Home expected range)
   sensors::airQ("AIRQ0", 2);                    // 0(GOOD)/1(WARN)/2(BAD)

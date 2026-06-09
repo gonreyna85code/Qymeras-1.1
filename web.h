@@ -1,8 +1,10 @@
 #pragma once
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "config.h"
 
 namespace web {
+extern WebServerCompat server;
 void handleRoot();
 void handleSave();
 void handleFactoryReset();
@@ -19,4 +21,5 @@ void loadCalibration();
 void loadGeneralSettings();
 void loadCredentials();
 void saveCredentials(const String &s, const String &p);
+void init();
 }

@@ -1,50 +1,129 @@
 #pragma once
+#include <WiFiUdp.h>
 #include <Arduino.h>
 #include "config.h"
 
 namespace mesh {
 
-// Estructura para representar un device remoto
+// Inicialización
+void init();
+
+// ============================================================================
+// Devices remotos
+// ============================================================================
+
 struct RemoteDevice {
-  uint32_t uid;                // Chip ID único
-  String ip;                   // IP local del device
-  unsigned long last_seen;     // Timestamp último broadcast
-  bool online;                 // true = visto en último intervalo
+  uint32_t uid;
+  String ip;
+  unsigned long last_seen;
+  bool online;
 };
 
-// Callback para sensores descubiertos (broadcasts remotos)
+// ============================================================================
+// Callbacks
+// ============================================================================
+
 typedef void (*SensorDiscoveryCallback)(
-  uint32_t device_uid,
-  const String &device_ip,
-  uint32_t sensor_id,
-  const String &sensor_name,
-  uint8_t sensor_type,
-  bool sensor_state,
-  uint32_t sensor_value
-);
+    uint32_t device_uid,
+    const String &device_ip,
+    uint32_t sensor_id,
+    const String &sensor_name,
+    uint8_t sensor_type,
+    bool sensor_state,
+    uint32_t sensor_value);
 
-// Callback para comandos recibidos (relés, dimmers)
 typedef void (*CommandCallback)(
-  uint8_t command_type,
-  uint32_t sensor_id,
-  uint32_t value,
-  bool state
-);
+    uint8_t command_type,
+    uint32_t sensor_id,
+    uint32_t value,
+    bool state);
 
-// Inicialización y tick
-void init();                                          // Inicializa mesh listener
-void tick(uint32_t now_ms);                          // Tick principal (parse UDP)
+// ============================================================================
+// Reportes
+// ============================================================================
 
-// Inyectores de callbacks
-void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);  // Para sensores remotos
-void setCommandCallback(CommandCallback cb);                 // Para comandos
+struct ReportEntry {
+  uint32_t uid;
+  float value;
+  float raw;
+  bool state;
+};
 
+extern ReportEntry reports[MAX_SENSORS];
+extern WiFiUDP udp;
+
+// ============================================================================
+// Protocolo
+// ============================================================================
+
+#pragma pack(push, 1)
+
+static const uint8_t PACKET_VERSION = 2;
+static const uint8_t SENSOR_NAME_LEN = 24;
+
+struct PacketHeader {
+  uint8_t magic;
+  uint8_t version;
+  uint16_t size;
+  uint32_t uid;
+};
+
+struct PacketV1 {
+  uint32_t id;
+  uint8_t type;
+  uint32_t value;
+  uint8_t state;
+};
+
+struct Packet {
+  uint32_t id;
+  uint8_t type;
+  uint32_t value;
+  uint8_t state;
+  char name[SENSOR_NAME_LEN];
+};
+
+#pragma pack(pop)
+
+// ============================================================================
+// API pública
+// ============================================================================
+
+void setReport(
+    uint8_t index,
+    uint32_t uid,
+    float value,
+    float raw,
+    bool state);
+
+uint32_t encodeFloat(float v);
+
+void tick(uint32_t now_ms);
+
+void sendBinaryReport();
+
+// ============================================================================
+// Registro de callbacks
+// ============================================================================
+
+void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);
+
+void setCommandCallback(CommandCallback cb);
+
+// ============================================================================
 // Utilidades
-RemoteDevice* getRemoteDevice(uint32_t uid);
+// ============================================================================
+
+RemoteDevice *getRemoteDevice(uint32_t uid);
+
 int getRemoteDeviceCount();
+
 bool isDeviceOnline(uint32_t uid);
 
-// Constants
-#define MESH_TIMEOUT 30000  // Device offline si no se ve en 30 seg
+// ============================================================================
+// Config
+// ============================================================================
 
-}  // namespace mesh
+#define MESH_TIMEOUT 30000
+
+} // namespace mesh
