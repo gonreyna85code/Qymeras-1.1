@@ -1,6 +1,6 @@
+#include <EEPROM.h>
 #include "automations.h"
 #include "sensors.h"
-#include <EEPROM.h>
 
 namespace automations {
 
@@ -39,16 +39,16 @@ static void executeActions(const Rule &r, uint32_t now_ms) {
     auto &c = sensors::calibrations[r.actuator_idxs[i]];
     switch (r.actions[i]) {
       case ACT_ON:
-        if (!c.state) sensors::handleToggle(c.id);
+        if (!c.state) sensors::handleToggle(c.uid);
         break;
       case ACT_OFF:
-        if (c.state) sensors::handleToggle(c.id);
+        if (c.state) sensors::handleToggle(c.uid);
         break;
       case ACT_TOGGLE:
-        sensors::handleToggle(c.id);
+        sensors::handleToggle(c.uid);
         break;
       case ACT_LEVEL:
-        if (c.type == sensors::TYPE_DIMMER) sensors::handleDimmer(c.id, r.levels[i]);
+        if (c.type == sensors::TYPE_DIMMER) sensors::handleDimmer(c.uid, r.levels[i]);
         break;
     }
   }

@@ -14,7 +14,6 @@ static int remote_device_count = 0;
 static unsigned long last_cleanup = 0;
 static WiFiUDP mesh_udp;
 static SensorDiscoveryCallback sensor_callback = nullptr;
-static CommandCallback command_callback = nullptr;
 
 void init() {
   mesh_udp.begin(core::genset.broadcast_port);
@@ -24,43 +23,67 @@ void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
   sensor_callback = cb;
 }
 
-void setCommandCallback(CommandCallback cb) {
-  command_callback = cb;
-}
-
 void tick(uint32_t now_ms) {
   int packet_size = mesh_udp.parsePacket();
-  if (packet_size < (int)sizeof(PacketHeader)) {
-    return;
-  }  
+  if (packet_size < (int)sizeof(PacketHeader)) return;
   PacketHeader hdr;
-  mesh_udp.read((uint8_t*)&hdr, sizeof(hdr));
+  mesh_udp.read((uint8_t *)&hdr, sizeof(hdr));
   if (hdr.magic != 0xA5) return;
-  if (hdr.version != 1 && hdr.version != PACKET_VERSION) return;
-  if (hdr.size != packet_size) return;  
+  if (hdr.version != 1 && hdr.version != 2 && hdr.version != PACKET_VERSION) return;
+  if (hdr.size != packet_size) return;
   uint32_t local_uid = GET_CHIP_ID();
-  bool is_remote = (hdr.uid != local_uid);  
+  bool is_remote = (hdr.uid != local_uid);
   String remote_ip = mesh_udp.remoteIP().toString();
   int remaining = hdr.size - sizeof(PacketHeader);
-  int packet_len = (hdr.version == 1) ? sizeof(PacketV1) : sizeof(Packet);
+  int packet_len = (hdr.version == 1) ? sizeof(PacketV1) : (hdr.version == 2) ? sizeof(PacketV2) : sizeof(Packet);
   while (remaining >= packet_len) {
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     if (hdr.version == 1) {
       PacketV1 pkt_v1;
-      mesh_udp.read((uint8_t*)&pkt_v1, sizeof(pkt_v1));
+      mesh_udp.read((uint8_t *)&pkt_v1, sizeof(pkt_v1));
       pkt.id = pkt_v1.id;
       pkt.type = pkt_v1.type;
       pkt.value = pkt_v1.value;
       pkt.state = pkt_v1.state;
+      pkt.min = 0;
+      pkt.max = 100;
+      pkt.correction = 0;
+      pkt.avail = 0;
+      pkt.name[0] = '\0';
+    } else if (hdr.version == 2) {
+      PacketV2 pkt_v2;
+      mesh_udp.read((uint8_t *)&pkt_v2, sizeof(pkt_v2));
+      pkt.id = pkt_v2.id;
+      pkt.type = pkt_v2.type;
+      pkt.value = pkt_v2.value;
+      pkt.state = pkt_v2.state;
+      memcpy(pkt.name, pkt_v2.name, sizeof(pkt.name));
+      pkt.name[sizeof(pkt.name) - 1] = '\0';
+      pkt.min = 0;
+      pkt.max = 100;
+      pkt.correction = 0;
+      pkt.avail = 0;
     } else {
-      mesh_udp.read((uint8_t*)&pkt, sizeof(pkt));
+      mesh_udp.read((uint8_t *)&pkt, sizeof(pkt));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
     }
-    remaining -= packet_len;    
+    remaining -= packet_len;
     if (is_remote) {
       if (sensor_callback) {
-        sensor_callback(hdr.uid, remote_ip, pkt.id, String(pkt.name), pkt.type, pkt.state, pkt.value);
+        sensor_callback(
+          hdr.uid,
+          remote_ip,
+          pkt.id,
+          String(pkt.name),
+          pkt.type,
+          pkt.state,
+          pkt.value,
+          pkt.min,
+          pkt.max,
+          pkt.correction,
+          pkt.avail
+        );
       }
       int idx = -1;
       for (int i = 0; i < remote_device_count; i++) {
@@ -68,19 +91,15 @@ void tick(uint32_t now_ms) {
           idx = i;
           break;
         }
-      }      
+      }
       if (idx == -1 && remote_device_count < MAX_SENSORS) {
         idx = remote_device_count++;
-      }      
+      }
       if (idx >= 0) {
         remote_devices[idx].uid = hdr.uid;
         remote_devices[idx].ip = remote_ip;
         remote_devices[idx].last_seen = now_ms;
         remote_devices[idx].online = true;
-      }
-    } else {      
-      if (command_callback) {
-        command_callback(pkt.type, pkt.id, pkt.value, pkt.state);
       }
     }
   }
@@ -93,7 +112,8 @@ void tick(uint32_t now_ms) {
     }
   }
 }
-RemoteDevice* getRemoteDevice(uint32_t uid) {
+
+RemoteDevice *getRemoteDevice(uint32_t uid) {
   for (int i = 0; i < remote_device_count; i++) {
     if (remote_devices[i].uid == uid) {
       return &remote_devices[i];
@@ -107,7 +127,7 @@ int getRemoteDeviceCount() {
 }
 
 bool isDeviceOnline(uint32_t uid) {
-  RemoteDevice* dev = getRemoteDevice(uid);
+  RemoteDevice *dev = getRemoteDevice(uid);
   return dev != nullptr && dev->online;
 }
 
@@ -136,8 +156,7 @@ void sendBinaryReport() {
   uint8_t count = 0;
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
-    if (c.local && c.type != sensors::SENSOR_NONE && c.uid != 0)
-      count++;
+    if (c.local && c.type != sensors::SENSOR_NONE && c.uid != 0) count++;
   }
   uint16_t payloadSize = count * sizeof(Packet);
   hdr.size = sizeof(PacketHeader) + payloadSize;
@@ -145,15 +164,20 @@ void sendBinaryReport() {
   udp.write((uint8_t *)&hdr, sizeof(hdr));
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
-    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0)
-      continue;
+    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     pkt.id = c.uid;
     pkt.type = c.type;
     pkt.state = c.state ? 1 : 0;
-    strncpy(pkt.name, c.id.c_str(), sizeof(pkt.name) - 1);
+    pkt.min = c.min;
+    pkt.max = c.max;
+    pkt.correction = c.correction;
+    pkt.avail = c.avail;
+    strncpy(pkt.name, c.name.c_str(), sizeof(pkt.name) - 1);
     if (c.type == sensors::SENSOR_LUMI) {
+      pkt.value = (uint32_t)c.value;
+    } else if (c.type == sensors::SENSOR_TIME) {
       pkt.value = (uint32_t)c.value;
     } else {
       pkt.value = encodeFloat(c.value);

@@ -110,10 +110,10 @@ typedef WebServer WebServerCompat;
    RED
    ========================= */
 
-#define AP_SSID "PeriferalSetup"
+#define AP_SSID "QymeraSetup"
 
 #define BROADCAST_PORT 13345
 #define COMMAND_PORT 13346
 
-#define BROADCAST_INTERVAL 10000
+#define BROADCAST_INTERVAL 5000
 #define WIFI_RETRY_INTERVAL 180000

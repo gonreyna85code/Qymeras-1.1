@@ -24,19 +24,23 @@ struct RemoteDevice {
 // ============================================================================
 
 typedef void (*SensorDiscoveryCallback)(
-    uint32_t device_uid,
-    const String &device_ip,
-    uint32_t sensor_id,
-    const String &sensor_name,
-    uint8_t sensor_type,
-    bool sensor_state,
-    uint32_t sensor_value);
+  uint32_t device_uid,
+  const String &device_ip,
+  uint32_t sensor_id,
+  const String &sensor_name,
+  uint8_t sensor_type,
+  bool sensor_state,
+  uint32_t sensor_value,
+  float sensor_min,
+  float sensor_max,
+  float sensor_correction,
+  uint8_t sensor_avail);
 
 typedef void (*CommandCallback)(
-    uint8_t command_type,
-    uint32_t sensor_id,
-    uint32_t value,
-    bool state);
+  uint8_t command_type,
+  uint32_t sensor_id,
+  uint32_t value,
+  bool state);
 
 // ============================================================================
 // Reportes
@@ -58,7 +62,7 @@ extern WiFiUDP udp;
 
 #pragma pack(push, 1)
 
-static const uint8_t PACKET_VERSION = 2;
+static const uint8_t PACKET_VERSION = 3;
 static const uint8_t SENSOR_NAME_LEN = 24;
 
 struct PacketHeader {
@@ -75,12 +79,24 @@ struct PacketV1 {
   uint8_t state;
 };
 
+struct PacketV2 {
+  uint32_t id;
+  uint8_t type;
+  uint32_t value;
+  uint8_t state;
+  char name[SENSOR_NAME_LEN];
+};
+
 struct Packet {
   uint32_t id;
   uint8_t type;
   uint32_t value;
   uint8_t state;
   char name[SENSOR_NAME_LEN];
+  float min;
+  float max;
+  float correction;
+  uint8_t avail;
 };
 
 #pragma pack(pop)
@@ -90,11 +106,11 @@ struct Packet {
 // ============================================================================
 
 void setReport(
-    uint8_t index,
-    uint32_t uid,
-    float value,
-    float raw,
-    bool state);
+  uint8_t index,
+  uint32_t uid,
+  float value,
+  float raw,
+  bool state);
 
 uint32_t encodeFloat(float v);
 
@@ -107,8 +123,6 @@ void sendBinaryReport();
 // ============================================================================
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);
-
-void setCommandCallback(CommandCallback cb);
 
 // ============================================================================
 // Utilidades
@@ -126,4 +140,4 @@ bool isDeviceOnline(uint32_t uid);
 
 #define MESH_TIMEOUT 30000
 
-} // namespace mesh
+}  // namespace mesh

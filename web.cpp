@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include "web.h"
 #include "html.h"
 #include "core.h"
@@ -7,6 +8,17 @@
 
 namespace web {
 WebServerCompat server(80);
+
+static void addCorsHeaders() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+static void handleCorsOptions() {
+  addCorsHeaders();
+  server.send(204, "text/plain", "");
+}
 
 struct __attribute__((packed)) CalibrationPersist {
   bool pers_state;
@@ -22,7 +34,6 @@ struct __attribute__((packed)) CalibrationPersist {
 
 ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) {
   CalibrationPersist p = {};
-
   p.pers_state = c.pers_state;
   p.min = c.min;
   p.max = c.max;
@@ -32,7 +43,6 @@ ICACHE_FLASH_ATTR CalibrationPersist makePersist(const sensors::Calibration &c) 
   p.pulse = c.pulse;
   p.pulse_ms = c.pulse_ms;
   p.fade = c.fade;
-
   return p;
 }
 
@@ -123,7 +133,7 @@ ICACHE_FLASH_ATTR void saveGeneralSettings() {
     core::genset.broadcast_port = BROADCAST_PORT;
   if (core::genset.command_port < 1024 || core::genset.command_port > 65500)
     core::genset.command_port = COMMAND_PORT;
-  if (core::genset.report_interval < 10000 || core::genset.report_interval > 600000)  // max 10 min
+  if (core::genset.report_interval < 5000 || core::genset.report_interval > 600000)
     core::genset.report_interval = BROADCAST_INTERVAL;
   EEPROM.put(addr, core::genset.broadcast_port);
   addr += sizeof(uint16_t);
@@ -160,7 +170,6 @@ ICACHE_FLASH_ATTR void factoryReset() {
   RESET_MCU();
 }
 
-
 ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
   EEPROM.begin(EEPROM_SIZE);
   EEPROM.write(EEPROM_CRED_START, s.length());
@@ -194,21 +203,25 @@ ICACHE_FLASH_ATTR void handleFactoryReset() {
 }
 
 void handleToggleApi() {
-  if (!server.hasArg("key")) {
-    server.send(400, "text/plain", "key required");
+  addCorsHeaders();
+  if (!server.hasArg("id")) {
+    server.send(400, "text/plain", "id required");
     return;
   }
-  sensors::handleToggle(server.arg("key"));
+  uint32_t id = strtoul(server.arg("id").c_str(), nullptr, 10);
+  sensors::handleToggle(id);
   server.send(200, "text/plain", "OK");
 }
 
 void handleDimmerApi() {
-  if (!server.hasArg("value") || !server.hasArg("key")) {
-    server.send(400, "text/plain", "value required");
+  addCorsHeaders();
+  if (!server.hasArg("value") || !server.hasArg("id")) {
+    server.send(400, "text/plain", "id and value required");
     return;
   }
   int value = server.arg("value").toInt();
-  sensors::handleDimmer(server.arg("key"), value);
+  uint32_t id = strtoul(server.arg("id").c_str(), nullptr, 10);
+  sensors::handleDimmer(id, value);
   server.send(200, "text/plain", "OK");
 }
 
@@ -220,6 +233,11 @@ ICACHE_FLASH_ATTR void loadCalibration() {
     EEPROM.get(addr, p);
     auto &c = sensors::calibrations[i];
     c.pers_state = p.pers_state;
+    Serial.printf(
+      "LOAD %d pers=%d persist=%d\n",
+      i,
+      p.pers_state,
+      p.persist);
     c.min = p.min;
     c.max = p.max;
     c.correction = p.correction;
@@ -355,16 +373,12 @@ ICACHE_FLASH_ATTR void handleRules() {
 }
 
 void handleSetRule() {
-
   using namespace automations;
-
   if (!server.hasArg("id")) {
     server.send(400, "text/plain", "missing id");
     return;
   }
-
   int id = server.arg("id").toInt();
-
   if (id < 0) {
     for (int i = 0; i < MAX_RULES; i++) {
       if (rules[i].sensor_count == 0 && rules[i].actuator_count == 0) {
@@ -373,56 +387,42 @@ void handleSetRule() {
       }
     }
   }
-
   if (id < 0 || id >= MAX_RULES) {
     server.send(400, "text/plain", "invalid id");
     return;
   }
-
   Rule &r = rules[id];
   memset(&r, 0, sizeof(Rule));
-
   // ================= TYPE =================
   if (!server.hasArg("type")) {
     server.send(400, "text/plain", "type required");
     return;
   }
-
   int ruleType = server.arg("type").toInt();
   if (ruleType < 0 || ruleType > 3) {
     server.send(400, "text/plain", "invalid type");
     return;
   }
-
   r.type = (RuleType)ruleType;
-
   // ================= SENSORS =================
   if (server.hasArg("sensors")) {
-
     String sensors_str = server.arg("sensors");
     String cmp_str = server.arg("cmp");
     String threshold_str = server.arg("threshold");
-
     int idx = 0;
-
     while (sensors_str.length() && idx < 5) {
       int comma = sensors_str.indexOf(',');
       String token = (comma == -1) ? sensors_str : sensors_str.substring(0, comma);
-
       int sensor_id = token.toInt();
-
       if (sensor_id < 0 || sensor_id >= MAX_SENSORS) {
         server.send(400, "text/plain", "invalid sensor index");
         return;
       }
-
       if (sensors::calibrations[sensor_id].uid == 0) {
         server.send(400, "text/plain", "sensor not configured");
         return;
       }
-
       r.sensor_idxs[idx] = sensor_id;
-
       // CMP
       int cmp_val = 0;
       if (cmp_str.length()) {
@@ -437,7 +437,6 @@ void handleSetRule() {
         else cmp_str = "";
       }
       r.cmp[idx] = (Comparator)cmp_val;
-
       // THRESHOLD
       int th = 0;
       if (threshold_str.length()) {
@@ -452,131 +451,97 @@ void handleSetRule() {
         else threshold_str = "";
       }
       r.threshold[idx] = th;
-
       idx++;
       if (comma == -1) break;
       sensors_str = sensors_str.substring(comma + 1);
     }
-
     r.sensor_count = idx;
   }
-
   // ================= ACTUATORS =================
   if (server.hasArg("actuators")) {
-
     String actuators_str = server.arg("actuators");
     String actions_str = server.arg("actions");
     String levels_str = server.arg("levels");
-
     int idx = 0;
-
     while (actuators_str.length() && idx < 5) {
-
       int comma = actuators_str.indexOf(',');
       String token = (comma == -1) ? actuators_str : actuators_str.substring(0, comma);
-
       int actuator_id = token.toInt();
-
       if (actuator_id < 0 || actuator_id >= MAX_SENSORS) {
         server.send(400, "text/plain", "invalid actuator index");
         return;
       }
-
       auto &cal = sensors::calibrations[actuator_id];
-
       if (cal.uid == 0) {
         server.send(400, "text/plain", "actuator not configured");
         return;
       }
-
       if (cal.type != sensors::TYPE_RELAY && cal.type != sensors::TYPE_DIMMER) {
         server.send(400, "text/plain", "invalid actuator type");
         return;
       }
-
       r.actuator_idxs[idx] = actuator_id;
-
       int action = 2;
       if (actions_str.length()) {
         int c = actions_str.indexOf(',');
         String t = (c == -1) ? actions_str : actions_str.substring(0, c);
         action = t.toInt();
-
         if (action < 0 || action > 3) {
           server.send(400, "text/plain", "invalid action");
           return;
         }
-
         if (action == ACT_LEVEL && cal.type != sensors::TYPE_DIMMER) {
           server.send(400, "text/plain", "LEVEL only for dimmers");
           return;
         }
-
         if (c != -1) actions_str = actions_str.substring(c + 1);
         else actions_str = "";
       }
-
       r.actions[idx] = (ActionType)action;
-
       int level = 0;
       if (levels_str.length()) {
         int c = levels_str.indexOf(',');
         String t = (c == -1) ? levels_str : levels_str.substring(0, c);
         level = t.toInt();
-
         if (level < 0 || level > 100) {
           server.send(400, "text/plain", "level out of range");
           return;
         }
-
         if (c != -1) levels_str = levels_str.substring(c + 1);
         else levels_str = "";
       }
-
       r.levels[idx] = level;
-
       idx++;
       if (comma == -1) break;
       actuators_str = actuators_str.substring(comma + 1);
     }
-
     r.actuator_count = idx;
   }
-
   // ================= VALIDACIONES GENERALES =================
-
   if (r.actuator_count == 0) {
     server.send(400, "text/plain", "at least one actuator required");
     return;
   }
-
   if ((r.type == RULE_EDGE || r.type == RULE_THRESHOLD) && r.sensor_count == 0) {
     server.send(400, "text/plain", "sensors required");
     return;
   }
-
   // ================= TIME =================
   if (r.type == RULE_TIME) {
-
     int time_s = server.arg("time_s").toInt();
     if (time_s < 0 || time_s > 86400) {
       server.send(400, "text/plain", "invalid time_s");
       return;
     }
     r.time_s = time_s;
-
     int ys = server.arg("year_start").toInt();
     int ms = server.arg("month_start").toInt();
     int ds = server.arg("day_start").toInt();
-
     int ye = server.arg("year_end").toInt();
     int me = server.arg("month_end").toInt();
     int de = server.arg("day_end").toInt();
-
     bool hasDate = ys || ms || ds || ye || me || de;
-
     if (hasDate) {
-
       if (ys && (ys < 1970 || ys > 2100)) {
         server.send(400, "text/plain", "invalid year_start");
         return;
@@ -585,7 +550,6 @@ void handleSetRule() {
         server.send(400, "text/plain", "invalid year_end");
         return;
       }
-
       if (ms && (ms < 1 || ms > 12)) {
         server.send(400, "text/plain", "invalid month_start");
         return;
@@ -594,7 +558,6 @@ void handleSetRule() {
         server.send(400, "text/plain", "invalid month_end");
         return;
       }
-
       if (ds && (ds < 1 || ds > 31)) {
         server.send(400, "text/plain", "invalid day_start");
         return;
@@ -603,16 +566,12 @@ void handleSetRule() {
         server.send(400, "text/plain", "invalid day_end");
         return;
       }
-
       r.year_start = ys;
       r.month_start = ms;
       r.day_start = ds;
-
       r.year_end = ye;
       r.month_end = me;
       r.day_end = de;
-
-      // coherencia básica
       if (ys && ye && ys > ye) {
         server.send(400, "text/plain", "start > end");
         return;
@@ -629,17 +588,15 @@ void handleSetRule() {
     }
     r.interval_ms = interval;
   }
-
   // ================= DELAY / COOLDOWN =================
-
   r.delay_ms = server.arg("delay").toInt();
   r.cooldown_ms = server.arg("cooldown").toInt();
-
   saveRulesToEEPROM();
   server.send(200, "text/plain", "ok");
 }
 
 ICACHE_FLASH_ATTR void handleCalib() {
+  addCorsHeaders();
   if (server.method() != HTTP_GET) {
     server.send(405, "text/plain", "Method Not Allowed");
     return;
@@ -656,9 +613,13 @@ ICACHE_FLASH_ATTR void handleCalib() {
     firstObj = false;
     server.sendContent("{");
     server.sendContent("\"id\":");
+    server.sendContent(String(c.uid));
+    server.sendContent(",\"index\":");
     server.sendContent(String(i));
+    server.sendContent(",\"device_uid\":");
+    server.sendContent(String(c.device_uid));
     server.sendContent(",\"name\":\"");
-    server.sendContent(c.id);
+    server.sendContent(c.name);
     server.sendContent("\"");
     server.sendContent(",\"value\":");
     char buf[24];
@@ -683,7 +644,10 @@ ICACHE_FLASH_ATTR void handleCalib() {
 #define SEND_BOOL(name, val) \
   server.sendContent(",\"" name "\":"); \
   server.sendContent((val) ? "true" : "false");
-
+#define SEND_STRING(name, val) \
+  server.sendContent(",\"" name "\":\""); \
+  server.sendContent(val); \
+  server.sendContent("\"");
     SEND_BOOL("pers_state", c.pers_state);
     SEND_FLOAT("min", c.min);
     SEND_FLOAT("max", c.max);
@@ -696,54 +660,34 @@ ICACHE_FLASH_ATTR void handleCalib() {
     SEND_INT("fade", c.fade);
     SEND_INT("type", c.type);
     SEND_INT("pin", c.pin);
-
+    SEND_BOOL("local", c.local);
+    if (!c.local) {
+      SEND_STRING("ip", c.device_ip);
+    } else {
+      SEND_STRING("ip", WiFi.localIP().toString());
+    }
 #undef SEND_INT
 #undef SEND_FLOAT
 #undef SEND_BOOL
-
+#undef SEND_STRING
     server.sendContent("}");
-  }
-  if (sensors::timeValid()) {
-    if (!firstObj) server.sendContent(",");
-    sensors::RTCTime now = sensors::getTime();
-    server.sendContent("{\"id\":");
-    server.sendContent(String(MAX_SENSORS));
-    server.sendContent(",\"name\":\"TIME\",\"value\":");
-    server.sendContent(String(sensors::getUnixTime()));
-    server.sendContent(",\"year\":");
-    server.sendContent(String(now.year));
-    server.sendContent(",\"month\":");
-    server.sendContent(String(now.month));
-    server.sendContent(",\"day\":");
-    server.sendContent(String(now.day));
-    server.sendContent(",\"hour\":");
-    server.sendContent(String(now.hour));
-    server.sendContent(",\"minute\":");
-    server.sendContent(String(now.minute));
-    server.sendContent(",\"second\":");
-    server.sendContent(String(now.second));
-    server.sendContent(",\"avail\":1,\"state\":true,\"type\":");
-    server.sendContent(String(sensors::SENSOR_TIME));
-    server.sendContent(",\"pin\":0}");
   }
   server.sendContent("]");
 }
 
-
 ICACHE_FLASH_ATTR void handleCalibSet() {
+  addCorsHeaders();
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
     return;
   }
-  String sensorName = server.arg("name");
-  String type = server.arg("type");
-  int calibIdx = -1;
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    if (sensors::calibrations[i].id == sensorName) {
-      calibIdx = i;
-      break;
-    }
+  if (!server.hasArg("id")) {
+    server.send(400, "text/plain", "id required");
+    return;
   }
+  uint32_t sensorUid = strtoul(server.arg("id").c_str(), nullptr, 10);
+  String type = server.arg("type");
+  int calibIdx = sensors::findCalibByUid(sensorUid);
   if (calibIdx < 0) {
     server.send(400, "text/plain", "Sensor not found");
     return;
@@ -752,6 +696,12 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
   auto &r = mesh::reports[calibIdx];
   float raw = r.raw;
   float ref = server.hasArg("ref") ? server.arg("ref").toFloat() : raw;
+  if (type == "TIME") {
+    c.correction = server.arg("ref").toInt();
+    saveCalibration();
+    server.send(200, "text/plain", "OK");
+    return;
+  }
   if (type == "ref") {
     if (ref == 0) c.correction = 0;
     else {
@@ -779,6 +729,8 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     c.min = 0;
     c.max = 100;
     c.correction = 0;
+  } else if (type == "timezone") {
+    c.correction = ref;
   } else {
     server.send(400, "text/plain", "Bad type");
     return;
@@ -791,14 +743,18 @@ void init() {
   server.on("/", handleRoot);
   server.on("/save", handleSave);
   server.on("/calib", handleCalib);
+  server.on("/calib", HTTP_OPTIONS, handleCorsOptions);
   server.on("/calib/set", HTTP_POST, handleCalibSet);
+  server.on("/calib/set", HTTP_OPTIONS, handleCorsOptions);
   server.on("/genset/save", HTTP_POST, handleGenSetSave);
   server.on("/rules", handleRules);
   server.on("/rules/set", HTTP_POST, handleSetRule);
   server.on("/rules/delete", HTTP_POST, handleDeleteRule);
   server.on("/factory", HTTP_POST, handleFactoryReset);
   server.on("/toggle", HTTP_POST, handleToggleApi);
+  server.on("/toggle", HTTP_OPTIONS, handleCorsOptions);
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
+  server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.begin();
 }
 

@@ -1,13 +1,12 @@
-#include "core.h"
 #include <ArduinoOTA.h>
-#include "config.h"
 #include <vector>
 #include <string>
+#include "core.h"
+#include "config.h"
 #include "web.h"
 #include "sensors.h"
 #include "mesh.h"
 #include "automations.h"
-#include <time.h>
 
 namespace core {
 
@@ -30,30 +29,6 @@ static void startAP() {
   web::server.begin();
 }
 
-static void initNTP() {
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-}
-
-static void updateNTPTime() {
-  if (sensors::getTimeSource() == sensors::TIME_RTC)
-    return;
-  time_t now = time(nullptr);
-  if (now < 1704067200)  // 2024-01-01
-    return;
-  struct tm *timeinfo = localtime(&now);
-  if (!timeinfo)
-    return;
-  sensors::RTCTime ntpTime = {
-    static_cast<uint16_t>(timeinfo->tm_year + 1900),
-    static_cast<uint8_t>(timeinfo->tm_mon + 1),
-    static_cast<uint8_t>(timeinfo->tm_mday),
-    static_cast<uint8_t>(timeinfo->tm_hour),
-    static_cast<uint8_t>(timeinfo->tm_min),
-    static_cast<uint8_t>(timeinfo->tm_sec)
-  };
-  sensors::ntp(ntpTime);
-}
-
 static void connectWiFi() {
   if (ssid == "") {
     startAP();
@@ -68,7 +43,7 @@ static void connectWiFi() {
     if (WiFi.status() == WL_CONNECTED) {
       wifi_connected = true;
       mesh::udp.begin(genset.command_port);
-      initNTP();
+      sensors::initNTP();
       ArduinoOTA.begin();
       return;
     }
@@ -78,6 +53,10 @@ static void connectWiFi() {
 }
 
 void begin() {
+  Serial.begin(74880);
+  delay(200);
+  Serial.println();
+  Serial.println("BOOT QYMERA");
   uid = String(GET_CHIP_ID(), HEX);
   web::loadCredentials();
   web::loadGeneralSettings();
@@ -95,34 +74,32 @@ bool is_connected() {
 }
 
 void loop() {
-
+  web::server.handleClient();
   if (!wifi_connected && millis() - last_attempt > WIFI_RETRY_INTERVAL) {
     last_attempt = millis();
     connectWiFi();
   }
-
   if (!wifi_connected)
     return;
-  
-  if (first_report) {
-    first_report = false;
-    ::report();
-    sensors::applyPersistedStates();
-  }
 
-  web::server.handleClient();
-  updateNTPTime(); 
-  mesh::tick(millis());  
+  if (first_report) {
+    ::report();
+    first_report = false;
+    sensors::applyPersistedStates();
+    Serial.println();
+    Serial.println("apply");
+  }
+  sensors::updateNTPTime();
+  mesh::tick(millis());
   automations::tick(millis());
   sensors::applyFades();
   sensors::updateFades();
-  ArduinoOTA.handle();
-
   if (millis() - last_report >= genset.report_interval) {
     last_report = millis();
     ::report();
     mesh::sendBinaryReport();
-  }  
+  }
+  ArduinoOTA.handle();
 }
 
 }  // namespace core
