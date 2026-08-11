@@ -20,7 +20,7 @@ enum Level : uint8_t {
 
 // ================= CONFIG =================
 static const uint8_t MAX_LOG_MSG = 64;
-static const uint8_t LOG_BUFFER_SIZE = 16;
+static const uint8_t LOG_BUFFER_SIZE = 30;
 
 // ================= INIT =================
 void init();

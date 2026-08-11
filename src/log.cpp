@@ -12,15 +12,14 @@ static bool layer_enabled[3] = {true, true, true};
 static Level min_level = INFO;
 
 struct LogEntry {
-  Layer layer;
   Level level;
   uint32_t timestamp;
   char message[MAX_LOG_MSG];
 };
 
-static LogEntry buffer[LOG_BUFFER_SIZE];
-static uint8_t buffer_head = 0;
-static uint8_t buffer_count = 0;
+static LogEntry buffers[3][LOG_BUFFER_SIZE];
+static uint8_t buffer_head[3] = {0, 0, 0};
+static uint8_t buffer_count[3] = {0, 0, 0};
 
 // ================= LAYER / LEVEL NAMES =================
 
@@ -50,8 +49,8 @@ void init() {
   layer_enabled[SENSORS] = true;
   layer_enabled[EVENTS] = true;
   min_level = INFO;
-  buffer_head = 0;
-  buffer_count = 0;
+  memset(buffer_head, 0, sizeof(buffer_head));
+  memset(buffer_count, 0, sizeof(buffer_count));
 }
 
 // ================= SERIAL CONTROL =================
@@ -98,16 +97,16 @@ static void output(Layer layer, Level level, const char *msg) {
     Serial.printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
   }
 
-  // --- GUI buffer ---
-  LogEntry &entry = buffer[buffer_head];
-  entry.layer = layer;
-  entry.level = level;
-  entry.timestamp = millis();
-  strncpy(entry.message, msg, MAX_LOG_MSG - 1);
-  entry.message[MAX_LOG_MSG - 1] = '\0';
-
-  buffer_head = (buffer_head + 1) % LOG_BUFFER_SIZE;
-  if (buffer_count < LOG_BUFFER_SIZE) buffer_count++;
+  // --- GUI buffer (per-layer) ---
+  if (layer <= EVENTS) {
+    LogEntry &entry = buffers[layer][buffer_head[layer]];
+    entry.level = level;
+    entry.timestamp = millis();
+    strncpy(entry.message, msg, MAX_LOG_MSG - 1);
+    entry.message[MAX_LOG_MSG - 1] = '\0';
+    buffer_head[layer] = (buffer_head[layer] + 1) % LOG_BUFFER_SIZE;
+    if (buffer_count[layer] < LOG_BUFFER_SIZE) buffer_count[layer]++;
+  }
 
   // --- UDP broadcast ---
   mesh::sendLog(layer, level, msg);
@@ -195,37 +194,41 @@ void errorf(const char *fmt, ...) {
 
 String getRecentLogsJson() {
   String json = "[";
-  uint8_t start = buffer_count < LOG_BUFFER_SIZE
-    ? 0
-    : buffer_head;
+  bool first = true;
 
-  for (uint8_t i = 0; i < buffer_count; i++) {
-    uint8_t idx = (start + i) % LOG_BUFFER_SIZE;
-    const LogEntry &e = buffer[idx];
-    if (i) json += ",";
-    json += "{\"t\":";
-    json += e.timestamp;
-    json += ",\"l\":\"";
-    json += layer_name(e.layer);
-    json += "\",\"v\":\"";
-    json += level_name(e.level);
-    json += "\",\"m\":\"";
-    // Escape quotes in message
-    for (const char *p = e.message; *p; p++) {
-      if (*p == '"') json += "\\\"";
-      else if (*p == '\\') json += "\\\\";
-      else if (*p == '\n') json += "\\n";
-      else json += *p;
+  for (uint8_t layer = 0; layer < 3; layer++) {
+    uint8_t start = buffer_count[layer] < LOG_BUFFER_SIZE
+      ? 0
+      : buffer_head[layer];
+
+    for (uint8_t i = 0; i < buffer_count[layer]; i++) {
+      uint8_t idx = (start + i) % LOG_BUFFER_SIZE;
+      const LogEntry &e = buffers[layer][idx];
+      if (!first) json += ",";
+      first = false;
+      json += "{\"t\":";
+      json += e.timestamp;
+      json += ",\"l\":\"";
+      json += layer_name((Layer)layer);
+      json += "\",\"v\":\"";
+      json += level_name(e.level);
+      json += "\",\"m\":\"";
+      for (const char *p = e.message; *p; p++) {
+        if (*p == '"') json += "\\\"";
+        else if (*p == '\\') json += "\\\\";
+        else if (*p == '\n') json += "\\n";
+        else json += *p;
+      }
+      json += "\"}";
     }
-    json += "\"}";
   }
   json += "]";
   return json;
 }
 
 void clearBuffer() {
-  buffer_head = 0;
-  buffer_count = 0;
+  memset(buffer_head, 0, sizeof(buffer_head));
+  memset(buffer_count, 0, sizeof(buffer_count));
 }
 
 }  // namespace logger
