@@ -686,9 +686,10 @@ function factoryReset() {
 }
 
 async function toggleOta(enabled) {
+  console.log('toggleOta:', enabled);
+  if (!confirm('Reboot device to ' + (enabled ? 'enable' : 'disable') + ' OTA?')) return;
   try {
-    fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
-    // Device will reboot — no alert needed
+    await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
   } catch(e) {
     console.log('toggleOta err', e);
   }
