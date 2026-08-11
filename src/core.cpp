@@ -77,7 +77,7 @@ static void checkWiFiStatus() {
 /// Inicializa la aplicación: serial, UID chip y dependencias, luego el stack WiFi
 /// (con retento automático si no hay SSID guardado).
 void begin() {
-  Serial.begin(74880);
+  Serial.begin(115200);
   delay(200);
   Serial.println();
   Serial.println("BOOT QYMERA");
