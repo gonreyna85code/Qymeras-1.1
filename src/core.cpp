@@ -86,6 +86,11 @@ void begin() {
   logger::core("Boot");
   web::loadCredentials();
   web::loadGeneralSettings();
+
+  // Load OTA flag from EEPROM
+  ota_enabled = EEPROM.read(EEPROM_OTA_FLAG_ADDR) == 1;
+  if (ota_enabled) ArduinoOTA.begin();
+
   sensors::init();
   ::initSatellite();
   web::loadCalibration();
@@ -108,6 +113,9 @@ bool is_connected() {
 
 void setOtaEnabled(bool enabled) {
   ota_enabled = enabled;
+  EEPROM.begin(EEPROM_SIZE);
+  EEPROM.write(EEPROM_OTA_FLAG_ADDR, enabled ? 1 : 0);
+  EEPROM.commit();
   if (enabled) {
     ArduinoOTA.begin();
     logger::core("OTA enabled");

@@ -687,8 +687,8 @@ function factoryReset() {
 
 async function toggleOta(enabled) {
   try {
-    await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
-    alert('OTA ' + (enabled ? 'enabled' : 'disabled') + ' - rebooting...');
+    fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
+    // Device will reboot — no alert needed
   } catch(e) {
     console.log('toggleOta err', e);
   }
