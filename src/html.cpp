@@ -23,11 +23,11 @@ const char Tabs[] PROGMEM = R"rawliteral(
 </div>
 </div></h2>
 <div class='tabs'>
-<div class='tab' id='t_control'>Devices</div>
-<div class='tab' id='t_auto'>Automations</div>
-<div class='tab' id='t_config'>Settings</div>
-<div class='tab' id='t_wifi'>Network</div>
-<div class='tab' id='t_logs'>Logs</div>
+<div class='tab' id='t_control' onclick="show('control')">Devices</div>
+<div class='tab' id='t_auto' onclick="show('auto')">Automations</div>
+<div class='tab' id='t_config' onclick="show('config')">Settings</div>
+<div class='tab' id='t_wifi' onclick="show('wifi')">Network</div>
+<div class='tab' id='t_logs' onclick="show('logs')">Logs</div>
 </div>
 <div id='control' class='content'><div id='devices_cards'></div></div>
 <div id='auto' class='content' style='display:none'>  
