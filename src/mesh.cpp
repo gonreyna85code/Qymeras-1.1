@@ -22,6 +22,7 @@ static CommandCallback command_cb = nullptr;
 static Transport transport = TRANSPORT_UDP;
 
 void setTransport(Transport t) {
+  if (t == transport) return;
   transport = t;
   espnow_set_enabled(t == TRANSPORT_ESPNOW);
   logger::coref("Mesh transport: %s", t == TRANSPORT_ESPNOW ? "ESP-NOW" : "UDP");
