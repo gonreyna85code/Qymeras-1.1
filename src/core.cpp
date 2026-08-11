@@ -94,6 +94,7 @@ void begin() {
   web::init();
   startWiFi();
   logger::core("OTA ready");
+  logger::coref("Free heap: %u B", ESP.getFreeHeap());
 }
 
 // ================= ACCESORIOS ===================
