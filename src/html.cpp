@@ -2,173 +2,14 @@
 
 namespace html_content {
 // ================= WEB ===================
-const char Styles[] PROGMEM = R"rawliteral(
-<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+const char Styles[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <style>
-body{font-family:sans-serif;text-align:center;margin:0}
-.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}
-.tab{flex:1;padding:12px;cursor:pointer}
-.active{background:#444}
-.content{padding:15px}
-.card{
-  background:var(--card);
-  color:var(--text);
-  margin:10px;
-  padding:10px;
-  border-radius:12px;
-  box-shadow:0 2px 8px rgba(0,0,0,.25);
-  text-align:left;
-  border-left:3px solid rgba(255,255,255,.75);
-}
-.card:hover{
-  filter:brightness(1.08);
-}
-.card h3{margin-top:0;text-align:center}
-.devices-section-title{display:none}
-button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}
-.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}
-.matter-btn.on{background:#2ecc71;color:#000}
-.matter-btn.off{background:#444;color:#bbb}
-.matterLbl{margin-left:20px;font-weight:600}
-.modal{
-position:fixed;
-top:0;
-left:0;
-width:100%;
-height:100%;
-background:rgba(0,0,0,0.6);
-display:none;
-align-items:center;
-justify-content:center;
-z-index:1000;
-}
-.modal-content{
-background:var(--card);
-color:var(--text);
-padding:20px;
-border-radius:10px;
-width:320px;
-text-align:left;
-}
-.modal input,
-.modal select{
-margin-bottom:10px;
-padding:6px;
-border-radius:6px;
-border:1px solid var(--text);
-background:var(--bg);
-color:var(--text);
-}
-#themePicker{
-  position:fixed;
-  top:10px;
-  right:10px;
-  z-index:9999;
-  display:flex;
-  gap:6px;
-}
-.themeDot{
-  width:18px;
-  height:18px;
-  border-radius:50%;
-  cursor:pointer;
-  border:2px solid #333;
-}
-.themeDot:hover{
-  transform:scale(1.2);
-}
-:root{
-  --bg:#111315;
-  --panel:#2e3238;
-  --card:#3c4149;
-  --text:#ffffff;
-}
-body{
-  background:var(--bg);
-  color:var(--text);
-}
-.settings-grid{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:12px;
-}
-.settings-general{
-  grid-column:1 / -1;
-}
-@media(max-width:900px){
-  .settings-grid{
-    grid-template-columns:1fr;
-  }
-  .settings-general{
-    grid-column:auto;
-  }
-}
-.themeDot[data-bg="#414141"]{background:#414141;}
-.themeDot[data-bg="#4c834e"]{background:#4c834e;}
-.themeDot[data-bg="#cdfcff"]{background:#cdfcff;}
-.themeDot[data-bg="#c1af8d"]{background:#c1af8d;}
-.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff;}
-.themeDot[data-bg="#61b956"]{background:#61b956;}
-input[type=range]{width:100%}
-@media (min-width:1100px){
-  #control{padding:10px 10px}
-  .devices-mobile-list{display:none}
-  .devices-desktop-layout{
-    display:grid;
-    grid-template-columns:minmax(260px,38%) minmax(420px,1fr);
-    gap:18px;
-    align-items:start;
-    min-height:calc(100vh - 130px);
-  }
-  .devices-column{
-    min-height:calc(100vh - 150px);
-    border:1px solid rgba(255,255,255,.12);
-    border-radius:10px;
-    padding:12px;
-    background:var(--panel);
-    color:var(--text);
-  }
-  .devices-section-title{
-    display:block;
-    margin:2px 10px 12px;
-    text-align:left;
-    color:var(--text);
-    font-size:13px;
-    font-weight:700;
-    letter-spacing:0;
-    text-transform:uppercase;
-  }
-  .devices-actuator-grid{
-    display:grid;
-    grid-template-columns:repeat(2,minmax(180px,1fr));
-    gap:12px;
-  }
-  .devices-sensor-grid{
-    display:grid;
-    grid-template-columns:repeat(3,minmax(180px,1fr));
-    gap:12px;
-  }
-  .devices-dashboard .card{
-    margin:0;
-    min-height:96px;
-    box-sizing:border-box;
-  }
-  .devices-dashboard .time-card{
-    grid-column:span 1;
-    min-height:96px;
-  }
-}
-@media (max-width:899px){
-  .devices-desktop-layout{display:none}
-  .devices-mobile-list{display:block}
-  .devices-column,
-  .devices-actuator-grid,
-  .devices-sensor-grid{
-    display:block;
-  }
-}
+body{font-family:sans-serif;text-align:center;margin:0}.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}.tab{flex:1;padding:12px;cursor:pointer}.active{background:#444}.content{padding:15px}.card{background:var(--card);color:var(--text);margin:10px;padding:10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);text-align:left;border-left:3px solid rgba(255,255,255,.75)}.card:hover{filter:brightness(1.08)}.card h3{margin-top:0;text-align:center}.devices-section-title{display:none}button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}.matter-btn.on{background:#2ecc71;color:#000}.matter-btn.off{background:#444;color:#bbb}.matterLbl{margin-left:20px;font-weight:600}.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1000}.modal-content{background:var(--card);color:var(--text);padding:20px;border-radius:10px;width:320px;text-align:left}.modal input,.modal select{margin-bottom:10px;padding:6px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text)}#themePicker{position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:6px}.themeDot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid #333}.themeDot:hover{transform:scale(1.2)}:root{--bg:#111315;--panel:#2e3238;--card:#3c4149;--text:#ffffff}body{background:var(--bg);color:var(--text)}.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.settings-general{grid-column:1/-1}@media(max-width:900px){.settings-grid{grid-template-columns:1fr}.settings-general{grid-column:auto}}
+.themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#cdfcff"]{background:#cdfcff}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}.themeDot[data-bg="#61b956"]{background:#61b956}input[type=range]{width:100%}@media (min-width:1100px){#control{padding:10px 10px}.devices-mobile-list{display:none}.devices-desktop-layout{display:grid;grid-template-columns:minmax(260px,38%) minmax(420px,1fr);gap:18px;align-items:start;min-height:calc(100vh - 130px)}.devices-column{min-height:calc(100vh - 150px);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;background:var(--panel);color:var(--text)}.devices-section-title{display:block;margin:2px 10px 12px;text-align:left;color:var(--text);font-size:13px;font-weight:700;letter-spacing:0;text-transform:uppercase}.devices-actuator-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}.devices-sensor-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.devices-dashboard .card{margin:0;min-height:96px;box-sizing:border-box}.devices-dashboard .time-card{grid-column:span 1;min-height:96px}}
+@media (max-width:899px){.devices-desktop-layout{display:none}.devices-mobile-list{display:block}.devices-column,.devices-actuator-grid,.devices-sensor-grid{display:block}}
 </style></head><body>
 )rawliteral";
+
 
 const char Tabs[] PROGMEM = R"rawliteral(
 <h2 style='background:#222222c7;margin:0;padding:12px;text-align:center;color:#eee'>Qymera<div id="themePicker">
@@ -228,6 +69,7 @@ if (tab === 'config') loadCalib();
 }
 )rawliteral";
 
+
 const char Rules[] PROGMEM = R"rawliteral(
 function renderAutomationTable(rules){
 let html = `
@@ -282,244 +124,76 @@ alert("delete rule "+i);
 }
 )rawliteral";
 
+
 const char CardsSettings[] PROGMEM = R"rawliteral(
+function sensorCalibCard(s, i, cfg) {
+  const minMaxBtns = cfg.hasMinMax ? `<button onclick='setCalib(${i},"min","${s.name}")'>Set 0%</button>
+    <button onclick='setCalib(${i},"max","${s.name}")'>Set 100%</button><br>` : '';
+  return `<div class='card'>
+    <h3>${cfg.label} ${s.name}</h3>
+    <p style='margin-left:6px;'>${cfg.icon} <b id='v${i}'>${cfg.format(s.value)}</b></p>
+    <input id='ref${i}' placeholder='Value' style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
+    <button onclick='setCalib(${i},"ref","${s.name}")'>Set Ref Val</button><br>
+    ${minMaxBtns}
+    <button onclick='setCalib(${i},"res","${s.name}")'>Reset</button><br>
+    <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  </div>`;
+}
+
 const cardRenderers = {
 
-HUMI: (s, i) => `
-<div class='card'>
-  <h3>HUMIDITY ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    💧
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : s.value + ' %'}
-    </b>
-  </p>  
-  <input id='ref${i}' placeholder='Value' style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"min", "${s.name}")'>Set 0%</button>
-  <button onclick='setCalib(${i},"max", "${s.name}")'>Set 100%</button><br>
-  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}", "${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+HUMI: (s, i) => sensorCalibCard(s, i, { icon: '💧', label: 'HUMIDITY', format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
 
-LEVE: (s, i) => `
-<div class='card'>
-  <h3>LEVEL ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    📊
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : s.value + ' %'}
-    </b>
-  </p>  
-  <input id='ref${i}' placeholder='Value' style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref","${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"min","${s.name}")'>Set 0%</button>
-  <button onclick='setCalib(${i},"max","${s.name}")'>Set 100%</button><br>
-  <button onclick='setCalib(${i},"res","${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+LEVE: (s, i) => sensorCalibCard(s, i, { icon: '📊', label: 'LEVEL', format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
 
-LUMI: (s, i) => `
-<div class='card'>
-  <h3>LUMINOSITY ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    🔆
-    <b id='v${i}'>
-      ${
-        s.value === 255 || s.value == null
-          ? 'N/A'
-          : (s.value * 108.9432 / 7074).toFixed(0) + ' lx'
-      }
-    </b>
-  </p>  
-  <input id='ref${i}' placeholder='Value'
-    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+LUMI: (s, i) => sensorCalibCard(s, i, { icon: '🔆', label: 'LUMINOSITY', format: v => (v === 255 || v == null) ? 'N/A' : (v * 108.9432 / 7074).toFixed(0) + ' lx', hasMinMax: false }),
 
-DIMM: (s, i) => `
-<div class='card'>
-  <h3>DIMMER ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    Fade: <b id='v${i}'>${s.fade}</b> ms
-  </p>
-  <input id='ref${i}' placeholder='Fade in/out time(ms)'
-    style='width:122px;margin:0 5px 12px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"fad","${s.name}")'>Set Fade</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+TEMP: (s, i) => sensorCalibCard(s, i, { icon: '🌡️', label: 'TEMPERATURE', format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' °C', hasMinMax: false }),
 
-TEMP: (s, i) => `
-<div class='card'>
-  <h3>TEMPERATURE ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    🌡️
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : s.value.toFixed(2) + ' °C'}
-    </b>
-  </p>
-  <input id='ref${i}' placeholder='Value'
-    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+PRES: (s, i) => sensorCalibCard(s, i, { icon: '📈', label: 'PRESSURE', format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' kPa', hasMinMax: false }),
 
-PRES: (s, i) => `
-<div class='card'>
-  <h3>PRESSURE ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    📈
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : s.value.toFixed(2) + ' kPa'}
-    </b>
-  </p>
-  <input id='ref${i}' placeholder='Value'
-    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
+GENERIC: (s, i) => sensorCalibCard(s, i, { icon: '🔬', label: 'CUSTOM', format: v => (v === 255 || v == null) ? 'N/A' : Number(v).toFixed(2), hasMinMax: false }),
 
-AIRQ: (s, i) => `
-<div class='card'>
+AIRQ: (s, i) => `<div class='card'>
   <h3>AIR QUALITY ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    🍃
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A'}
-    </b>
-  </p>  
-    <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
+  <p style='margin-left:6px;'>🍃 <b id='v${i}'>${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A'}</b></p>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
 </div>`,
 
-RAIN: (s, i) => `
-<div class='card'>
+RAIN: (s, i) => `<div class='card'>
   <h3>RAIN ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    🌧️
-    <b id='v${i}'>
-       ${s.value === 255 || s.value == null ? 'N/A' : s.value ? "YES" : "NO"}
-    </b>
-  </p>  
-    <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
+  <p style='margin-left:6px;'>🌧️ <b id='v${i}'>${s.value === 255 || s.value == null ? 'N/A' : s.value ? "YES" : "NO"}</b></p>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
 </div>`,
 
-GENERIC: (s, i) => `
-<div class='card'>
-  <h3>CUSTOM ${s.name}</h3>
-  <p style='margin-left:6px;'>
-   🔬
-    <b id='v${i}'>
-      ${s.value === 255 || s.value == null ? 'N/A' : Number(s.value).toFixed(2)}
-    </b>
-  </p>
-  <input id='ref${i}' placeholder='Value'
-    style='width:90px;margin:0 5px 6px 5px;border-radius:6px;padding:4px'>
-  <button onclick='setCalib(${i},"ref", "${s.name}")'>Set Ref Val</button><br>
-  <button onclick='setCalib(${i},"res", "${s.name}")'>Reset</button><br>
-  <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-</div>`,
-
-CONTACT: (s, i) => `
-<div class='card'>
+CONTACT: (s, i) => `<div class='card'>
   <h3>CONTACT ${s.name}</h3>
-  <p style='margin-left:6px;'>
-    🔒
-    <b id='v${i}'>
-       ${s.value === 255 || s.value == null ? 'N/A' : s.state ? "CLOSED" : "OPEN"}
-    </b>
-  </p>
-    <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
+  <p style='margin-left:6px;'>🔒 <b id='v${i}'>${s.value === 255 || s.value == null ? 'N/A' : s.state ? "CLOSED" : "OPEN"}</b></p>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
 </div>`,
 
-TIME: (s, i) => `
-<div class='card'>
+DIMM: (s, i) => `<div class='card'>
+  <h3>DIMMER ${s.name}</h3>
+  <p style='margin-left:6px;'>Fade: <b id='v${i}'>${s.fade}</b> ms</p>
+  <input id='ref${i}' placeholder='Fade in/out time(ms)' style='width:122px;margin:0 5px 12px 5px;border-radius:6px;padding:4px'>
+  <button onclick='setCalib(${i},"fad","${s.name}")'>Set Fade</button><br>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+</div>`,
+
+REL: (s, i) => `<div class='card'>
+  <h3>RELAY ${s.name}</h3>
+  <div style='display:flex;gap:8px;flex-direction:column;align-items:flex-start;'>
+    <label><input type='checkbox' id='persistChk${i}' ${s.persist ? 'checked' : ''} onchange='togglePersist(${i},"${s.name}")'>Persistence</label>
+    <label><input type='checkbox' id='pulseChk${i}' ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'>Pulse Mode (ms)</label>
+    <input id='ref${i}' placeholder='Pulse time(ms)' value='${s.pulse_ms ?? ''}' onchange='setCalib(${i},"pulse","${s.name}",this.value)' style='width:90px;${s.pulse ? '' : 'display:none;'}margin-left:5px;border-radius:6px;padding:4px;margin-top:10px;'><br>
+    <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:-10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  </div>
+</div>`,
+
+TIME: (s, i) => `<div class='card'>
   <h3>TIME</h3>
-  <p style='margin-left:6px;'>
-    <b id='v${i}'>--</b>
-  </p>
-  <select
-    style='width:80%;margin:5px;margin-left:6px;border-radius:6px;padding:4px'
-    onchange="
-      setCalib(
-        ${i},
-        'timezone',
-        'TIME',
-        this.value
-      )">
+  <p style='margin-left:6px;'><b id='v${i}'>--</b></p>
+  <select style='width:80%;margin:5px;margin-left:6px;border-radius:6px;padding:4px' onchange="setCalib(${i},'timezone','TIME',this.value)">
     <option value="-720" ${s.correction==-720?'selected':''}>UTC-12 (Baker Island)</option>
     <option value="-660" ${s.correction==-660?'selected':''}>UTC-11 (Samoa)</option>
     <option value="-600" ${s.correction==-600?'selected':''}>UTC-10 (Hawái)</option>
@@ -551,81 +225,22 @@ TIME: (s, i) => `
   </select>
 </div>`,
 
-REL: (s, i) => `
-<div class='card'>
-  <h3>RELAY ${s.name}</h3>
-
-  <div style='display:flex;gap:8px;flex-direction:column;align-items:flex-start;'>
-
-    <label>
-      <input type='checkbox' id='persistChk${i}'
-        ${s.persist ? 'checked' : ''}
-        onchange='togglePersist(${i}, "${s.name}")'>
-      Persistence
-    </label>
-
-    <label>
-      <input type='checkbox' id='pulseChk${i}'
-        ${s.pulse ? 'checked' : ''}
-        onchange='togglePulse(${i}, "${s.name}")'>
-      Pulse Mode (ms)
-    </label>    
-    <input id='ref${i}'
-      placeholder='Pulse time(ms)'
-      value='${s.pulse_ms ?? ''}'
-      onchange='setCalib(${i},"pulse", "${s.name}", this.value)'
-      style='width:90px;${s.pulse ? '' : 'display:none;'}margin-left:5px;border-radius:6px;padding:4px;margin-top:10px;'><br>
-    <button
-      onclick='toggleMatterSwitch(${i}, "${s.id}","${s.name}")'
-      id='matterBtn${i}'
-      data-name='${s.id}'
-      class='matter-btn ${s.avail ? "on" : "off"}'
-      style='margin-top:-10px;'>
-      ${s.avail ? 'ENABLED' : 'DISABLED'}
-    </button>
-  </div>
-</div>`,
-
-DEFAULT: (s, i) => `
-<div class='card'>
+DEFAULT: (s, i) => `<div class='card'>
   <h3>GENERAL SETTINGS</h3>
-
-  <p style='margin-left:6px;margin-bottom:0;'>
-    UDP Ports:
-  </p>
-
-  <p style='margin-left:6px;margin-top:1px'>
-    Broadcast: <b>${genset.broadcast_port}</b> |
-    Command: <b>${genset.command_port}</b>
-  </p>
-
-  <p style='margin-left:6px;'>
-    Report Interval: <b>${genset.report_interval} ms</b>
-  </p>
-
-  <input id='broadcast_port' placeholder='Broadcast Port'
-    style='width:101px;margin:5px;margin-left:6px;border-radius:6px;padding:4px'>
-
-  <input id='command_port' placeholder='Command Port'
-    style='width:103px;margin:5px;border-radius:6px;padding:4px'>
-
-  <input id='ref${i}' placeholder='Report Interval(ms)'
-    style='width:127px;margin:5px;border-radius:6px;padding:4px'>
-
+  <p style='margin-left:6px;margin-bottom:0;'>UDP Ports:</p>
+  <p style='margin-left:6px;margin-top:1px'>Broadcast: <b>${genset.broadcast_port}</b> | Command: <b>${genset.command_port}</b></p>
+  <p style='margin-left:6px;'>Report Interval: <b>${genset.report_interval} ms</b></p>
+  <input id='broadcast_port' placeholder='Broadcast Port' style='width:101px;margin:5px;margin-left:6px;border-radius:6px;padding:4px'>
+  <input id='command_port' placeholder='Command Port' style='width:103px;margin:5px;border-radius:6px;padding:4px'>
+  <input id='ref${i}' placeholder='Report Interval(ms)' style='width:127px;margin:5px;border-radius:6px;padding:4px'>
   <div style='display:flex;justify-content:space-between;align-items:center;margin-top:10px;'>
-    <button onclick='setPort(${i})'
-      style='margin:10px;margin-bottom:9px;'>
-      Save
-    </button>
-
-    <button onclick='factoryReset()'
-      style='background:#bd1313;margin-bottom:9px;'>
-      Factory Reset
-    </button>
+    <button onclick='setPort(${i})' style='margin:10px;margin-bottom:9px;'>Save</button>
+    <button onclick='factoryReset()' style='background:#bd1313;margin-bottom:9px;'>Factory Reset</button>
   </div>
 </div>`
 };
 )rawliteral";
+
 
 const char DeviceCards[] PROGMEM = R"rawliteral(
 
@@ -685,177 +300,54 @@ function formatTime(s) {
 
 function deviceCard(name, value, id, state, fade, type, sensor = null) {
   if (type === SensorType.TYPE_RELAY) {
-  return `
-<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
-  <h3>RELAY ${name}</h3>
-  <p>
-    ⚡
-    <b id='dev_${id}'>${state ? 'ON' : 'OFF'}</b>
-  </p>
-  <button
-    onclick="toggleDevice(${id})"
-    style="margin-top:6px; display:inline-block; margin-right:8px">
-    Toggle
-  </button>
-</div>`;
+    return `<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
+      <h3>RELAY ${name}</h3>
+      <p>⚡ <b id='dev_${id}'>${state ? 'ON' : 'OFF'}</b></p>
+      <button onclick="toggleDevice(${id})" style="margin-top:6px;display:inline-block;margin-right:8px">Toggle</button>
+    </div>`;
   }
-
   if (type === SensorType.TYPE_DIMMER) {
-  const displayValue = state ? value : 0;
-  return `
-<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
-  <h3>DIMMER ${name}</h3>
-  <p>
-    📊
-    <b id='dev_val_${id}'>${displayValue}</b> %
-  </p>
-  <p>
-    ⚡
-    <b id='dev_state_${id}'>${state ? 'ON' : 'OFF'}</b>
-  </p>
-  <input
-    type='range'
-    min='0'
-    max='100'
-    name='${name}'
-    value='${displayValue}'
-    id='slider_${id}'
-    style='margin-bottom:18px'
-    oninput='onDimmerInput(${id}, this.value)'
-    onchange='onDimmerChange(${id}, this.value)'>
-  <button
-    onclick="toggleDevice(${id})"
-    style="margin-top:6px; display:inline-block; margin-right:8px">
-    Toggle
-  </button>
-</div>`;
-}
-
-  if (type === SensorType.SENSOR_TEMP) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>TEMPERATURE ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      🌡️ ${(value === 255 || value == null) ? 'N/A' : value.toFixed(2) + ' °C'}
-    </b>
-  </p>
-</div>`;
+    const displayValue = state ? value : 0;
+    return `<div class='card' data-name='${name}' data-type='${type}' style='text-align:center'>
+      <h3>DIMMER ${name}</h3>
+      <p>📊 <b id='dev_val_${id}'>${displayValue}</b> %</p>
+      <p>⚡ <b id='dev_state_${id}'>${state ? 'ON' : 'OFF'}</b></p>
+      <input type='range' min='0' max='100' name='${name}' value='${displayValue}' id='slider_${id}' style='margin-bottom:18px' oninput='onDimmerInput(${id}, this.value)' onchange='onDimmerChange(${id}, this.value)'>
+      <button onclick="toggleDevice(${id})" style="margin-top:6px;display:inline-block;margin-right:8px">Toggle</button>
+    </div>`;
   }
-
-  if (type === SensorType.SENSOR_HUMI) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>HUMIDITY ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      💧 ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' %'}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_PRESS) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>PRESSURE ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      📈 ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' kPa'}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_LEVEL) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>LEVEL ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      📊 ${(value === 255 || value == null) ? 'N/A' : value.toFixed(0) + ' %'}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_AIRQ) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>AIR QUALITY ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      ${value === 255 || value == null ? 'N/A' : value == 0 ? '🟢 GOOD' : value == 1 ? '🟡 WARN' : value == 2 ? '🔴 BAD' : 'N/A'}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_RAIN) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>RAIN ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      ${(value === 255 || value == null) ? 'N/A' : value ? "🌧️ YES" : "☀️ NO"}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_LUMI) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>LUMINOSITY ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      🔆 ${(value === 255 || value == null)
-        ? 'N/A'
-        : (value * 108.9432 / 7074).toFixed(0) + ' lx'}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_GENERIC) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>CUSTOM ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      🔬 ${(value === 255 || value == null) ? 'N/A' : Number(value).toFixed(2)}
-    </b>
-  </p>
-</div>`;
-  }
-
-  if (type === SensorType.SENSOR_CONTACT) {
-    return `
-<div class='card' style='text-align:center'>
-  <h3>CONTACT ${name}</h3>
-  <p>
-    <b id='dev_${id}'>
-      ${(value === 255 || value == null) ? 'N/A' : state ? "🔒 CLOSED" : "🔓 OPEN"}
-    </b>
-  </p>
-</div>`;
-  }
-
   if (type === SensorType.SENSOR_TIME) {
-    return `
-<div class='card time-card' style='text-align:center'>
-  <h3>TIME</h3>
-  <p><b id='dev_${id}'>${formatTime(sensor || {value})}</b></p>
-</div>`;
+    return `<div class='card time-card' style='text-align:center'>
+      <h3>TIME</h3>
+      <p><b id='dev_${id}'>${formatTime(sensor || {value})}</b></p>
+    </div>`;
   }
-
-  return `
-<div class='card' style='text-align:center'>
-  <h3>${name}</h3>
-  <p><b id='dev_${id}'>⚙️ ${value}</b></p>
-</div>`;
+  const SENSOR_DISPLAY = {
+    [SensorType.SENSOR_TEMP]:  { icon: '🌡️', label: 'TEMPERATURE', format: v => v.toFixed(2) + ' °C' },
+    [SensorType.SENSOR_HUMI]:  { icon: '💧', label: 'HUMIDITY', format: v => v.toFixed(0) + ' %' },
+    [SensorType.SENSOR_PRESS]: { icon: '📈', label: 'PRESSURE', format: v => v.toFixed(0) + ' kPa' },
+    [SensorType.SENSOR_LEVEL]: { icon: '📊', label: 'LEVEL', format: v => v.toFixed(0) + ' %' },
+    [SensorType.SENSOR_AIRQ]:  { icon: '🍃', label: 'AIR QUALITY', format: v => v == 0 ? 'GOOD' : v == 1 ? 'WARN' : v == 2 ? 'BAD' : 'N/A' },
+    [SensorType.SENSOR_RAIN]:  { icon: '🌧️', label: 'RAIN', format: v => v ? 'YES' : 'NO' },
+    [SensorType.SENSOR_LUMI]:  { icon: '🔆', label: 'LUMINOSITY', format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
+    [SensorType.SENSOR_GENERIC]: { icon: '🔬', label: 'CUSTOM', format: v => Number(v).toFixed(2) },
+    [SensorType.SENSOR_CONTACT]: { icon: '🔒', label: 'CONTACT', format: (v,s) => s ? 'CLOSED' : 'OPEN' },
+  };
+  const cfg = SENSOR_DISPLAY[type];
+  if (cfg) {
+    const dv = (value === 255 || value == null) ? 'N/A' : cfg.format(value, state);
+    return `<div class='card' style='text-align:center'>
+      <h3>${cfg.label} ${name}</h3>
+      <p><b id='dev_${id}'>${cfg.icon} ${dv}</b></p>
+    </div>`;
+  }
+  return `<div class='card' style='text-align:center'>
+    <h3>${name}</h3>
+    <p><b id='dev_${id}'>⚙️ ${value}</b></p>
+  </div>`;
 }
 )rawliteral";
+
 
 const char JS[] PROGMEM = R"rawliteral(
 
@@ -1225,6 +717,7 @@ function darken(hex, percent){
 }
 
 )rawliteral";
+
 
 const char AutoWizJS[] PROGMEM = R"rawliteral(
 
@@ -2097,5 +1590,6 @@ setInterval(() => {
 </body>
 </html>
 )rawliteral";
+
 
 }
