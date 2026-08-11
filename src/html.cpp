@@ -7,6 +7,7 @@ const char Styles[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head><meta char
 body{font-family:sans-serif;text-align:center;margin:0}.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}.tab{flex:1;padding:12px;cursor:pointer}.active{background:#444}.content{padding:15px}.card{background:var(--card);color:var(--text);margin:10px;padding:10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);text-align:left;border-left:3px solid rgba(255,255,255,.75)}.card:hover{filter:brightness(1.08)}.card h3{margin-top:0;text-align:center}.devices-section-title{display:none}button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}.matter-btn.on{background:#2ecc71;color:#000}.matter-btn.off{background:#444;color:#bbb}.matterLbl{margin-left:20px;font-weight:600}.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1000}.modal-content{background:var(--card);color:var(--text);padding:20px;border-radius:10px;width:320px;text-align:left}.modal input,.modal select{margin-bottom:10px;padding:6px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text)}#themePicker{position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:6px}.themeDot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid #333}.themeDot:hover{transform:scale(1.2)}:root{--bg:#111315;--panel:#2e3238;--card:#3c4149;--text:#ffffff}body{background:var(--bg);color:var(--text)}.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.settings-general{grid-column:1/-1}@media(max-width:900px){.settings-grid{grid-template-columns:1fr}.settings-general{grid-column:auto}}
 .themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#cdfcff"]{background:#cdfcff}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}.themeDot[data-bg="#61b956"]{background:#61b956}input[type=range]{width:100%}@media (min-width:1100px){#control{padding:10px 10px}.devices-mobile-list{display:none}.devices-desktop-layout{display:grid;grid-template-columns:minmax(260px,38%) minmax(420px,1fr);gap:18px;align-items:start;min-height:calc(100vh - 130px)}.devices-column{min-height:calc(100vh - 150px);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;background:var(--panel);color:var(--text)}.devices-section-title{display:block;margin:2px 10px 12px;text-align:left;color:var(--text);font-size:13px;font-weight:700;letter-spacing:0;text-transform:uppercase}.devices-actuator-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}.devices-sensor-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.devices-dashboard .card{margin:0;min-height:96px;box-sizing:border-box}.devices-dashboard .time-card{grid-column:span 1;min-height:96px}}
 @media (max-width:899px){.devices-desktop-layout{display:none}.devices-mobile-list{display:block}.devices-column,.devices-actuator-grid,.devices-sensor-grid{display:block}}
+.log-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:900px){.log-grid{grid-template-columns:1fr}}.log-panel{background:var(--panel);color:var(--text);border-radius:10px;padding:12px;min-height:300px;max-height:60vh;overflow-y:auto;text-align:left;font-family:monospace;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12)}.log-panel h3{margin:0 0 10px 0;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:1px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}.log-entry{margin-bottom:4px;padding:3px 6px;border-radius:4px;background:rgba(0,0,0,.2);word-break:break-all}.log-entry .t{color:#888;font-size:10px}.log-entry .l{font-weight:700;margin:0 4px}.log-entry .l.inf{color:#2ecc71}.log-entry .l.wrn{color:#f39c12}.log-entry .l.err{color:#e74c3c}.log-entry.core{border-left:3px solid #3498db}.log-entry.evnt{border-left:3px solid #9b59b6}.log-entry.sens{border-left:3px solid #2ecc71}.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.log-header button{margin:0;padding:4px 10px;font-size:11px}
 </style></head><body>
 )rawliteral";
 
@@ -26,6 +27,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <div class='tab' id='t_auto'>Automations</div>
 <div class='tab' id='t_config'>Settings</div>
 <div class='tab' id='t_wifi'>Network</div>
+<div class='tab' id='t_logs'>Logs</div>
 </div>
 <div id='control' class='content'><div id='devices_cards'></div></div>
 <div id='auto' class='content' style='display:none'>  
@@ -57,6 +59,17 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <button type='submit' style='margin:10px;'>Save</button>
 </form>
 </div>
+<div id='logs' class='content' style='display:none'>
+<div class='log-header'>
+<span style='font-weight:600'>System Logs</span>
+<button onclick='refreshLogs()'>Refresh</button>
+</div>
+<div class='log-grid'>
+<div class='log-panel' id='log-core'><h3>Core</h3></div>
+<div class='log-panel' id='log-events'><h3>Events</h3></div>
+<div class='log-panel' id='log-sensors'><h3>Sensors / Warn / Error</h3></div>
+</div>
+</div>
 <script>
 function show(tab){
 document.querySelectorAll('.content').forEach(c=>c.style.display='none');
@@ -66,6 +79,8 @@ document.getElementById('t_'+tab).classList.add('active');
 localStorage.setItem('tab',tab);
 if(tab==='auto') loadRules();
 if (tab === 'config') loadCalib();
+if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
+else { stopLogAutoRefresh(); }
 }
 )rawliteral";
 
@@ -732,6 +747,54 @@ function darken(hex, percent){
     ((1<<24)+(r<<16)+(g<<8)+b)
     .toString(16)
     .slice(1);
+}
+
+let logTimer = null;
+
+async function refreshLogs(){
+  try {
+    const r = await fetch('/logs');
+    if(!r.ok) return;
+    const logs = await r.json();
+    renderLogs(logs);
+  } catch(e){
+    console.log('refreshLogs err', e);
+  }
+}
+
+function renderLogs(logs){
+  const coreEl = document.getElementById('log-core');
+  const evntEl = document.getElementById('log-events');
+  const sensEl = document.getElementById('log-sensors');
+  coreEl.innerHTML = '<h3>Core</h3>';
+  evntEl.innerHTML = '<h3>Events</h3>';
+  sensEl.innerHTML = '<h3>Sensors / Warn / Error</h3>';
+  logs.forEach(e => {
+    const el = document.createElement('div');
+    el.className = 'log-entry ' + (e.l === 'CORE' ? 'core' : e.l === 'EVNT' ? 'evnt' : 'sens');
+    el.innerHTML = `<span class="t">${e.t}</span><span class="l ${e.v.toLowerCase()}">${e.v}</span>${e.m}`;
+    if(e.l === 'CORE') coreEl.appendChild(el);
+    else if(e.l === 'EVNT') evntEl.appendChild(el);
+    else sensEl.appendChild(el);
+  });
+  // Also show WARN and ERROR in the third panel
+  logs.forEach(e => {
+    if(e.v === 'WRN' || e.v === 'ERR'){
+      const el = document.createElement('div');
+      el.className = 'log-entry sens';
+      el.innerHTML = `<span class="t">${e.t}</span><span class="l ${e.v.toLowerCase()}">${e.v}</span><span class="l">${e.l}</span> ${e.m}`;
+      sensEl.appendChild(el);
+    }
+  });
+}
+
+function startLogAutoRefresh(){
+  if(logTimer) clearInterval(logTimer);
+  logTimer = setInterval(refreshLogs, 2000);
+}
+
+function stopLogAutoRefresh(){
+  if(logTimer){ clearInterval(logTimer); logTimer = null; }
 }
 
 )rawliteral";
