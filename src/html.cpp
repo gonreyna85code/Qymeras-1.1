@@ -78,7 +78,7 @@ document.getElementById(tab).style.display='block';
 document.getElementById('t_'+tab).classList.add('active');
 localStorage.setItem('tab',tab);
 if(tab==='auto') loadRules();
-if (tab === 'config') loadCalib();
+  if (tab === 'config'){ loadCalib(); syncOtaCheckbox(); }
 if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
 else { stopLogAutoRefresh(); }
 }
@@ -688,9 +688,19 @@ function factoryReset() {
 async function toggleOta(enabled) {
   try {
     await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
-    alert('OTA ' + (enabled ? 'enabled' : 'disabled'));
+    alert('OTA ' + (enabled ? 'enabled' : 'disabled') + ' - rebooting...');
   } catch(e) {
     console.log('toggleOta err', e);
+  }
+}
+
+async function syncOtaCheckbox() {
+  try {
+    const r = await fetch('/ota/status');
+    const j = await r.json();
+    document.getElementById('otaChk').checked = j.ota === 1;
+  } catch(e) {
+    console.log('syncOta err', e);
   }
 }
 

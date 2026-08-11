@@ -250,9 +250,16 @@ void handleOtaToggle() {
     bool enable = server.arg("enabled") == "1";
     core::setOtaEnabled(enable);
     server.send(200, "text/plain", enable ? "OK" : "OFF");
+    delay(500);
+    RESET_MCU();
   } else {
     server.send(400, "text/plain", "enabled arg required");
   }
+}
+
+void handleOtaStatus() {
+  addCorsHeaders();
+  server.send(200, "application/json", core::isOtaEnabled() ? "{\"ota\":1}" : "{\"ota\":0}");
 }
 
 ICACHE_FLASH_ATTR void loadCalibration() {
@@ -786,6 +793,7 @@ void init() {
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.on("/logs", handleLogs);
   server.on("/ota/toggle", handleOtaToggle);
+  server.on("/ota/status", handleOtaStatus);
   server.begin();
 }
 

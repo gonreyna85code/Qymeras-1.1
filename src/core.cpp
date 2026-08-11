@@ -19,7 +19,7 @@ static bool wifi_connected = false;
 static unsigned long last_attempt = 0;
 static unsigned long last_report = 0;
 static bool first_report = true;
-static bool ota_enabled = true;
+static bool ota_enabled = false;
 GeneralSettings genset;
 
  // ================= HELPERS ===================
@@ -94,7 +94,6 @@ void begin() {
   logger::coref("Mesh UDP ready (bc:%u, cmd:%u)", genset.broadcast_port, genset.command_port);
   web::init();
   startWiFi();
-  logger::core("OTA ready");
   logger::coref("Free heap: %u B", ESP.getFreeHeap());
 }
 
