@@ -89,7 +89,10 @@ void begin() {
 
   // Load OTA flag from EEPROM
   ota_enabled = EEPROM.read(EEPROM_OTA_FLAG_ADDR) == 1;
-  if (ota_enabled) ArduinoOTA.begin();
+  if (ota_enabled) {
+    ArduinoOTA.begin();
+    logger::core("OTA enabled");
+  }
 
   sensors::init();
   ::initSatellite();

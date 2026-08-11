@@ -71,15 +71,15 @@ const char Tabs[] PROGMEM = R"rawliteral(
 </div>
 </div>
 <script>
-function show(tab){
+async function show(tab){
 document.querySelectorAll('.content').forEach(c=>c.style.display='none');
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
 document.getElementById(tab).style.display='block';
 document.getElementById('t_'+tab).classList.add('active');
 localStorage.setItem('tab',tab);
 if(tab==='auto') loadRules();
-  if (tab === 'config'){ loadCalib(); syncOtaCheckbox(); }
-if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
+  if (tab === 'config'){ await loadCalib(); await syncOtaCheckbox(); }
+  if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
 else { stopLogAutoRefresh(); }
 }
 )rawliteral";
