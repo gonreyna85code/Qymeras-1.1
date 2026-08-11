@@ -102,17 +102,21 @@ void tick(uint32_t now_ms) {
             s.last[j] = raw;
             s.counter[j] = 1;
           }
-          if (s.counter[j] < CONFIRM_READS) continue;
+          // No suficientes lecturas confirmadas:
+          // val_trigger se mantiene false (inicializado arriba).
+          // No hacer 'continue' — el trigger AND/OR necesita evaluar
+          // todos los sensores para no disparar prematuramente.
+          if (s.counter[j] >= CONFIRM_READS) {
+            bool rising = (!s.stable[j] && raw);
+            bool falling = (s.stable[j] && !raw);
 
-          bool rising = (!s.stable[j] && raw);
-          bool falling = (s.stable[j] && !raw);
-
-          switch (r.cmp[j]) {
-            case CMP_GT: val_trigger = rising; break;
-            case CMP_LT: val_trigger = falling; break;
-            default: val_trigger = false;
+            switch (r.cmp[j]) {
+              case CMP_GT: val_trigger = rising; break;
+              case CMP_LT: val_trigger = falling; break;
+              default: val_trigger = false;
+            }
+            s.stable[j] = raw;
           }
-          s.stable[j] = raw;
         } else if (r.type == RULE_THRESHOLD) {
           float val = sensor.value;
           bool condition_met = false;
