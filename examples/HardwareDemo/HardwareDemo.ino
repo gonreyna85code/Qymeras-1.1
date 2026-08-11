@@ -1,23 +1,23 @@
 /*
-  HardwareDemo - Ejemplo de uso de la librería AntiMatterSatellite
-  ================================================================
+  HardwareDemo - Example using the Qymera library
+  =================================================
   
-  Este sketch demuestra el uso de un ADC PCF8591 (8-bit) para leer:
-  - Humedad de suelo (4 canales)
-  - Temperatura NTC
-  - Sensores simulados (temp, luz, presión, etc.)
-  - Relay y dimmer locales
+  This sketch demonstrates using a PCF8591 (8-bit) ADC to read:
+  - Soil moisture (4 channels)
+  - NTC temperature
+  - Simulated sensors (temp, light, pressure, etc.)
+  - Relay and dimmer actuators
   
-  El usuario solo necesita:
-  1. initSatellite() - inicializar librerías hardware (Wire, etc.)
-  2. report()       - leer hardware y reportar valores via sensors::xxx()
-  3. onCommandHook() - lógica personalizada de comandos recibidos
-
-  La librería maneja: WiFi, servidor web, mesh UDP, automatizaciones, EEPROM.
+  The user sketch only needs to implement:
+  1. initSatellite() - initialize hardware libraries (Wire, etc.)
+  2. report()       - read hardware and report values via sensors::xxx()
+  3. onCommandHook() - custom logic for received commands
+  
+  The library handles: WiFi, web server, UDP mesh, automations, EEPROM.
 */
 
 #include <Wire.h>
-#include <AntiMatterSatellite.h>
+#include <Qymera.h>
 
 // ================================
 // Hardware constants

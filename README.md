@@ -1,234 +1,296 @@
-# AntiMatter Satellite - Smart Automation Firmware
+# Qymera - Smart Automation Firmware
 
-Tu microcontrolador (ESP8266 o ESP32) se convierte en un nodo IoT completo: lee sensores, controla actuadores y ejecuta reglas de automatización.
+Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Estado:** Funcional en ESP8266 & ESP32 | Interfaz web integrada | EEPROM para persistencia sin internet
+**Status:** Production-ready on ESP8266 & ESP32 | Built-in web server | UDP mesh networking | EEPROM persistence | Arduino Library
 
 ---
 
-## Iniciar Rápido (5 minutos)
+## Quick Start
 
-### 1. Hardware necesario
+### 1. What You Need
 
-| Componente | Necesario? |
+| Component | Required? |
 |-----------|-----------|
-| Placa ESP8266 (NodeMCU, D1 Mini) o ESP32 | Sí |
-| Cable USB para primer upload | Sí |
-| Sensor(es) que quieras usar (DHT22, BMP280, etc.) | Opcional |
+| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) or ESP32 (DevKit, etc.) | Yes |
+| USB cable (data capable) | Yes |
+| Optional sensors/actuators (DHT22, relays, etc.) | Optional |
 
-### 2. Conectar y configurar por primera vez
+### 2. Install Qymera as an Arduino Library
 
-**a) Instalar PlatformIO + abrir el proyecto**
+Qymera is distributed as an Arduino Library. There are three ways to install it:
 
-[Instalar extension en VS Code](https://platformio.org/install/ide?install=vscode)
+#### Option A: Arduino IDE (Recommended)
 
-Luego abrir el directorio del proyecto con la extensión.
+1. Download this repository (click **Code → Download ZIP**)
+2. In Arduino IDE: **Sketch → Include Library → Add .ZIP Library...**
+3. Select the downloaded ZIP file
+4. The library is now available as `#include <Qymera.h>`
 
-**b) Subir firmware al dispositivo**
+#### Option B: Arduino IDE (Manual)
 
-```bash
-pio upload -e <tu_plataforma>
-# Ej: pio upload -e esp8266_d1_mini     # NodeMCU/D1 Mini
-#     pio upload -e esp32_devkit        # ESP32 DevKit
+1. Clone or copy the `src/` folder and `library.properties` into your Arduino
+   libraries directory (e.g. `~/Documents/Arduino/libraries/Qymera/`)
+
+#### Option C: PlatformIO
+
+```ini
+[env:your_board]
+platform = <your_platform>
+board = <your_board>
+lib_deps =
+    https://github.com/gonreyna85code/Qymera.git
 ```
 
-**c) Conectar al WiFi de emergencia del dispositivo**
+### 3. Create Your First Sketch
 
-Busca la red `PeriferalSetup` en tus dispositivos. Ábrela — no tiene contraseña.
+Use the built-in [HardwareDemo example](examples/HardwareDemo/HardwareDemo.ino)
+as a starting point. The library handles WiFi, the web server, UDP mesh, and
+automation logic — your sketch only needs to:
 
-Luego entra a `http://192.168.4.1`, ve a **NETWORK Tab**, introduce tu SSID y contraseña. El dispositivo se reinicia y se conecta a internet.
+- `initSatellite()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
+- `report()` &mdash; read sensors and report values via `sensors::xxx()` API
+- `onCommandHook(...)` &mdash; handle custom commands from remote devices
 
-**d) Configurar sensores y reglas**
+```cpp
+#include <Qymera.h>
+#include <Wire.h>
 
-Ahora acceso vía web: abre tu navegador, busca la IP de tu red (`http://<IP_del_dispositivo>`).
+void initSatellite() {
+  Wire.begin();
+  // initialize your hardware here
+}
 
-- Ve a **SETTINGS** para calibrar los sensores
-- Ve a **AUTOMATIONS** para crear las primeras reglas
+void report() {
+  // read your sensors
+  sensors::temperature("Office", 23.5f);
+  sensors::humidity("Soil", 65);
+}
 
----
+void onCommandHook(uint32_t, uint8_t, int, bool) {
+  // optional: react to remote commands
+}
 
-## Sensores soportados (9 tipos)
-
-| Sensor | Rango | Unidad | Ejemplo de uso |
-|--------|-------|--------|----------------|
-| Temperatura | -50 a +150 | °C | DHT22, DS18B20 |
-| Humedad | 0-100 | % | DHT22, humedad del suelo |
-| Luz | 0-65535 | lux | Fotoresistencia, sensores de luz |
-| Presión | 300-1100 | hPa | BMP280 |
-| Nivel | 0-100 | % | Tanques, piscinas |
-| Calidad del aire | GOOD / WARN / BAD | enum | MQ135, SDS011 |
-| Lluvia | ON / OFF | bool | Detector de lluvia |
-| Relay | ON / OFF | bool | Relés de control |
-| Dimmer (gradiente) | 0-100 | % | PWM, luz LED, ventilador |
-
-Cada sensor tiene calibración individual para mayor precisión.
-
----
-
-## Automatización: hasta 20 reglas
-
-Crea reglas con hasta **5 sensores** y **5 actuadores** cada una.
-
-### Tipos de regla
-
-- **Edge (cambio de estado):** Cuando un dispositivo pasa a ON/OFF → activar alarma
-- **Threshold (umbral):** Cuando temperatura supera X° → encender ventilador. Soporta múltiples condiciones combinadas
-- **Scheduled (hora fija):** Activarse a una hora específica cada día. Funciona con NTP o reloj local
-- **Periodic (intervalo):** Cada N segundos — ideal para enviar datos al servidor
-
-Opciones avanzadas en todas las reglas: delay, cooldown y tiempo mínimo ON/OFF.
-
----
-
-## Control de actuadores
-
-**Relyes:** ENCENDER / APAGAR / TOGGLE (invertir estado) / PULSE (activar por X ms y soltar). Soporta persistencia entre reinicios para recordar el último estado.
-
-**Dimers:** Controlar luz LED, ventilador o motores con desvanecimiento suave (fade) entre valores de 0 a 100%.
-
----
-
-## Comunicación: Web + Red local
-
-### Sin cable USB — toda la configuración es web
-
-Solo necesitas un navegador para configurar desde cero y luego el dispositivo funciona solo. El servidor HTTP corre sin internet, leyendo de EEPROM.
-
-**Tabs principales:**
-- **DEVICES** → Control real-time de actuadores
-- **AUTOMATIONS** → Asistente visual para crear reglas
-- **SETTINGS** → Calibrar sensores y revisar configuraciones
-- **NETWORK** → Cambiar WiFi o hacer reset de fábrica
-
-### Comandos HTTP (curl)
-
-```bash
-# Borrar WiFi guardada → vuelve a AP modo
-# (no recomendado en producción sin autenticación previa)
-POST /factory
+void setup()   { core::begin(); }
+void loop()    { core::loop(); }
 ```
 
-Para más pormenores del API, consulta la sección técnica debajo.
+### 4. First-Time Setup
+
+1. **Upload** the sketch to your device.
+2. Connect to the WiFi network **`QymeraSetup`** (no password).
+3. Open **`http://192.168.4.1`** in your browser.
+4. Go to the **NETWORK** tab, enter your home WiFi SSID and password.
+5. The device reboots and connects to your network.
+
+### 5. Configure Sensors and Rules
+
+- **SETTINGS** tab &mdash; calibrate sensors, set offsets, pin assignments
+- **AUTOMATIONS** tab &mdash; create automation rules with the visual wizard
+- **DEVICES** tab &mdash; control relays and dimmers in real time
 
 ---
 
-## Plataformas compatibles
+## Supported Sensors
 
-| Placa | Estado |
+Qymera supports **9 sensor types** plus **2 actuator types**. Each sensor has
+individual calibration (offset, min/max, resolution, availability, persistence
+options).
+
+| Sensor | Range | Unit | API | Typical Hardware |
+|--------|-------|------|-----|-------------------|
+| Temperature | -50 to +150 | °C | `sensors::temperature()` | DHT22, DS18B20, NTC |
+| Humidity | 0-100 | % | `sensors::humidity()` | DHT22, soil moisture |
+| Light | 0-65535 | lux | `sensors::luminosity()` | Photoresistor, BH1750 |
+| Pressure | 300-1100 | hPa | `sensors::pressure()` | BMP280, BME280 |
+| Level | 0-100 | % | `sensors::level()` | Ultrasonic, float switch |
+| Air Quality | GOOD / WARN / BAD | enum | `sensors::airQ()` | MQ135, SDS011 |
+| Rain | ON / OFF | bool | `sensors::rain()` | Rain drop sensor |
+| Contact | OPEN / CLOSED | bool | `sensors::contact()` | Reed switch, door sensor |
+| Generic | any | float | `sensors::custom()` | Any analog/digital value |
+| Time | N/A | epoch | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP |
+| Relay (actuator) | ON / OFF | bool | `sensors::relay()` | Digital relay, latching |
+| Dimmer (actuator) | 0-100 | % | `sensors::dimmer()` | LED strip, fan, PWM |
+
+---
+
+## Automation: Up to 20 Rules
+
+Create rules combining up to **5 sensors** and **5 actuators** per rule.
+
+### Rule Types
+
+- **Edge** &mdash; triggers on state change (RISING / FALLING) for booleans,
+  useful for motion detection or contact sensor transitions
+- **Threshold** &mdash; triggers when a sensor crosses a configurable
+  threshold. Combine multiple conditions with AND/OR logic
+- **Scheduled** &mdash; triggers at a specific time daily. Uses NTP or local
+  RTC time
+- **Periodic** &mdash; triggers every N seconds for regular data reporting
+
+All rules support advanced options: execution delay, cooldown period, and
+minimum ON/OFF duration.
+
+---
+
+## Actuator Control
+
+**Relays:** ON / OFF / TOGGLE (invert state) / PULSE (activate for X ms then
+release). Supports state persistence across reboots.
+
+**Dimmers:** Smooth fade transitions between 0-100% brightness for LEDs, fans,
+and other PWM loads.
+
+---
+
+## Communication: Web + Local Network
+
+### Zero USB Required
+
+All configuration is done through the web UI. After initial setup, the device
+operates independently — no internet needed. HTTP server runs on port 80,
+reading all config from EEPROM.
+
+**Main tabs:**
+- **DEVICES** &mdash; Real-time actuator control
+- **AUTOMATIONS** &mdash; Visual rule creation wizard
+- **SETTINGS** &mdash; Sensor calibration and device configuration
+- **NETWORK** &mdash; WiFi management and factory reset
+
+### HTTP API (curl)
+
+```bash
+# Factory reset (clears WiFi, returns to AP mode)
+curl -X POST http://<device-ip>/factory
+
+# Toggle an actuator
+curl -X POST http://<device-ip>/toggle -d "id=0&state=1"
+
+# Set dimmer value
+curl -X POST http://<device-ip>/dimmer -d "id=0&value=75"
+```
+
+Full API reference: see `AGENTS.md` for endpoint documentation.
+
+---
+
+## Supported Platforms
+
+| Board | Status |
 |-------|--------|
-| ESP8266 (NodeMCU, D1 Mini, etc.) | ✅ Confirmado |
-| ESP32 (DevKit, Generic) | ✅ Confirmado |
-| ESP32-S2, ESP32-S3, ESP32-C3 | 🟡 Probable |
+| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) | Fully Tested |
+| ESP32 (DevKit, WROOM, etc.) | Fully Tested |
+| ESP32-S2, ESP32-S3, ESP32-C3 | Untested but likely compatible |
 
-El código detecta automáticamente tu placa. Para agregar una nueva solo añade una sección `#define` en el código.
-
----
-
-## Persistencia de datos (EEProm 4 KB)
-
-Todo lo que configuras via web se guarda y sobrevive al reinicio, menos los últimos valores leídos de sensor (se pierden si borras EEPROM):
-
-| ¿Qué persiste? | Tamaño |
-|---------------|--------|
-| Credenciales WiFi + reglas calibradas + reglas de automatización | ~2.2 KB total |
-| Estado de relés (si se activa la opción persistence) | 10 B |
-
-Reset de fábrica: pestaña **SETTINGS** → botón "Factory Reset" o HTTP POST al endpoint correspondiente. Elimina todas las configuraciones y reinicia en modo AP.
+Platform auto-detection via preprocessor defines. Add new boards by adding a
+`#define` block in `config.h`.
 
 ---
 
-## Uso común
+## Data Persistence (EEPROM 4 KB)
 
-### Invernadero inteligente
+All web configuration survives power loss — only live sensor readings are lost
+on reset:
+
+| What persists | Size |
+|---------------|------|
+| WiFi credentials, calibration rules, automation rules | ~2.2 KB total |
+| Relay states (if persistence enabled) | 10 bytes |
+
+**Factory reset:** SETTINGS tab → "Factory Reset" button, or HTTP `POST /factory`.
+
+---
+
+## Common Use Cases
+
+### Smart Greenhouse
 ```
-→ Si temp > 30°C Y humedad > 80%   → encender ventilador
-→ Si suelo seco (<30%)              → activar bomba de agua 5 min
-→ Cada día a las 6:00               → luces encendidas
-→ Cada día a las 18:00              → luces apagadas
+→ If temp > 30°C AND humidity > 80%  → turn on fan
+→ If soil dry (<30%)                 → activate water pump for 5 min
+→ Daily at 06:00                     → lights on
+→ Daily at 18:00                     → lights off
 ```
 
-### Casa inteligente
+### Smart Home
 ```
-→ Moción detectada entre 18-22      → luces al 70% con fade de 1s
-→ Sin moción después de 23:00       → luces se apagan a los 3 segundos
-→ Temp < 18°C                       → calentar
+→ Motion detected 18:00-22:00       → lights to 70% with 1s fade
+→ No motion after 23:00             → lights off after 3s
+→ Temp < 18°C                        → heater on
 ```
 
-### Riego inteligente
+### Smart Irrigation
 ```
-→ Zona 1 seca y no llovió          → abrir válvula + bomba
-→ Lloviendo                         → todo cerrado (ahorro)
-→ Temp < 5°C                        → apagar bomba (anti-congelación)
+→ Zone 1 dry AND no rain             → open valve + pump
+→ Rain detected                      → close all valves (water saving)
+→ Temp < 5°C                         → stop pump (anti-freeze)
 ```
 
 ---
 
-## Seguridad básica
+## Security Notes
 
-Actualmente funciona sin autenticación. Recomendado para redes locales en casa, pero si lo expones a internet considera:
+Qymera currently has **no authentication**. Recommended for home local networks
+only:
 
-1. Usar solo en WiFi de red local confiable
-2. Cambiar el SSID del AP de emergencia (`PeriferalSetup`) a algo aleatorio
-3. Bloquear los puertos del router hacia afuera
-4. Si necesitas acceso remoto, usa VPN o autenticación HTTP personalizada
-
----
-
-## Solución rápida a problemas comunes
-
-**El dispositivo aparece pero no se une al WiFi?**
-- Revisa que el cable USB tiene datos (no solo energía) en la primera carga
-- Espera 10 segundos después de encenderlo antes de buscarlo
-- Verifica que tu router acepte MACs desconocidos y usa banda 2.4 GHz
-
-**Los sensores no reportan valores?**
-- Configura el sensor en el TAB **SETTINGS**, introduce un offset/calibración y guarda
+1. Use only on a trusted local WiFi network
+2. Change the AP SSID from `QymeraSetup` to a random name via settings
+3. Block external access through your router's firewall
+4. For remote access, use a VPN or custom HTTP authentication
 
 ---
 
-## Configuración avanzada por código
+## Troubleshooting
 
-Para ajustar límites o puertos UDP, edita los parámetros de compilación según necesites. Los valores por defecto están bien para la mayoría de casos:
+**Device appears but won't join WiFi?**
+- First-time flash: ensure the USB cable supports data (not power-only)
+- Wait 10 seconds after power-on before scanning for networks
+- Verify router allows unknown MAC addresses on 2.4 GHz band
+
+**Sensors not reporting values?**
+- Register the sensor in the SETTINGS tab, add calibration values, and save
+- Verify pin assignments match your hardware
+
+---
+
+## Advanced Configuration
+
+Edit `config.h` for platform-specific settings. Defaults work for most cases:
 
 ```cpp
-#define MAX_SENSORS          64        // máx sensores en memoria
-#define MAX_RULES             20       // máx reglas guardadas en EEPROM
-#define PULSE_DURATION_MS     10       // duración mínima default del pulso (relé)
+#define MAX_SENSORS      64   // max sensors in memory
+#define MAX_RULES        20   // max rules stored in EEPROM
+#define PULSE_DURATION_MS  10  // default relay pulse duration
 ```
 
 ---
 
-## Código para agregar tus propios sensores
+## Custom Sensors
 
-Si necesitas leer algo fuera de los sensores estándar, puedes registrar un nuevo sensor manualmente después de calibrarlo via web:
+Register custom sensors by calling the appropriate API in your `report()` loop.
+Values appear immediately in the web UI and can be used in automation rules:
 
 ```cpp
-float raw = analogRead(A5);           // leer tu GPIO
-sensors::temperature("MiSensor", raw/4.0f);  // reportar al sistema
+float raw = analogRead(A5);
+sensors::temperature("MySensor", raw / 4.0f);
 ```
-
-El valor aparece en el Web UI y puede usarse en reglas de automatización sin tocar más código.
 
 ---
 
-## Contribuir
+## Contributing
 
-Cualquier problema, idea o mejora es bienvenido. Abre un issue o submita un pull request. Si deseas probar con la terminal del monitor:
+Issues and PRs welcome. To build and monitor via serial:
 
 ```bash
-# Instalar CLI de PlatformIO (requiere Python)
 pip install platformio
-
-# Construir + monitorizar
-pio run -t upload --monitor -e <tu_plataforma>
+pio run -t upload --monitor -e esp32_devkit
 ```
 
 ---
 
 ## Roadmap
 
-Siguientes mejoras planeadas: MQTT, Zigbee/Z-Wave, Matter, dashboard con gráficos, notificaciones por email/SMS y app móvil. Todo depende de la comunidad.
+MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications · mobile app. Driven by community needs.
 
 ---
 
-License: MIT — ver archivo `LICENSE`.
+License: MIT — see `LICENSE` file.
