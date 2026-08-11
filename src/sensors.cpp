@@ -351,6 +351,27 @@ void contact(const String &key, bool v) {
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
+void aidig(const String &key, bool v) {
+  int idx = findCalib(key);
+  if (idx < 0) idx = findFreeCalib();
+  if (idx < 0) return;
+  auto &c = calibrations[idx];
+  bindLocalSensor(idx, key, SENSOR_AIDIG);
+  c.state = v;
+  c.value = v ? 1.0f : 0.0f;
+  mesh::setReport(idx, c.uid, c.value, c.value, c.state);
+}
+
+void aiana(const String &key, float raw) {
+  int idx = findCalib(key);
+  if (idx < 0) idx = findFreeCalib();
+  if (idx < 0) return;
+  auto &c = calibrations[idx];
+  bindLocalSensor(idx, key, SENSOR_AIANA);
+  c.value = calibrate(key, raw);
+  mesh::setReport(idx, c.uid, c.value, raw, c.state);
+}
+
 void relay(const String &key, uint8_t pin, bool inverted) {
   int idx = findCalib(key);
   bool is_new = (idx < 0);

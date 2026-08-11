@@ -5,6 +5,7 @@
 #include "sensors.h"
 #include "mesh.h"
 #include "automations.h"
+#include "log.h"
 
 namespace core {
 
@@ -76,6 +77,8 @@ void begin() {
   Serial.println();
   Serial.println("BOOT QYMERA");
   uid = String(GET_CHIP_ID(), HEX);
+  logger::init();
+  logger::core("Boot");
   web::loadCredentials();
   web::loadGeneralSettings();
   sensors::init();

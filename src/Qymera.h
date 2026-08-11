@@ -14,3 +14,4 @@
 #include "mesh.h"
 #include "web.h"
 #include "automations.h"
+#include "log.h"

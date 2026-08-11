@@ -118,6 +118,20 @@ void tick(uint32_t now_ms);
 
 void sendBinaryReport();
 
+// ============================
+// LOG OVER UDP
+// ============================
+
+static const uint8_t PACKET_TYPE_LOG = 0xFF;
+
+struct LogPacket {
+  uint8_t layer;
+  uint8_t level;
+  char message[64];
+};
+
+void sendLog(uint8_t layer, uint8_t level, const char *message);
+
 // ============================================================================
 // Registro de callbacks
 // ============================================================================

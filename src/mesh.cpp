@@ -257,4 +257,23 @@ void sendBinaryReport() {
   udp.endPacket();
 }
 
+void sendLog(uint8_t layer, uint8_t level, const char *message) {
+  PacketHeader hdr;
+  hdr.magic = 0xA5;
+  hdr.version = PACKET_VERSION;
+  hdr.uid = GET_CHIP_ID();
+  hdr.size = sizeof(PacketHeader) + sizeof(LogPacket);
+
+  LogPacket pkt;
+  memset(&pkt, 0, sizeof(pkt));
+  pkt.layer = layer;
+  pkt.level = level;
+  strncpy(pkt.message, message, sizeof(pkt.message) - 1);
+
+  udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
+  udp.write((uint8_t *)&hdr, sizeof(hdr));
+  udp.write((uint8_t *)&pkt, sizeof(pkt));
+  udp.endPacket();
+}
+
 }  // namespace mesh

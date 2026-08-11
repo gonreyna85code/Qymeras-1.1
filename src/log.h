@@ -1,0 +1,69 @@
+#pragma once
+#include <Arduino.h>
+#include "config.h"
+
+namespace logger {
+
+// ================= LAYERS =================
+enum Layer : uint8_t {
+  CORE    = 0,
+  SENSORS = 1,
+  EVENTS  = 2
+};
+
+// ================= LEVELS =================
+enum Level : uint8_t {
+  INFO  = 0,
+  WARN  = 1,
+  ERROR = 2
+};
+
+// ================= CONFIG =================
+static const uint8_t MAX_LOG_MSG = 64;
+static const uint8_t LOG_BUFFER_SIZE = 16;
+
+// ================= INIT =================
+void init();
+
+// ================= SERIAL CONTROL =================
+void setSerialEnabled(bool enabled);
+bool isSerialEnabled();
+
+// ================= LAYER FILTER =================
+void setLayerEnabled(Layer layer, bool enabled);
+bool isLayerEnabled(Layer layer);
+
+// ================= LEVEL FILTER =================
+void setMinLevel(Level level);
+Level getMinLevel();
+
+// ================= LOG FUNCTIONS =================
+void log(Layer layer, Level level, const char *msg);
+void log(Layer layer, Level level, const String &msg);
+void logf(Layer layer, Level level, const char *fmt, ...);
+
+// ================= CONVENIENCE =================
+void core(const char *msg);
+void core(const String &msg);
+void sensors(const char *msg);
+void sensors(const String &msg);
+void event(const char *msg);
+void event(const String &msg);
+
+void coref(const char *fmt, ...);
+void sensorsf(const char *fmt, ...);
+void eventf(const char *fmt, ...);
+
+void warn(const char *msg);
+void warn(const String &msg);
+void error(const char *msg);
+void error(const String &msg);
+
+void warnf(const char *fmt, ...);
+void errorf(const char *fmt, ...);
+
+// ================= GUI ACCESS =================
+String getRecentLogsJson();
+void clearBuffer();
+
+}  // namespace logger

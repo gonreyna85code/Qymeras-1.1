@@ -5,6 +5,7 @@
 #include "mesh.h"
 #include "sensors.h"
 #include "automations.h"
+#include "log.h"
 
 #ifndef ICACHE_FLASH_ATTR
 #define ICACHE_FLASH_ATTR
@@ -229,6 +230,11 @@ void handleDimmerApi() {
   uint32_t id = strtoul(server.arg("id").c_str(), nullptr, 10);
   sensors::handleDimmer(id, value);
   server.send(200, "text/plain", "OK");
+}
+
+void handleLogs() {
+  addCorsHeaders();
+  server.send(200, "application/json", logger::getRecentLogsJson());
 }
 
 ICACHE_FLASH_ATTR void loadCalibration() {
@@ -756,6 +762,7 @@ void init() {
   server.on("/toggle", HTTP_OPTIONS, handleCorsOptions);
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/logs", handleLogs);
   server.begin();
 }
 
