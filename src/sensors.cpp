@@ -43,6 +43,7 @@ void init() {
     activeFades[i] = Fade();
   }
   mesh::setSensorDiscoveryCallback(onRemoteSensorDiscovered);
+  mesh::setCommandCallback(onRemoteCommand);
 }
 
 void applyPersistedStates() {
@@ -60,6 +61,8 @@ void applyPersistedStates() {
     if (!c.local) continue;
     pinMode(c.pin, OUTPUT);
     digitalWrite(c.pin, c.inverted ? !c.pers_state : c.pers_state);
+    c.state = c.pers_state;
+    mesh::setReport(i, c.uid, c.value, c.value, c.state);
   }
 }
 
@@ -112,17 +115,36 @@ void setRelay(const String &key, bool target) {
   if (idx < 0) return;
   auto &c = calibrations[idx];
   if (c.type != TYPE_RELAY) return;
-  c.state = target;
+
+  if (!c.local) {
+    // ---- Actuador REMOTO: enviar comando UDP al dispositivo propietario ----
+    mesh::sendCommand(
+      c.device_uid,
+      c.device_ip,
+      c.uid,
+      (uint8_t)TYPE_RELAY,
+      target ? 1u : 0u,
+      target);
+    return;
+  }
+
+  // ---- Actuador LOCAL: operar GPIO ----
   if (c.pulse && target) {
-    digitalWrite(c.pin, (true ^ c.inverted) ? HIGH : LOW);
+    digitalWrite(c.pin, (true  ^ c.inverted) ? HIGH : LOW);
     delay(c.pulse_ms);
     digitalWrite(c.pin, (false ^ c.inverted) ? HIGH : LOW);
     c.state = false;
   } else {
     digitalWrite(c.pin, (target ^ c.inverted) ? HIGH : LOW);
+    c.state = target;
   }
-  if (c.persist)
-    c.pers_state = target;
+
+  // ---- Persistencia en EEPROM ----
+  if (c.persist) {
+    c.pers_state = c.state;
+    web::saveCalibration();
+  }
+
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
@@ -132,28 +154,32 @@ void handleDimmer(const String &key, int value) {
   auto &c = calibrations[idx];
   if (c.type != TYPE_DIMMER) return;
   value = constrain(value, 0, 100);
+
+  if (!c.local) {
+    // ---- Actuador REMOTO: enviar comando UDP ----
+    mesh::sendCommand(
+      c.device_uid,
+      c.device_ip,
+      c.uid,
+      (uint8_t)TYPE_DIMMER,
+      (uint32_t)value,
+      value > 0);
+    return;
+  }
+
+  // ---- Actuador LOCAL: operar PWM ----
   int pwm_val = map(value, 0, 100, 0, 255);
   if (c.inverted)
     pwm_val = 255 - pwm_val;
   if (c.fade > 0) {
     int current = analogRead(c.pin);
-    startFade(
-      key,
-      c.pin,
-      current,
-      pwm_val,
-      c.fade);
+    startFade(key, c.pin, current, pwm_val, c.fade);
   } else {
     analogWrite(c.pin, pwm_val);
   }
   c.value = value;
   c.state = (value > 0);
-  mesh::setReport(
-    idx,
-    c.uid,
-    c.value,
-    c.state ? c.value : 0,
-    c.state);
+  mesh::setReport(idx, c.uid, c.value, c.state ? c.value : 0, c.state);
 }
 
 void handleToggle(uint32_t uid) {
@@ -310,10 +336,13 @@ void contact(const String &key, bool v) {
 
 void relay(const String &key, uint8_t pin, bool inverted) {
   int idx = findCalib(key);
-  if (idx < 0) {
+  bool is_new = (idx < 0);
+  if (is_new) {
     idx = findFreeCalib();
     if (idx < 0) return;
-    auto &c = calibrations[idx];
+  }
+  auto &c = calibrations[idx];
+  if (is_new) {
     Serial.printf(
       "REGISTER idx=%d name=%s persist=%d pers=%d\n",
       idx,
@@ -326,16 +355,18 @@ void relay(const String &key, uint8_t pin, bool inverted) {
     pinMode(pin, OUTPUT);
     digitalWrite(pin, inverted ? HIGH : LOW);
   }
-  auto &c = calibrations[idx];
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
 void dimmer(const String &key, uint8_t pin, bool inverted) {
   int idx = findCalib(key);
-  if (idx < 0) {
+  bool is_new = (idx < 0);
+  if (is_new) {
     idx = findFreeCalib();
     if (idx < 0) return;
-    auto &c = calibrations[idx];
+  }
+  auto &c = calibrations[idx];
+  if (is_new) {
     bindLocalSensor(idx, key, TYPE_DIMMER);
     c.pin = pin;
     c.inverted = inverted;
@@ -345,7 +376,6 @@ void dimmer(const String &key, uint8_t pin, bool inverted) {
       off_pwm = 255;
     analogWrite(pin, off_pwm);
   }
-  auto &c = calibrations[idx];
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
@@ -452,6 +482,37 @@ void updateNTPTime() {
   };
   ntp(ntpTime);
   updateTimeSensor();
+}
+
+// ========================================
+// CALLBACK DE COMANDOS REMOTOS
+// ========================================
+
+/**
+ * @brief Invocada por mesh::tick() cuando llega un paquete dirigido a este
+ *        dispositivo (is_remote == false).  Busca el actuador por su uid y
+ *        delega en setRelay / handleDimmer para ejecutar la acción LOCAL.
+ *
+ * @param command_type  Tipo de sensor/actuador del paquete (TYPE_RELAY, etc.).
+ * @param sensor_id     UID del actuador destino.
+ * @param value         Valor asociado (nivel dimmer o flag relay).
+ * @param state         Estado ON/OFF.
+ */
+void onRemoteCommand(
+  uint8_t command_type,
+  uint32_t sensor_id,
+  uint32_t value,
+  bool state) {
+  int idx = findCalibByUid(sensor_id);
+  if (idx < 0) return;
+  auto &c = calibrations[idx];
+  if (!c.local) return;  // sólo actuamos sobre sensores propios
+
+  if (command_type == (uint8_t)TYPE_RELAY) {
+    setRelay(c.name, state);
+  } else if (command_type == (uint8_t)TYPE_DIMMER) {
+    handleDimmer(c.name, (int)value);
+  }
 }
 
 // ========================================

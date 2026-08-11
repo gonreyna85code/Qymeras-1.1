@@ -6,6 +6,10 @@
 #include "sensors.h"
 #include "automations.h"
 
+#ifndef ICACHE_FLASH_ATTR
+#define ICACHE_FLASH_ATTR
+#endif
+
 namespace web {
 WebServerCompat server(80);
 
@@ -227,7 +231,7 @@ void handleDimmerApi() {
 
 ICACHE_FLASH_ATTR void loadCalibration() {
   EEPROM.begin(EEPROM_SIZE);
-  for (int i = 0; i < MAX_SENSORS; i++) {
+  for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
     CalibrationPersist p;
     EEPROM.get(addr, p);
@@ -252,9 +256,13 @@ ICACHE_FLASH_ATTR void loadCalibration() {
 
 ICACHE_FLASH_ATTR void saveCalibration() {
   EEPROM.begin(EEPROM_SIZE);
-  for (int i = 0; i < MAX_SENSORS; i++) {
+  for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
-    CalibrationPersist current = makePersist(sensors::calibrations[i]);
+    auto &c = sensors::calibrations[i];
+    CalibrationPersist current = {};
+    if (c.local && c.uid != 0) {
+      current = makePersist(c);
+    }
     CalibrationPersist stored;
     EEPROM.get(addr, stored);
     if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
@@ -306,7 +314,7 @@ ICACHE_FLASH_ATTR void handleRules() {
     // tipo de regla
     server.sendContent(",\"type\":");
     server.sendContent(String(r.type));
-    // lógica AND/OR
+    // l├│gica AND/OR
     server.sendContent(",\"logical_and\":");
     server.sendContent(String(r.logical_and));
     // comparadores

@@ -126,4 +126,10 @@ void onRemoteSensorDiscovered(
   float sensor_correction,
   uint8_t sensor_avail);
 
+void onRemoteCommand(
+  uint8_t command_type,
+  uint32_t sensor_id,
+  uint32_t value,
+  bool state);
+
 }  // namespace sensors

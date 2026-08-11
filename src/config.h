@@ -70,6 +70,7 @@ typedef WebServer WebServerCompat;
    ========================= */
 
 #define MAX_SENSORS 64
+#define MAX_PERSISTED_SENSORS 40
 #define MAX_RULES 20
 
 /* =========================
@@ -92,7 +93,7 @@ typedef WebServer WebServerCompat;
 
 /* Calibration (solo sensores físicos aprox) */
 #define EEPROM_CALIB_START (EEPROM_GENSET_START + EEPROM_GENSET_SIZE)
-#define EEPROM_CALIB_SIZE 512
+#define EEPROM_CALIB_SIZE 1024
 
 /* Automation rules */
 #define EEPROM_RULES_START (EEPROM_CALIB_START + EEPROM_CALIB_SIZE)

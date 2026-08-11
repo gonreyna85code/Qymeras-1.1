@@ -14,92 +14,107 @@ static int remote_device_count = 0;
 static unsigned long last_cleanup = 0;
 static WiFiUDP mesh_udp;
 static SensorDiscoveryCallback sensor_callback = nullptr;
+static CommandCallback command_cb = nullptr;
 
 void init() {
   mesh_udp.begin(core::genset.broadcast_port);
+  udp.begin(core::genset.command_port);
 }
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
   sensor_callback = cb;
 }
 
-void tick(uint32_t now_ms) {
-  int packet_size = mesh_udp.parsePacket();
+// =========================================
+// REGISTRO DE CALLBACK DE COMANDOS
+// =========================================
+
+void setCommandCallback(CommandCallback cb) {
+  command_cb = cb;
+}
+
+// =========================================
+// PARSER INTERNO DE PAQUETES UDP
+// =========================================
+
+/**
+ * @brief Lee y procesa hasta un paquete de una socket UDP.
+ *        - Paquetes remotos  -> dispara sensor_callback (discovery) y
+ *          actualiza la tabla de RemoteDevice.
+ *        - Paquetes locales  -> dispara command_cb (actuación local).
+ *
+ * @param socket  Socket a sondear (broadcast o command).
+ * @param now_ms  Timestamp actual en ms.
+ */
+static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
+  int packet_size = socket.parsePacket();
   if (packet_size < (int)sizeof(PacketHeader)) return;
   PacketHeader hdr;
-  mesh_udp.read((uint8_t *)&hdr, sizeof(hdr));
+  socket.read((uint8_t *)&hdr, sizeof(hdr));
   if (hdr.magic != 0xA5) return;
   if (hdr.version != 1 && hdr.version != 2 && hdr.version != PACKET_VERSION) return;
   if (hdr.size != packet_size) return;
   uint32_t local_uid = GET_CHIP_ID();
   bool is_remote = (hdr.uid != local_uid);
-  String remote_ip = mesh_udp.remoteIP().toString();
+  String remote_ip = socket.remoteIP().toString();
   int remaining = hdr.size - sizeof(PacketHeader);
-  int packet_len = (hdr.version == 1) ? sizeof(PacketV1) : (hdr.version == 2) ? sizeof(PacketV2) : sizeof(Packet);
+  int packet_len = (hdr.version == 1) ? sizeof(PacketV1) :
+                   (hdr.version == 2) ? sizeof(PacketV2) :
+                                        sizeof(Packet);
   while (remaining >= packet_len) {
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     if (hdr.version == 1) {
       PacketV1 pkt_v1;
-      mesh_udp.read((uint8_t *)&pkt_v1, sizeof(pkt_v1));
-      pkt.id = pkt_v1.id;
-      pkt.type = pkt_v1.type;
+      socket.read((uint8_t *)&pkt_v1, sizeof(pkt_v1));
+      pkt.id    = pkt_v1.id;
+      pkt.type  = pkt_v1.type;
       pkt.value = pkt_v1.value;
       pkt.state = pkt_v1.state;
-      pkt.min = 0;
-      pkt.max = 100;
-      pkt.correction = 0;
-      pkt.avail = 0;
+      pkt.min = 0; pkt.max = 100; pkt.correction = 0; pkt.avail = 0;
       pkt.name[0] = '\0';
     } else if (hdr.version == 2) {
       PacketV2 pkt_v2;
-      mesh_udp.read((uint8_t *)&pkt_v2, sizeof(pkt_v2));
-      pkt.id = pkt_v2.id;
-      pkt.type = pkt_v2.type;
+      socket.read((uint8_t *)&pkt_v2, sizeof(pkt_v2));
+      pkt.id    = pkt_v2.id;
+      pkt.type  = pkt_v2.type;
       pkt.value = pkt_v2.value;
       pkt.state = pkt_v2.state;
       memcpy(pkt.name, pkt_v2.name, sizeof(pkt.name));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
-      pkt.min = 0;
-      pkt.max = 100;
-      pkt.correction = 0;
-      pkt.avail = 0;
+      pkt.min = 0; pkt.max = 100; pkt.correction = 0; pkt.avail = 0;
     } else {
-      mesh_udp.read((uint8_t *)&pkt, sizeof(pkt));
+      socket.read((uint8_t *)&pkt, sizeof(pkt));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
     }
     remaining -= packet_len;
     if (is_remote) {
+      // ---------- Sensor remoto: discovery ----------
       if (sensor_callback) {
         sensor_callback(
-          hdr.uid,
-          remote_ip,
-          pkt.id,
-          String(pkt.name),
-          pkt.type,
-          pkt.state,
-          pkt.value,
-          pkt.min,
-          pkt.max,
-          pkt.correction,
-          pkt.avail
-        );
+          hdr.uid, remote_ip,
+          pkt.id, String(pkt.name),
+          pkt.type, pkt.state,
+          pkt.value, pkt.min, pkt.max,
+          pkt.correction, pkt.avail);
       }
       int idx = -1;
       for (int i = 0; i < remote_device_count; i++) {
-        if (remote_devices[i].uid == hdr.uid) {
-          idx = i;
-          break;
-        }
+        if (remote_devices[i].uid == hdr.uid) { idx = i; break; }
       }
       if (idx == -1 && remote_device_count < MAX_SENSORS) {
         idx = remote_device_count++;
       }
       if (idx >= 0) {
-        remote_devices[idx].uid = hdr.uid;
-        remote_devices[idx].ip = remote_ip;
+        remote_devices[idx].uid       = hdr.uid;
+        remote_devices[idx].ip        = remote_ip;
         remote_devices[idx].last_seen = now_ms;
-        remote_devices[idx].online = true;
+        remote_devices[idx].online    = true;
+      }
+    } else {
+      // ---------- Comando local: actuación ----------
+      if (command_cb) {
+        command_cb(pkt.type, pkt.id, pkt.value, pkt.state != 0);
       }
     }
   }
@@ -111,6 +126,13 @@ void tick(uint32_t now_ms) {
       }
     }
   }
+}
+
+void tick(uint32_t now_ms) {
+  // Broadcast port: discovery de sensores remotos
+  parseUDPPacket(mesh_udp, now_ms);
+  // Command port: comandos enviados directamente a este dispositivo
+  parseUDPPacket(udp, now_ms);
 }
 
 RemoteDevice *getRemoteDevice(uint32_t uid) {
@@ -146,6 +168,51 @@ uint32_t encodeFloat(float v) {
   if (v > MAX_VAL)
     v = MAX_VAL;
   return (uint32_t)((v - MIN_VAL) / (MAX_VAL - MIN_VAL) * 0xFFFFFFFF);
+}
+
+// =========================================
+// ENVÍO DE COMANDOS REMOTOS (UDP unicast)
+// =========================================
+
+/**
+ * @brief Envía un comando UDP unicast al dispositivo remoto en su command_port.
+ *        El PacketHeader lleva el uid LOCAL como origen. El receptor distingue
+ *        si el paquete es remoto comparando hdr.uid con su propio chip id.
+ *
+ * @param remote_uid  UID del dispositivo destino (poseedor del actuador).
+ *                    Se valida contra la tabla de dispositivos conocidos.
+ * @param remote_ip   IP del dispositivo destino.
+ * @param sensor_id   UID del actuador a controlar.
+ * @param type        Tipo de sensor/actuador (TYPE_RELAY, TYPE_DIMMER, etc.).
+ * @param value       Valor a aplicar (nivel de dimmer, etc.).
+ * @param state       Estado ON/OFF.
+ */
+void sendCommand(
+  uint32_t remote_uid,
+  const String &remote_ip,
+  uint32_t sensor_id,
+  uint8_t type,
+  uint32_t value,
+  bool state) {
+  if (!getRemoteDevice(remote_uid)) {
+    return;
+  }
+  PacketHeader hdr;
+  hdr.magic   = 0xA5;
+  hdr.version = PACKET_VERSION;
+  hdr.uid     = GET_CHIP_ID();  // origen = este dispositivo
+  hdr.size    = sizeof(PacketHeader) + sizeof(Packet);
+  Packet pkt;
+  memset(&pkt, 0, sizeof(pkt));
+  pkt.id    = sensor_id;
+  pkt.type  = type;
+  pkt.value = value;
+  pkt.state = state ? 1 : 0;
+  WiFiUDP cmd_udp;
+  cmd_udp.beginPacket(remote_ip.c_str(), core::genset.command_port);
+  cmd_udp.write((uint8_t *)&hdr, sizeof(hdr));
+  cmd_udp.write((uint8_t *)&pkt, sizeof(pkt));
+  cmd_udp.endPacket();
 }
 
 void sendBinaryReport() {

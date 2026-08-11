@@ -124,6 +124,16 @@ void sendBinaryReport();
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb);
 
+void setCommandCallback(CommandCallback cb);
+
+void sendCommand(
+  uint32_t remote_uid,
+  const String &remote_ip,
+  uint32_t sensor_id,
+  uint8_t type,
+  uint32_t value,
+  bool state);
+
 // ============================================================================
 // Utilidades
 // ============================================================================
