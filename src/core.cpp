@@ -20,7 +20,7 @@ static unsigned long last_report = 0;
 static bool first_report = true;
 GeneralSettings genset;
 
-// ================= HELPERS ===================
+ // ================= HELPERS ===================
 
 /// Reanuda el servidor hotspot en modo AP tras una conexión WiFi fallida.
 static void startAP() {
@@ -32,9 +32,12 @@ static void startAP() {
   web::server.begin();
 }
 
-/// Configura y conecta a una red Wi-Fi con nombre/contraseña dados,
-/// o reanuda AP si no hay credenciales guardadas.
-static void connectWiFi() {
+/// State-machine: kicks off a non-blocking WiFi connection attempt.
+/// WiFi status is polled from loop() via checkWiFiStatus().
+static bool wifi_connecting = false;
+static unsigned long wifi_connect_start = 0;
+
+static void startWiFi() {
   if (ssid == "") {
     startAP();
     return;
@@ -43,19 +46,24 @@ static void connectWiFi() {
   WiFi.begin(ssid.c_str(), password.c_str());
   SET_AUTO_CONNECT();
   SET_WIFI_SLEEP();
-  unsigned long start = millis();
+  wifi_connecting = true;
+  wifi_connect_start = millis();
+}
 
-  while (millis() - start < 15000) {
-    auto status = WiFi.status();
-    if (status == WL_CONNECTED) {
-      wifi_connected = true;
-      sensors::initNTP();
-      ArduinoOTA.begin();
-      return;
-    }
-    delay(300);
+/// Non-blocking WiFi status checker — call from loop().
+/// Completes connection on success or falls back to AP on timeout.
+static void checkWiFiStatus() {
+  if (!wifi_connecting) return;
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifi_connecting = false;
+    wifi_connected = true;
+    sensors::initNTP();
+    ArduinoOTA.begin();
+  } else if (millis() - wifi_connect_start >= 15000) {
+    wifi_connecting = false;
+    startAP();
   }
-  startAP();
 }
 
 // ================= INICIALIZACIÓN ===================
@@ -74,9 +82,9 @@ void begin() {
   ::initSatellite();
   web::loadCalibration();
   automations::init();
-  connectWiFi();
   mesh::init();
   web::init();
+  startWiFi();
 }
 
 // ================= ACCESORIOS ===================
@@ -94,10 +102,14 @@ void loop() {
   /// 1) Manejo del servidor web (siempre activo).
   web::server.handleClient();
 
-  /// 2) Reconexión si perdimos WiFi y pasó el timeout definido.
-  if (!wifi_connected && millis() - last_attempt > WIFI_RETRY_INTERVAL) {
+  /// 2) Poll WiFi connection state (non-blocking).
+  checkWiFiStatus();
+
+  /// 3) Reconexion si perdimos WiFi y paso el timeout definido.
+  if (!wifi_connected && !wifi_connecting &&
+      millis() - last_attempt > WIFI_RETRY_INTERVAL) {
     last_attempt = millis();
-    connectWiFi();
+    startWiFi();
   }
 
   /// Si no hay red, sale del loop principal (solo el HTTP sigue corriendo).
@@ -105,8 +117,8 @@ void loop() {
     return;
   }
 
-  /// 3) Primera iteración: APLICAR estados persistentes ANTES del reporte
-  //     para evitar pise — los relays deben reflejar su estado persisted
+  /// 4) Primera iteración: APLICAR estados persistentes ANTES del reporte
+  //     para evitar piso — los relays deben reflejar su estado persistente
   //     antes de que report() publique valores al mesh.
   if (first_report) {
     sensors::applyPersistedStates();
@@ -122,9 +134,9 @@ void loop() {
   mesh::tick(millis());
   automations::tick(millis());
   sensors::applyFades();
-  sensors::updateFades();
+  sensors::checkPulses();
 
-  /// 5) Reporte periódico cuando llegue el intervalo configurado.
+  /// 6) Reporte periódico cuando llegue el intervalo configurado.
   if (millis() - last_report >= genset.report_interval) {
     last_report = millis();
     ::report();

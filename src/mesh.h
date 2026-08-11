@@ -14,7 +14,7 @@ void init();
 
 struct RemoteDevice {
   uint32_t uid;
-  String ip;
+  char ip[16];
   unsigned long last_seen;
   bool online;
 };
@@ -25,7 +25,7 @@ struct RemoteDevice {
 
 typedef void (*SensorDiscoveryCallback)(
   uint32_t device_uid,
-  const String &device_ip,
+  const char *device_ip,
   uint32_t sensor_id,
   const String &sensor_name,
   uint8_t sensor_type,
@@ -128,7 +128,7 @@ void setCommandCallback(CommandCallback cb);
 
 void sendCommand(
   uint32_t remote_uid,
-  const String &remote_ip,
+  const char *remote_ip,
   uint32_t sensor_id,
   uint8_t type,
   uint32_t value,

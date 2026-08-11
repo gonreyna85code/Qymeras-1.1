@@ -39,7 +39,7 @@ struct Calibration {
   uint8_t id = 0;
   uint32_t uid = 0;
   bool local = true;
-  String device_ip = "";
+  char device_ip[16];
   uint32_t device_uid = 0;
   unsigned long last_update = 0;
 };
@@ -50,6 +50,14 @@ struct Fade {
   int endVal;
   unsigned long startTime;
   unsigned long duration;
+  bool active;
+};
+
+struct PulseState {
+  uint8_t pin;
+  bool inverted;
+  unsigned long start_ms;
+  uint32_t pulse_ms;
   bool active;
 };
 
@@ -70,9 +78,11 @@ enum TimeSource : uint8_t {
 
 extern Calibration calibrations[MAX_SENSORS];
 extern Fade activeFades[MAX_SENSORS];
+extern PulseState activePulses[MAX_SENSORS];
 void init();
 void applyPersistedStates();
 void applyFades();
+void checkPulses();
 extern int findCalib(const String &key);
 extern int findCalibByUid(uint32_t uid);
 extern int findCalibByIndex(uint8_t index);
@@ -115,7 +125,7 @@ Calibration *getCalib(const String &key);
 // Mesh callbacks - Procesadas por sensors.cpp
 void onRemoteSensorDiscovered(
   uint32_t remote_uid,
-  const String &remote_ip,
+  const char *remote_ip,
   uint32_t sensor_id,
   const String &sensor_name,
   uint8_t sensor_type,

@@ -57,15 +57,12 @@ void sendStartupJS() {
     server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
   server.sendContent_P(
     PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
-  server.sendContent_P(PSTR(
-    "window.genset={"
-    "broadcast_port:"));
+  server.sendContent_P(
+    PSTR("window.genset={broadcast_port:"));
   server.sendContent(String(core::genset.broadcast_port));
-  server.sendContent_P(PSTR(
-    ",command_port:"));
+  server.sendContent_P(PSTR(",command_port:"));
   server.sendContent(String(core::genset.command_port));
-  server.sendContent_P(PSTR(
-    ",report_interval:"));
+  server.sendContent_P(PSTR(",report_interval:"));
   server.sendContent(String(core::genset.report_interval));
   server.sendContent_P(PSTR("};"));
 }
@@ -88,7 +85,7 @@ ICACHE_FLASH_ATTR void handleSave() {
   saveCredentials(server.arg("ssid"), server.arg("pass"));
   server.sendHeader("Location", "/?saved=1");
   server.send(303);
-  delay(1000);
+  server.close();
   RESET_MCU();
 }
 
@@ -113,21 +110,24 @@ ICACHE_FLASH_ATTR void loadCredentials() {
   EEPROM.begin(EEPROM_SIZE);
   int slen = EEPROM.read(EEPROM_CRED_START);
   if (slen < 0 || slen > 32) slen = 0;
-  core::ssid = "";
+  char ssid_buf[33] = {0};
   for (int i = 0; i < slen; i++) {
     char c = EEPROM.read(EEPROM_CRED_START + 1 + i);
     if (c == 0xFF || c == 0) break;
-    core::ssid += c;
+    ssid_buf[i] = c;
   }
+  core::ssid = ssid_buf;
+
   int plen_addr = EEPROM_CRED_START + 1 + slen;
   int plen = EEPROM.read(plen_addr);
   if (plen < 0 || plen > 64) plen = 0;
-  core::password = "";
+  char pass_buf[65] = {0};
   for (int i = 0; i < plen; i++) {
     char c = EEPROM.read(plen_addr + 1 + i);
     if (c == 0xFF || c == 0) break;
-    core::password += c;
+    pass_buf[i] = c;
   }
+  core::password = pass_buf;
 }
 
 ICACHE_FLASH_ATTR void saveGeneralSettings() {
@@ -150,27 +150,30 @@ ICACHE_FLASH_ATTR void saveGeneralSettings() {
 
 ICACHE_FLASH_ATTR void factoryReset() {
   EEPROM.begin(EEPROM_SIZE);
-  for (int i = 0; i < EEPROM_RELAY_STATE_SIZE; i++) {
-    EEPROM.write(EEPROM_RELAY_STATE_START + i, 0);
-  }
-  for (int i = 0; i < EEPROM_CRED_SIZE; i++) {
-    EEPROM.write(EEPROM_CRED_START + i, 0);
-  }
+
+  // --- Relay state ---
+  memset(EEPROM.getDataPtr() + EEPROM_RELAY_STATE_START, 0, EEPROM_RELAY_STATE_SIZE);
+
+  // --- WiFi credentials ---
+  memset(EEPROM.getDataPtr() + EEPROM_CRED_START, 0, EEPROM_CRED_SIZE);
+
+  // --- Genset config: write defaults ---
+  int addr = EEPROM_GENSET_START;
   uint16_t def_broadcast = BROADCAST_PORT;
   uint16_t def_command = COMMAND_PORT;
   uint32_t def_interval = BROADCAST_INTERVAL;
-  int addr = EEPROM_GENSET_START;
   EEPROM.put(addr, def_broadcast);
   addr += sizeof(uint16_t);
   EEPROM.put(addr, def_command);
   addr += sizeof(uint16_t);
   EEPROM.put(addr, def_interval);
   addr += sizeof(uint32_t);
-  for (int i = EEPROM_CALIB_START; i < EEPROM_SIZE; i++) {
-    EEPROM.write(i, 0);
-  }
+
+  // --- Calibration + rules: clear rest of EEPROM ---
+  memset(EEPROM.getDataPtr() + addr, 0, EEPROM_SIZE - addr);
+
   EEPROM.commit();
-  delay(300);
+  delay(100);
   RESET_MCU();
 }
 
@@ -202,7 +205,6 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
 
 ICACHE_FLASH_ATTR void handleFactoryReset() {
   server.send(200, "text/plain", "RESET");
-  delay(200);
   factoryReset();
 }
 
@@ -312,93 +314,76 @@ ICACHE_FLASH_ATTR void handleRules() {
     server.send(405, "text/plain", "GET required");
     return;
   }
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "application/json", "");
-  server.sendContent("[");
+  String json;
+  json.reserve(4096);
+  json += '[';
   bool first = true;
   for (int i = 0; i < MAX_RULES; i++) {
     const automations::Rule &r = automations::rules[i];
     if (r.sensor_count == 0 && r.actuator_count == 0)
       continue;
-    if (!first) server.sendContent(",");
+    if (!first) json += ',';
     first = false;
-    server.sendContent("{");
-    server.sendContent("\"id\":");
-    server.sendContent(String(i));
-    // sensores
-    server.sendContent(",\"sensors\":[");
+    json += "{\"id\":";
+    json += i;
+    json += ",\"sensors\":[";
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) server.sendContent(",");
-      server.sendContent(String(r.sensor_idxs[s]));
+      if (s) json += ',';
+      json += r.sensor_idxs[s];
     }
-    server.sendContent("]");
-    // tipo de regla
-    server.sendContent(",\"type\":");
-    server.sendContent(String(r.type));
-    // l├│gica AND/OR
-    server.sendContent(",\"logical_and\":");
-    server.sendContent(String(r.logical_and));
-    // comparadores
-    server.sendContent(",\"cmp\":[");
+    json += "],\"type\":";
+    json += r.type;
+    json += ",\"logical_and\":";
+    json += r.logical_and;
+    json += ",\"cmp\":[";
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) server.sendContent(",");
-      server.sendContent(String(r.cmp[s]));
+      if (s) json += ',';
+      json += r.cmp[s];
     }
-    server.sendContent("]");
-    // thresholds
-    server.sendContent(",\"threshold\":[");
+    json += "],\"threshold\":[";
     for (int s = 0; s < r.sensor_count; s++) {
-      if (s) server.sendContent(",");
-      server.sendContent(String(r.threshold[s]));
+      if (s) json += ',';
+      json += r.threshold[s];
     }
-    server.sendContent("]");
-    // actuadores
-    server.sendContent(",\"actuators\":[");
+    json += "],\"actuators\":[";
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) server.sendContent(",");
-      server.sendContent(String(r.actuator_idxs[a]));
+      if (a) json += ',';
+      json += r.actuator_idxs[a];
     }
-    server.sendContent("]");
-    // acciones
-    server.sendContent(",\"actions\":[");
+    json += "],\"actions\":[";
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) server.sendContent(",");
-      server.sendContent(String(r.actions[a]));
+      if (a) json += ',';
+      json += r.actions[a];
     }
-    server.sendContent("]");
-    // niveles
-    server.sendContent(",\"levels\":[");
+    json += "],\"levels\":[";
     for (int a = 0; a < r.actuator_count; a++) {
-      if (a) server.sendContent(",");
-      server.sendContent(String(r.levels[a]));
+      if (a) json += ',';
+      json += r.levels[a];
     }
-    server.sendContent("]");
-    // timing
-    server.sendContent(",\"delay_ms\":");
-    server.sendContent(String(r.delay_ms));
-    server.sendContent(",\"cooldown_ms\":");
-    server.sendContent(String(r.cooldown_ms));
-    server.sendContent(",\"time_s\":");
-    server.sendContent(String(r.time_s));
-    server.sendContent(",\"interval_ms\":");
-    server.sendContent(String(r.interval_ms));
-    // calendario
-    server.sendContent(",\"year_start\":");
-    server.sendContent(String(r.year_start));
-    server.sendContent(",\"year_end\":");
-    server.sendContent(String(r.year_end));
-    server.sendContent(",\"month_start\":");
-    server.sendContent(String(r.month_start));
-    server.sendContent(",\"month_end\":");
-    server.sendContent(String(r.month_end));
-    server.sendContent(",\"day_start\":");
-    server.sendContent(String(r.day_start));
-    server.sendContent(",\"day_end\":");
-    server.sendContent(String(r.day_end));
-    server.sendContent("}");
+    json += "],\"delay_ms\":";
+    json += r.delay_ms;
+    json += ",\"cooldown_ms\":";
+    json += r.cooldown_ms;
+    json += ",\"time_s\":";
+    json += r.time_s;
+    json += ",\"interval_ms\":";
+    json += r.interval_ms;
+    json += ",\"year_start\":";
+    json += r.year_start;
+    json += ",\"year_end\":";
+    json += r.year_end;
+    json += ",\"month_start\":";
+    json += r.month_start;
+    json += ",\"month_end\":";
+    json += r.month_end;
+    json += ",\"day_start\":";
+    json += r.day_start;
+    json += ",\"day_end\":";
+    json += r.day_end;
+    json += '}';
   }
-  server.sendContent("]");
-  server.sendContent("");
+  json += ']';
+  server.send(200, "application/json", json);
 }
 
 void handleSetRule() {
@@ -630,78 +615,65 @@ ICACHE_FLASH_ATTR void handleCalib() {
     server.send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "application/json", "");
-  server.sendContent("[");
+  String json;
+  json.reserve(8192);
+  json += '[';
   bool firstObj = true;
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
     auto &r = mesh::reports[i];
     if (c.uid == 0) continue;
-    if (!firstObj) server.sendContent(",");
+    if (!firstObj) json += ',';
     firstObj = false;
-    server.sendContent("{");
-    server.sendContent("\"id\":");
-    server.sendContent(String(c.uid));
-    server.sendContent(",\"index\":");
-    server.sendContent(String(i));
-    server.sendContent(",\"device_uid\":");
-    server.sendContent(String(c.device_uid));
-    server.sendContent(",\"name\":\"");
-    server.sendContent(c.name);
-    server.sendContent("\"");
-    server.sendContent(",\"value\":");
+
     char buf[24];
     if (isnan(r.value) || isinf(r.value)) {
       strcpy(buf, "0");
     } else {
       dtostrf(r.value, 0, 4, buf);
     }
-    server.sendContent(buf);
 
-#define SEND_INT(name, val) \
-  server.sendContent(",\"" name "\":"); \
-  server.sendContent(String(val));
-#define SEND_FLOAT(name, val) \
-  server.sendContent(",\"" name "\":"); \
-  { \
-    char fb[24]; \
-    if (isnan(val) || isinf(val)) strcpy(fb, "0"); \
-    else dtostrf(val, 0, 4, fb); \
-    server.sendContent(fb); \
-  }
-#define SEND_BOOL(name, val) \
-  server.sendContent(",\"" name "\":"); \
-  server.sendContent((val) ? "true" : "false");
-#define SEND_STRING(name, val) \
-  server.sendContent(",\"" name "\":\""); \
-  server.sendContent(val); \
-  server.sendContent("\"");
-    SEND_BOOL("pers_state", c.pers_state);
-    SEND_FLOAT("min", c.min);
-    SEND_FLOAT("max", c.max);
-    SEND_FLOAT("correction", c.correction);
-    SEND_INT("avail", c.avail);
-    SEND_BOOL("pulse", c.pulse);
-    SEND_BOOL("state", r.state);
-    SEND_INT("pulse_ms", c.pulse_ms);
-    SEND_BOOL("persist", c.persist);
-    SEND_INT("fade", c.fade);
-    SEND_INT("type", c.type);
-    SEND_INT("pin", c.pin);
-    SEND_BOOL("local", c.local);
-    if (!c.local) {
-      SEND_STRING("ip", c.device_ip);
+    json += "{\"id\":";
+    json += c.uid;
+    json += ",\"index\":";
+    json += i;
+    json += ",\"device_uid\":";
+    json += c.device_uid;
+    json += ",\"name\":\"";
+    json += c.name;
+    json += "\",\"value\":";
+    json += buf;
+    json += ",\"pers_state\":";
+    json += (c.pers_state ? "true" : "false");
+
+    char fb[24];
+    dtostrf(c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
+    dtostrf(c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
+    dtostrf(c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
+
+    json += ",\"avail\":";           json += c.avail;
+    json += ",\"pulse\":";           json += (c.pulse ? "true" : "false");
+    json += ",\"state\":";           json += (r.state ? "true" : "false");
+    json += ",\"pulse_ms\":";        json += c.pulse_ms;
+    json += ",\"persist\":";         json += (c.persist ? "true" : "false");
+    json += ",\"fade\":";            json += c.fade;
+    json += ",\"type\":";            json += c.type;
+    json += ",\"pin\":";             json += c.pin;
+    json += ",\"local\":";           json += (c.local ? "true" : "false");
+
+    json += ",\"ip\":\"";
+    if (c.local) {
+      IPAddress ip = WiFi.localIP();
+      char ipbuf[16];
+      snprintf(ipbuf, sizeof(ipbuf), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+      json += ipbuf;
     } else {
-      SEND_STRING("ip", WiFi.localIP().toString());
+      json += c.device_ip;
     }
-#undef SEND_INT
-#undef SEND_FLOAT
-#undef SEND_BOOL
-#undef SEND_STRING
-    server.sendContent("}");
+    json += "\"}";
   }
-  server.sendContent("]");
+  json += ']';
+  server.send(200, "application/json", json);
 }
 
 ICACHE_FLASH_ATTR void handleCalibSet() {
@@ -727,7 +699,7 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
   float ref = server.hasArg("ref") ? server.arg("ref").toFloat() : raw;
   if (type == "TIME") {
     c.correction = server.arg("ref").toInt();
-    saveCalibration();
+    saveCalibrationSlot(calibIdx);
     server.send(200, "text/plain", "OK");
     return;
   }
@@ -764,7 +736,7 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     server.send(400, "text/plain", "Bad type");
     return;
   }
-  saveCalibration();
+  saveCalibrationSlot(calibIdx);
   server.send(200, "text/plain", "OK");
 }
 

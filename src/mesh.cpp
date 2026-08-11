@@ -57,7 +57,9 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
   if (hdr.size != packet_size) return;
   uint32_t local_uid = GET_CHIP_ID();
   bool is_remote = (hdr.uid != local_uid);
-  String remote_ip = socket.remoteIP().toString();
+  char remote_ip[16];
+  IPAddress rip = socket.remoteIP();
+  snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
   int remaining = hdr.size - sizeof(PacketHeader);
   int packet_len = (hdr.version == 1) ? sizeof(PacketV1) :
                    (hdr.version == 2) ? sizeof(PacketV2) :
@@ -108,7 +110,8 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
       }
       if (idx >= 0) {
         remote_devices[idx].uid       = hdr.uid;
-        remote_devices[idx].ip        = remote_ip;
+        strncpy(remote_devices[idx].ip, remote_ip, sizeof(remote_devices[idx].ip) - 1);
+        remote_devices[idx].ip[sizeof(remote_devices[idx].ip) - 1] = '\0';
         remote_devices[idx].last_seen = now_ms;
         remote_devices[idx].online    = true;
       }
@@ -190,7 +193,7 @@ uint32_t encodeFloat(float v) {
  */
 void sendCommand(
   uint32_t remote_uid,
-  const String &remote_ip,
+  const char *remote_ip,
   uint32_t sensor_id,
   uint8_t type,
   uint32_t value,
@@ -208,8 +211,8 @@ void sendCommand(
   pkt.id    = sensor_id;
   pkt.type  = type;
   pkt.value = value;
-   pkt.state = state ? 1 : 0;
-  cmd_udp.beginPacket(remote_ip.c_str(), core::genset.command_port);
+  pkt.state = state ? 1 : 0;
+  cmd_udp.beginPacket(remote_ip, core::genset.command_port);
   cmd_udp.write((uint8_t *)&hdr, sizeof(hdr));
   cmd_udp.write((uint8_t *)&pkt, sizeof(pkt));
   cmd_udp.endPacket();

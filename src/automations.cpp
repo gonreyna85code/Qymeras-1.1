@@ -188,6 +188,7 @@ void tick(uint32_t now_ms) {
 }
 
 void loadRulesFromEEPROM() {
+  EEPROM.begin(EEPROM_SIZE);
   RulesHeader h;
   int addr = EEPROM_RULES_START;
   EEPROM.get(addr, h);
@@ -204,18 +205,36 @@ void loadRulesFromEEPROM() {
 }
 
 void saveRulesToEEPROM() {
+  EEPROM.begin(EEPROM_SIZE);
   RulesHeader h;
   h.magic = RULES_MAGIC;
   h.version = RULES_VERSION;
   h.count = MAX_RULES;
   int addr = EEPROM_RULES_START;
-  EEPROM.put(addr, h);
+
+  // Only commit if header or any rule changed
+  bool dirty = false;
+  RulesHeader stored_h;
+  EEPROM.get(addr, stored_h);
+  if (memcmp(&h, &stored_h, sizeof(RulesHeader)) != 0) {
+    dirty = true;
+    EEPROM.put(addr, h);
+  }
   addr += sizeof(RulesHeader);
+
   for (int i = 0; i < MAX_RULES; i++) {
-    EEPROM.put(addr, rules[i]);
+    Rule stored;
+    EEPROM.get(addr, stored);
+    if (memcmp(&rules[i], &stored, sizeof(Rule)) != 0) {
+      dirty = true;
+      EEPROM.put(addr, rules[i]);
+    }
     addr += sizeof(Rule);
   }
-  EEPROM.commit();
+
+  if (dirty) {
+    EEPROM.commit();
+  }
 }
 
 void deleteRule(uint8_t idx) {

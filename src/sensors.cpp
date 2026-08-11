@@ -11,6 +11,7 @@ namespace sensors {
 
 Calibration calibrations[MAX_SENSORS];
 Fade activeFades[MAX_SENSORS];
+PulseState activePulses[MAX_SENSORS];
 
 static time_t time_offset = 0;
 static TimeSource time_source = TIME_NONE;
@@ -33,8 +34,9 @@ static void bindLocalSensor(uint8_t idx, const String &name, SensorType type) {
   c.uid = makeSensorUid(idx);
   c.type = type;
   c.local = true;
-  c.device_uid = GET_CHIP_ID();
-  c.device_ip = WiFi.localIP().toString();
+   c.device_uid = GET_CHIP_ID();
+   IPAddress ip = WiFi.localIP();
+   snprintf(c.device_ip, sizeof(c.device_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 }
 
 void init() {
@@ -91,6 +93,18 @@ void applyFades() {
   }
 }
 
+void checkPulses() {
+  unsigned long now = millis();
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    if (!activePulses[i].active) continue;
+    if (now - activePulses[i].start_ms >= activePulses[i].pulse_ms) {
+      digitalWrite(activePulses[i].pin,
+        (false ^ activePulses[i].inverted) ? HIGH : LOW);
+      activePulses[i].active = false;
+    }
+  }
+}
+
 int findCalib(const String &key) {
   for (int i = 0; i < MAX_SENSORS; i++) {
     if (calibrations[i].name == key) return i;
@@ -131,16 +145,19 @@ void setRelay(const String &key, bool target) {
   // ---- Actuador LOCAL: operar GPIO ----
   if (c.pulse && target) {
     digitalWrite(c.pin, (true  ^ c.inverted) ? HIGH : LOW);
-    delay(c.pulse_ms);
-    digitalWrite(c.pin, (false ^ c.inverted) ? HIGH : LOW);
+    activePulses[idx].pin = c.pin;
+    activePulses[idx].inverted = c.inverted;
+    activePulses[idx].start_ms = millis();
+    activePulses[idx].pulse_ms = c.pulse_ms;
+    activePulses[idx].active = true;
     c.state = false;
   } else {
     digitalWrite(c.pin, (target ^ c.inverted) ? HIGH : LOW);
     c.state = target;
   }
 
-  // ---- Persistencia en EEPROM ----
-  if (c.persist) {
+  // ---- Persistencia en EEPROM (solo si cambió el estado) ----
+  if (c.persist && c.pers_state != c.state) {
     c.pers_state = c.state;
     web::saveCalibrationSlot(idx);
   }
@@ -521,7 +538,7 @@ void onRemoteCommand(
 
 void onRemoteSensorDiscovered(
   uint32_t remote_uid,
-  const String &remote_ip,
+  const char *remote_ip,
   uint32_t sensor_id,
   const String &sensor_name,
   uint8_t sensor_type,
@@ -569,7 +586,8 @@ void onRemoteSensorDiscovered(
   auto &c = calibrations[idx];
   c.local = false;
   c.device_uid = remote_uid;
-  c.device_ip = remote_ip;
+  strncpy(c.device_ip, remote_ip, sizeof(c.device_ip) - 1);
+  c.device_ip[sizeof(c.device_ip) - 1] = '\0';
   c.id = idx;
   c.uid = sensor_id;
   c.type = (SensorType)sensor_type;
@@ -585,7 +603,9 @@ void onRemoteSensorDiscovered(
   if (sensor_name.length()) {
     c.name = sensor_name;
   } else if (c.name == "") {
-    c.name = "Remote_" + String(remote_uid, HEX) + "_" + String(sensor_id);
+    char namebuf[32];
+    snprintf(namebuf, sizeof(namebuf), "Remote_%X_%u", remote_uid, sensor_id);
+    c.name = namebuf;
   }
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
