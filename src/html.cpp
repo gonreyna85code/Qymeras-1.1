@@ -749,7 +749,7 @@ function darken(hex, percent){
     .slice(1);
 }
 
-let logTimer = null;
+var logTimer = null;
 
 async function refreshLogs(){
   try {
