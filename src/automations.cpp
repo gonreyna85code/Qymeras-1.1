@@ -1,6 +1,7 @@
 #include <EEPROM.h>
 #include "automations.h"
 #include "sensors.h"
+#include "log.h"
 
 namespace automations {
 
@@ -166,6 +167,8 @@ void tick(uint32_t now_ms) {
 
     if (!trigger) continue;
     if (now_ms - s.last_action < r.cooldown_ms) continue;
+
+    logger::eventf("Rule %d triggered (type:%d)", i, r.type);
 
     // Ejecutar acciones
     if (r.delay_ms == 0) {

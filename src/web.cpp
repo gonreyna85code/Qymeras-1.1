@@ -83,7 +83,9 @@ ICACHE_FLASH_ATTR void handleRoot() {
 }
 
 ICACHE_FLASH_ATTR void handleSave() {
-  saveCredentials(server.arg("ssid"), server.arg("pass"));
+  String ssid = server.arg("ssid");
+  saveCredentials(ssid, server.arg("pass"));
+  logger::coref("WiFi config saved (SSID:%s)", ssid.c_str());
   server.sendHeader("Location", "/?saved=1");
   server.send(303);
   server.close();
@@ -200,11 +202,16 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
   if (server.hasArg("interval"))
     core::genset.report_interval = server.arg("interval").toInt();
   saveGeneralSettings();
+  logger::coref("Genset saved (bc:%u,cmd:%u,int:%u)",
+    core::genset.broadcast_port,
+    core::genset.command_port,
+    core::genset.report_interval);
   server.sendHeader("Location", "/");
   server.send(200, "text/plain", "OK");
 }
 
 ICACHE_FLASH_ATTR void handleFactoryReset() {
+  logger::warn("Factory reset requested");
   server.send(200, "text/plain", "RESET");
   factoryReset();
 }
@@ -297,6 +304,7 @@ ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
   EEPROM.get(addr, stored);
   if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
     EEPROM.put(addr, current);
+    logger::sensorsf("Calib slot %d saved (uid:%u)", index, c.uid);
     EEPROM.commit();
   }
 }
@@ -312,6 +320,7 @@ void handleDeleteRule() {
     return;
   }
   automations::deleteRule((uint8_t)id);
+  logger::eventf("Rule %d deleted", id);
   server.send(200, "text/plain", "ok");
 }
 
@@ -612,6 +621,8 @@ void handleSetRule() {
   r.delay_ms = server.arg("delay").toInt();
   r.cooldown_ms = server.arg("cooldown").toInt();
   saveRulesToEEPROM();
+  logger::eventf("Rule %d saved (type:%d, sensors:%d, actuators:%d)",
+    id, r.type, r.sensor_count, r.actuator_count);
   server.send(200, "text/plain", "ok");
 }
 

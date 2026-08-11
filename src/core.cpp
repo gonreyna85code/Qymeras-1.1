@@ -31,6 +31,7 @@ static void startAP() {
   web::server.close();
   delay(50);
   web::server.begin();
+  logger::coref("AP mode '%s' started", AP_SSID);
 }
 
 /// State-machine: kicks off a non-blocking WiFi connection attempt.
@@ -49,6 +50,7 @@ static void startWiFi() {
   SET_WIFI_SLEEP();
   wifi_connecting = true;
   wifi_connect_start = millis();
+  logger::coref("WiFi connecting to %s", ssid.c_str());
 }
 
 /// Non-blocking WiFi status checker — call from loop().
@@ -61,9 +63,11 @@ static void checkWiFiStatus() {
     wifi_connected = true;
     sensors::initNTP();
     ArduinoOTA.begin();
+    logger::coref("WiFi connected, IP:%s", WiFi.localIP().toString().c_str());
   } else if (millis() - wifi_connect_start >= 15000) {
     wifi_connecting = false;
     startAP();
+    logger::warnf("WiFi timeout, starting AP '%s'", AP_SSID);
   }
 }
 
@@ -86,8 +90,10 @@ void begin() {
   web::loadCalibration();
   automations::init();
   mesh::init();
+  logger::coref("Mesh UDP ready (bc:%u, cmd:%u)", genset.broadcast_port, genset.command_port);
   web::init();
   startWiFi();
+  logger::core("OTA ready");
 }
 
 // ================= ACCESORIOS ===================

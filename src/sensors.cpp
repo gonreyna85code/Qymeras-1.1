@@ -5,6 +5,7 @@
 #include "core.h"
 #include "mesh.h"
 #include "web.h"
+#include "log.h"
 
 
 namespace sensors {
@@ -162,6 +163,7 @@ void setRelay(const String &key, bool target) {
     web::saveCalibrationSlot(idx);
   }
 
+  logger::sensorsf("Relay %s -> %s", c.name.c_str(), target ? "ON" : "OFF");
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
@@ -196,6 +198,7 @@ void handleDimmer(const String &key, int value) {
   }
   c.value = value;
   c.state = (value > 0);
+  logger::sensorsf("Dimmer %s -> %d%%", c.name.c_str(), value);
   mesh::setReport(idx, c.uid, c.value, c.state ? c.value : 0, c.state);
 }
 
@@ -627,6 +630,9 @@ void onRemoteSensorDiscovered(
     char namebuf[32];
     snprintf(namebuf, sizeof(namebuf), "Remote_%X_%u", remote_uid, sensor_id);
     c.name = namebuf;
+  }
+  if (is_new) {
+    logger::sensorsf("New remote sensor '%s' (type:%d, uid:%u)", c.name.c_str(), sensor_type, sensor_id);
   }
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
