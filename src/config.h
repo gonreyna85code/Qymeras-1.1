@@ -118,3 +118,44 @@ typedef WebServer WebServerCompat;
 
 #define BROADCAST_INTERVAL 5000
 #define WIFI_RETRY_INTERVAL 180000
+
+/* =========================
+   PWM ABSTRACTION (0-255, 8-bit)
+   ESP8266: default analogWrite range is 1023 (10-bit)
+   ESP32:   default analogWrite range is 255 (8-bit)
+   Common abstraction: map to 0-255 on both platforms
+   ========================= */
+
+#ifdef PLATFORM_ESP8266
+  #define PWM_MAX_RAW 1023
+  #define PWM_MAX_OUT 255
+  inline void pwmSetup(uint8_t pin) {
+    static bool pwm_range_set = false;
+    if (!pwm_range_set) {
+      analogWriteRange(PWM_MAX_OUT);
+      analogWriteFreq(1000);
+      pwm_range_set = true;
+    }
+    pinMode(pin, OUTPUT);
+  }
+  inline void pwmWritePin(uint8_t pin, uint8_t value) {
+    analogWrite(pin, value);
+  }
+  inline uint8_t pwmReadPin(uint8_t pin) {
+    return (uint8_t)(analogRead(pin) * PWM_MAX_OUT / PWM_MAX_RAW);
+  }
+
+#elif defined(PLATFORM_ESP32) || defined(PLATFORM_ESP32S2) \
+   || defined(PLATFORM_ESP32S3) || defined(PLATFORM_ESP32C3)
+  #define PWM_MAX_RAW 4095
+  #define PWM_MAX_OUT 255
+  inline void pwmSetup(uint8_t pin) {
+    pinMode(pin, OUTPUT);
+  }
+  inline void pwmWritePin(uint8_t pin, uint8_t value) {
+    analogWrite(pin, value);
+  }
+  inline uint8_t pwmReadPin(uint8_t pin) {
+    return (uint8_t)(analogRead(pin) * PWM_MAX_OUT / PWM_MAX_RAW);
+  }
+#endif

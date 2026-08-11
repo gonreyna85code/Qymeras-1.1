@@ -76,8 +76,8 @@ void applyFades() {
     if (elapsed >= f.duration) {
       int pwm = f.endVal;
       if (c.inverted)
-        pwm = 255 - pwm;
-      analogWrite(f.pin, pwm);
+        pwm = PWM_MAX_OUT - pwm;
+      pwmWritePin(f.pin, (uint8_t)pwm);
       f.active = false;
     } else {
       float progress = (float)elapsed / f.duration;
@@ -85,8 +85,8 @@ void applyFades() {
         f.startVal + (f.endVal - f.startVal) * progress;
       int pwm = current;
       if (c.inverted)
-        pwm = 255 - pwm;
-      analogWrite(f.pin, pwm);
+        pwm = PWM_MAX_OUT - pwm;
+      pwmWritePin(f.pin, (uint8_t)pwm);
     }
   }
 }
@@ -168,14 +168,14 @@ void handleDimmer(const String &key, int value) {
   }
 
   // ---- Actuador LOCAL: operar PWM ----
-  int pwm_val = map(value, 0, 100, 0, 255);
+  int pwm_val = map(value, 0, 100, 0, PWM_MAX_OUT);
   if (c.inverted)
-    pwm_val = 255 - pwm_val;
+    pwm_val = PWM_MAX_OUT - pwm_val;
   if (c.fade > 0) {
-    int current = analogRead(c.pin);
+    int current = pwmReadPin(c.pin);
     startFade(key, c.pin, current, pwm_val, c.fade);
   } else {
-    analogWrite(c.pin, pwm_val);
+    pwmWritePin(c.pin, (uint8_t)pwm_val);
   }
   c.value = value;
   c.state = (value > 0);
@@ -190,11 +190,11 @@ void handleToggle(uint32_t uid) {
     setRelay(c.name, !c.state);
   } else if (c.type == TYPE_DIMMER) {
     c.state = !c.state;
-    int pwm_val = map(c.value, 0, 100, 0, 255);
+    int pwm_val = map(c.value, 0, 100, 0, PWM_MAX_OUT);
     if (c.inverted)
-      pwm_val = 255 - pwm_val;
+      pwm_val = PWM_MAX_OUT - pwm_val;
     if (c.fade > 0) {
-      int current = analogRead(c.pin);
+      int current = pwmReadPin(c.pin);
       startFade(
         c.name,
         c.pin,
@@ -202,9 +202,9 @@ void handleToggle(uint32_t uid) {
         c.state ? pwm_val : 0,
         c.fade);
     } else {
-      analogWrite(
+      pwmWritePin(
         c.pin,
-        c.state ? pwm_val : 0);
+        (uint8_t)(c.state ? pwm_val : 0));
     }
     mesh::setReport(
       idx,
@@ -370,11 +370,11 @@ void dimmer(const String &key, uint8_t pin, bool inverted) {
     bindLocalSensor(idx, key, TYPE_DIMMER);
     c.pin = pin;
     c.inverted = inverted;
-    pinMode(pin, OUTPUT);
+    pwmSetup(pin);
     int off_pwm = 0;
     if (c.inverted)
-      off_pwm = 255;
-    analogWrite(pin, off_pwm);
+      off_pwm = PWM_MAX_OUT;
+    pwmWritePin(pin, (uint8_t)off_pwm);
   }
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
