@@ -78,7 +78,8 @@ static void checkWiFiStatus() {
 /// (con retento automático si no hay SSID guardado).
 void begin() {
   Serial.begin(115200);
-  delay(200);
+  delay(500);  // ESP32: wait for NVS/preferences to be ready
+  delay(500);
   Serial.println();
   Serial.println("BOOT QYMERA");
   uid = String(GET_CHIP_ID(), HEX);
@@ -89,6 +90,7 @@ void begin() {
   web::loadCredentials();
   logger::core("Loading settings...");
   web::loadGeneralSettings();
+  logger::core("Loading OTA flag...");
   logger::core("Loading OTA flag...");
 
   // Load OTA flag from EEPROM
