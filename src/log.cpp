@@ -3,11 +3,13 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+static bool serial_enabled = true;
+
 namespace logger {
 
 // ================= STATE =================
 
-static bool serial_enabled = true;
+
 static bool layer_enabled[3] = {true, true, true};
 static Level min_level = INFO;
 
@@ -51,16 +53,6 @@ void init() {
   min_level = INFO;
   memset(buffer_head, 0, sizeof(buffer_head));
   memset(buffer_count, 0, sizeof(buffer_count));
-}
-
-// ================= SERIAL CONTROL =================
-
-void setSerialEnabled(bool enabled) {
-  serial_enabled = enabled;
-}
-
-bool isSerialEnabled() {
-  return serial_enabled;
 }
 
 // ================= LAYER FILTER =================
@@ -232,3 +224,15 @@ void clearBuffer() {
 }
 
 }  // namespace logger
+
+
+// ================= SERIAL CONTROL =================
+
+void setSerialEnabled(bool enabled) {
+  serial_enabled = enabled;
+}
+
+bool isSerialEnabled() {
+  return serial_enabled;
+}
+
