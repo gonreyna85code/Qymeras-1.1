@@ -244,6 +244,17 @@ void handleLogs() {
   server.send(200, "application/json", logger::getRecentLogsJson());
 }
 
+void handleOtaToggle() {
+  addCorsHeaders();
+  if (server.hasArg("enabled")) {
+    bool enable = server.arg("enabled") == "1";
+    core::setOtaEnabled(enable);
+    server.send(200, "text/plain", enable ? "OK" : "OFF");
+  } else {
+    server.send(400, "text/plain", "enabled arg required");
+  }
+}
+
 ICACHE_FLASH_ATTR void loadCalibration() {
   EEPROM.begin(EEPROM_SIZE);
   for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
@@ -774,6 +785,7 @@ void init() {
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.on("/logs", handleLogs);
+  server.on("/ota/toggle", handleOtaToggle);
   server.begin();
 }
 

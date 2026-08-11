@@ -1,7 +1,8 @@
-#include "config.h"
 #include "mesh.h"
+#include "config.h"
 #include "core.h"
 #include "sensors.h"
+#include "log.h"
 
 namespace mesh {
 
@@ -17,59 +18,56 @@ static WiFiUDP cmd_udp;
 static SensorDiscoveryCallback sensor_callback = nullptr;
 static CommandCallback command_cb = nullptr;
 
+// ================= TRANSPORT =================
+static Transport transport = TRANSPORT_UDP;
+
+void setTransport(Transport t) {
+  transport = t;
+  espnow_set_enabled(t == TRANSPORT_ESPNOW);
+  logger::coref("Mesh transport: %s", t == TRANSPORT_ESPNOW ? "ESP-NOW" : "UDP");
+}
+
+Transport getTransport() {
+  return transport;
+}
+
 void init() {
   mesh_udp.begin(core::genset.broadcast_port);
   udp.begin(core::genset.command_port);
+  espnow_init();
 }
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
   sensor_callback = cb;
 }
 
-// =========================================
-// REGISTRO DE CALLBACK DE COMANDOS
-// =========================================
-
 void setCommandCallback(CommandCallback cb) {
   command_cb = cb;
 }
 
-// =========================================
-// PARSER INTERNO DE PAQUETES UDP
-// =========================================
+// ================= BUFFER PARSER (shared) =================
 
-/**
- * @brief Lee y procesa hasta un paquete de una socket UDP.
- *        - Paquetes remotos  -> dispara sensor_callback (discovery) y
- *          actualiza la tabla de RemoteDevice.
- *        - Paquetes locales  -> dispara command_cb (actuación local).
- *
- * @param socket  Socket a sondear (broadcast o command).
- * @param now_ms  Timestamp actual en ms.
- */
-static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
-  int packet_size = socket.parsePacket();
-  if (packet_size < (int)sizeof(PacketHeader)) return;
+static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip, uint32_t now_ms) {
+  if (len < sizeof(PacketHeader)) return;
   PacketHeader hdr;
-  socket.read((uint8_t *)&hdr, sizeof(hdr));
+  memcpy(&hdr, buf, sizeof(hdr));
   if (hdr.magic != 0xA5) return;
   if (hdr.version != 1 && hdr.version != 2 && hdr.version != PACKET_VERSION) return;
-  if (hdr.size != packet_size) return;
+  if (hdr.size != len) return;
   uint32_t local_uid = GET_CHIP_ID();
   bool is_remote = (hdr.uid != local_uid);
-  char remote_ip[16];
-  IPAddress rip = socket.remoteIP();
-  snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
   int remaining = hdr.size - sizeof(PacketHeader);
   int packet_len = (hdr.version == 1) ? sizeof(PacketV1) :
                    (hdr.version == 2) ? sizeof(PacketV2) :
                                         sizeof(Packet);
+  const uint8_t *ptr = buf + sizeof(PacketHeader);
+
   while (remaining >= packet_len) {
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     if (hdr.version == 1) {
       PacketV1 pkt_v1;
-      socket.read((uint8_t *)&pkt_v1, sizeof(pkt_v1));
+      memcpy(&pkt_v1, ptr, sizeof(pkt_v1));
       pkt.id    = pkt_v1.id;
       pkt.type  = pkt_v1.type;
       pkt.value = pkt_v1.value;
@@ -78,7 +76,7 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
       pkt.name[0] = '\0';
     } else if (hdr.version == 2) {
       PacketV2 pkt_v2;
-      socket.read((uint8_t *)&pkt_v2, sizeof(pkt_v2));
+      memcpy(&pkt_v2, ptr, sizeof(pkt_v2));
       pkt.id    = pkt_v2.id;
       pkt.type  = pkt_v2.type;
       pkt.value = pkt_v2.value;
@@ -87,12 +85,13 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
       pkt.name[sizeof(pkt.name) - 1] = '\0';
       pkt.min = 0; pkt.max = 100; pkt.correction = 0; pkt.avail = 0;
     } else {
-      socket.read((uint8_t *)&pkt, sizeof(pkt));
+      memcpy(&pkt, ptr, sizeof(pkt));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
     }
+    ptr += packet_len;
     remaining -= packet_len;
+
     if (is_remote) {
-      // ---------- Sensor remoto: discovery ----------
       if (sensor_callback) {
         sensor_callback(
           hdr.uid, remote_ip,
@@ -116,7 +115,6 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
         remote_devices[idx].online    = true;
       }
     } else {
-      // ---------- Comando local: actuación ----------
       if (command_cb) {
         command_cb(pkt.type, pkt.id, pkt.value, pkt.state != 0);
       }
@@ -132,12 +130,40 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
   }
 }
 
-void tick(uint32_t now_ms) {
-  // Broadcast port: discovery de sensores remotos
-  parseUDPPacket(mesh_udp, now_ms);
-  // Command port: comandos enviados directamente a este dispositivo
-  parseUDPPacket(udp, now_ms);
+// ================= UDP PARSER =================
+
+static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
+  int packet_size = socket.parsePacket();
+  if (packet_size < (int)sizeof(PacketHeader)) return;
+  uint8_t buf[512];
+  int len = socket.read(buf, sizeof(buf));
+  if (len <= 0) return;
+  char remote_ip[16];
+  IPAddress rip = socket.remoteIP();
+  snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
+  parseBuffer(buf, len, remote_ip, now_ms);
 }
+
+// ================= TICK =================
+
+void tick(uint32_t now_ms) {
+  if (transport == TRANSPORT_UDP) {
+    parseUDPPacket(mesh_udp, now_ms);
+    parseUDPPacket(udp, now_ms);
+  } else if (transport == TRANSPORT_ESPNOW) {
+    uint8_t buf[250];
+    uint16_t len;
+    uint8_t src[6];
+    while (espnow_recv(buf, &len, src)) {
+      char mac_str[24];
+      snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+        src[0], src[1], src[2], src[3], src[4], src[5]);
+      parseBuffer(buf, len, mac_str, now_ms);
+    }
+  }
+}
+
+// ================= DEVICES =================
 
 RemoteDevice *getRemoteDevice(uint32_t uid) {
   for (int i = 0; i < remote_device_count; i++) {
@@ -158,8 +184,7 @@ bool isDeviceOnline(uint32_t uid) {
 }
 
 void setReport(uint8_t index, uint32_t uid, float value, float raw, bool state) {
-  if (index >= MAX_SENSORS)
-    return;
+  if (index >= MAX_SENSORS) return;
   reports[index].uid = uid;
   reports[index].value = value;
   reports[index].raw = raw;
@@ -167,44 +192,19 @@ void setReport(uint8_t index, uint32_t uid, float value, float raw, bool state) 
 }
 
 uint32_t encodeFloat(float v) {
-  if (v < MIN_VAL)
-    v = MIN_VAL;
-  if (v > MAX_VAL)
-    v = MAX_VAL;
+  if (v < MIN_VAL) v = MIN_VAL;
+  if (v > MAX_VAL) v = MAX_VAL;
   return (uint32_t)((v - MIN_VAL) / (MAX_VAL - MIN_VAL) * 0xFFFFFFFF);
 }
 
-// =========================================
-// ENVÍO DE COMANDOS REMOTOS (UDP unicast)
-// =========================================
+// ================= SEND =================
 
-/**
- * @brief Envía un comando UDP unicast al dispositivo remoto en su command_port.
- *        El PacketHeader lleva el uid LOCAL como origen. El receptor distingue
- *        si el paquete es remoto comparando hdr.uid con su propio chip id.
- *
- * @param remote_uid  UID del dispositivo destino (poseedor del actuador).
- *                    Se valida contra la tabla de dispositivos conocidos.
- * @param remote_ip   IP del dispositivo destino.
- * @param sensor_id   UID del actuador a controlar.
- * @param type        Tipo de sensor/actuador (TYPE_RELAY, TYPE_DIMMER, etc.).
- * @param value       Valor a aplicar (nivel de dimmer, etc.).
- * @param state       Estado ON/OFF.
- */
-void sendCommand(
-  uint32_t remote_uid,
-  const char *remote_ip,
-  uint32_t sensor_id,
-  uint8_t type,
-  uint32_t value,
-  bool state) {
-  if (!getRemoteDevice(remote_uid)) {
-    return;
-  }
+void sendCommand(uint32_t remote_uid, const char *remote_ip, uint32_t sensor_id, uint8_t type, uint32_t value, bool state) {
+  if (!getRemoteDevice(remote_uid)) return;
   PacketHeader hdr;
   hdr.magic   = 0xA5;
   hdr.version = PACKET_VERSION;
-  hdr.uid     = GET_CHIP_ID();  // origen = este dispositivo
+  hdr.uid     = GET_CHIP_ID();
   hdr.size    = sizeof(PacketHeader) + sizeof(Packet);
   Packet pkt;
   memset(&pkt, 0, sizeof(pkt));
@@ -212,29 +212,29 @@ void sendCommand(
   pkt.type  = type;
   pkt.value = value;
   pkt.state = state ? 1 : 0;
-  cmd_udp.beginPacket(remote_ip, core::genset.command_port);
-  cmd_udp.write((uint8_t *)&hdr, sizeof(hdr));
-  cmd_udp.write((uint8_t *)&pkt, sizeof(pkt));
-  cmd_udp.endPacket();
+
+  uint8_t buf[sizeof(PacketHeader) + sizeof(Packet)];
+  memcpy(buf, &hdr, sizeof(hdr));
+  memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
+
+  if (transport == TRANSPORT_UDP) {
+    cmd_udp.beginPacket(remote_ip, core::genset.command_port);
+    cmd_udp.write(buf, sizeof(buf));
+    cmd_udp.endPacket();
+  } else if (espnow_is_enabled()) {
+    espnow_send_broadcast(buf, sizeof(buf));
+  }
 }
 
 void sendBinaryReport() {
-  PacketHeader hdr;
-  hdr.magic = 0xA5;
-  hdr.version = PACKET_VERSION;
-  hdr.uid = GET_CHIP_ID();
-  uint8_t count = 0;
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    auto &c = sensors::calibrations[i];
-    if (c.local && c.type != sensors::SENSOR_NONE && c.uid != 0) count++;
-  }
-  uint16_t payloadSize = count * sizeof(Packet);
-  hdr.size = sizeof(PacketHeader) + payloadSize;
-  udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
-  udp.write((uint8_t *)&hdr, sizeof(hdr));
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
     if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
+    PacketHeader hdr;
+    hdr.magic = 0xA5;
+    hdr.version = PACKET_VERSION;
+    hdr.uid = GET_CHIP_ID();
+    hdr.size = sizeof(PacketHeader) + sizeof(Packet);
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     pkt.id = c.uid;
@@ -252,9 +252,18 @@ void sendBinaryReport() {
     } else {
       pkt.value = encodeFloat(c.value);
     }
-    udp.write((uint8_t *)&pkt, sizeof(pkt));
+    uint8_t buf[sizeof(PacketHeader) + sizeof(Packet)];
+    memcpy(buf, &hdr, sizeof(hdr));
+    memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
+
+    if (transport == TRANSPORT_UDP) {
+      udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
+      udp.write(buf, sizeof(buf));
+      udp.endPacket();
+    } else if (espnow_is_enabled()) {
+      espnow_send_broadcast(buf, sizeof(buf));
+    }
   }
-  udp.endPacket();
 }
 
 void sendLog(uint8_t layer, uint8_t level, const char *message) {
@@ -270,10 +279,17 @@ void sendLog(uint8_t layer, uint8_t level, const char *message) {
   pkt.level = level;
   strncpy(pkt.message, message, sizeof(pkt.message) - 1);
 
-  udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
-  udp.write((uint8_t *)&hdr, sizeof(hdr));
-  udp.write((uint8_t *)&pkt, sizeof(pkt));
-  udp.endPacket();
+  uint8_t buf[sizeof(PacketHeader) + sizeof(LogPacket)];
+  memcpy(buf, &hdr, sizeof(hdr));
+  memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
+
+  if (transport == TRANSPORT_UDP) {
+    udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
+    udp.write(buf, sizeof(buf));
+    udp.endPacket();
+  } else if (espnow_is_enabled()) {
+    espnow_send_broadcast(buf, sizeof(buf));
+  }
 }
 
 }  // namespace mesh

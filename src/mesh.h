@@ -2,11 +2,20 @@
 #include <WiFiUdp.h>
 #include <Arduino.h>
 #include "config.h"
+#include "espnow_p2p.h"
 
 namespace mesh {
 
+// ================= TRANSPORT MODE =================
+enum Transport : uint8_t {
+  TRANSPORT_UDP = 0,
+  TRANSPORT_ESPNOW = 1
+};
+
 // Inicialización
 void init();
+void setTransport(Transport t);
+Transport getTransport();
 
 // ============================================================================
 // Devices remotos

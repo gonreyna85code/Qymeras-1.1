@@ -260,6 +260,7 @@ DEFAULT: (s, i) => `<div class='card'>
   <input id='broadcast_port' placeholder='Broadcast Port' style='width:101px;margin:5px;margin-left:6px;border-radius:6px;padding:4px'>
   <input id='command_port' placeholder='Command Port' style='width:103px;margin:5px;border-radius:6px;padding:4px'>
   <input id='ref${i}' placeholder='Report Interval(ms)' style='width:127px;margin:5px;border-radius:6px;padding:4px'>
+  <label style='display:block;margin-left:6px;margin-top:6px;'><input type='checkbox' id='otaChk' onchange='toggleOta(this.checked)'> Arduino OTA</label>
   <div style='display:flex;justify-content:space-between;align-items:center;margin-top:10px;'>
     <button onclick='setPort(${i})' style='margin:10px;margin-bottom:9px;'>Save</button>
     <button onclick='factoryReset()' style='background:#bd1313;margin-bottom:9px;'>Factory Reset</button>
@@ -682,6 +683,15 @@ function factoryReset() {
   fetch('/factory', { method: 'POST' })
     .then(() => alert('Reiniciando...'))
     .catch(() => alert('Error enviando reset'));
+}
+
+async function toggleOta(enabled) {
+  try {
+    await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
+    alert('OTA ' + (enabled ? 'enabled' : 'disabled'));
+  } catch(e) {
+    console.log('toggleOta err', e);
+  }
 }
 
 function setBackground(color){

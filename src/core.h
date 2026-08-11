@@ -15,6 +15,10 @@ extern GeneralSettings genset;
 extern String ssid, password;
 
 bool is_connected();
+
+// ================= OTA CONTROL =================
+void setOtaEnabled(bool enabled);
+bool isOtaEnabled();
 }
 
 void initSatellite();

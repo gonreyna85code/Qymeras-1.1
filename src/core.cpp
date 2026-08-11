@@ -19,6 +19,7 @@ static bool wifi_connected = false;
 static unsigned long last_attempt = 0;
 static unsigned long last_report = 0;
 static bool first_report = true;
+static bool ota_enabled = true;
 GeneralSettings genset;
 
  // ================= HELPERS ===================
@@ -104,6 +105,22 @@ bool is_connected() {
   return wifi_connected;
 }
 
+// ================= OTA CONTROL =================
+
+void setOtaEnabled(bool enabled) {
+  ota_enabled = enabled;
+  if (enabled) {
+    ArduinoOTA.begin();
+    logger::core("OTA enabled");
+  } else {
+    logger::core("OTA disabled");
+  }
+}
+
+bool isOtaEnabled() {
+  return ota_enabled;
+}
+
 // ================= LOOP PRINCIPAL ===================
 
 /// Bucle de la aplicación: maneja HTTP, reconexión Wi-Fi si cae,
@@ -122,10 +139,8 @@ void loop() {
     startWiFi();
   }
 
-  /// Si no hay red, sale del loop principal (solo el HTTP sigue corriendo).
-  if (!wifi_connected) {
-    return;
-  }
+  /// Si no hay red, usar ESP-NOW; si hay red, usar UDP
+  mesh::setTransport(wifi_connected ? mesh::TRANSPORT_UDP : mesh::TRANSPORT_ESPNOW);
 
   /// 4) Primera iteración: APLICAR estados persistentes ANTES del reporte
   //     para evitar piso — los relays deben reflejar su estado persistente
@@ -153,7 +168,9 @@ void loop() {
     mesh::sendBinaryReport();
   }
 
-  ArduinoOTA.handle();
+  if (ota_enabled) {
+    ArduinoOTA.handle();
+  }
 }
 
 }  // namespace core
