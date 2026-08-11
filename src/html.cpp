@@ -696,7 +696,6 @@ async function toggleOta(enabled) {
 }
 
 async function syncOtaCheckbox() {
-  // Wait for checkbox to exist (loadCalib is async)
   for (let i = 0; i < 10; i++) {
     const el = document.getElementById('otaChk');
     if (el) {
@@ -704,6 +703,10 @@ async function syncOtaCheckbox() {
         const r = await fetch('/ota/status');
         const j = await r.json();
         el.checked = j.ota === 1;
+        // Force visual reflow
+        el.style.display = 'none';
+        el.offsetHeight; // trigger reflow
+        el.style.display = '';
       } catch(e) {
         console.log('syncOta err', e);
       }
