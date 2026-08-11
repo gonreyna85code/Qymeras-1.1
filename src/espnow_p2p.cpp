@@ -31,6 +31,18 @@ static void espnow_recv_cb(uint8_t *mac, uint8_t *data, uint8_t len) {
   }
 }
 #elif defined(ESP32)
+#include <esp_idf_version.h>
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+static void espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {}
+static void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
+  if (len > 0 && len <= 250) {
+    memcpy(rx_src, recv_info->src_addr, 6);
+    memcpy(rx_buf, data, len);
+    rx_len = len;
+    rx_ready = true;
+  }
+}
+#else
 static void espnow_send_cb(const uint8_t *mac, esp_now_send_status_t status) {}
 static void espnow_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
   if (len > 0 && len <= 250) {
@@ -40,6 +52,7 @@ static void espnow_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
     rx_ready = true;
   }
 }
+#endif
 #endif
 
 // ================= API =================
