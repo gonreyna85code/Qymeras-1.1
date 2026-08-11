@@ -55,7 +55,9 @@ text-align:left;
 margin-bottom:10px;
 padding:6px;
 border-radius:6px;
-border:1px solid #ccc;
+border:1px solid var(--text);
+background:var(--bg);
+color:var(--text);
 }
 #themePicker{
   position:fixed;
@@ -1324,23 +1326,23 @@ function showStep(n){
     content = `<h3>Tipo de Regla</h3>
     <div style="display:flex;flex-direction:column;gap:12px">
 
-      ${[0,1,2,3].map(t=>{
-        const cfg = [
-          {c:'#27ae60',bg:'#f0fdf4',txt:'🔄 EDGE - Cambios de estado',desc:'Se ejecuta cuando un sensor cambia'},
-          {c:'#2980b9',bg:'#f0f8ff',txt:'📊 THRESHOLD - Valores límite',desc:'Se ejecuta por umbral'},
-          {c:'#e67e22',bg:'#fffaf0',txt:'⏰ TIME - A una hora',desc:'Ejecuta a una hora fija'},
-          {c:'#9b59b6',bg:'#faf5ff',txt:'⏱️ INTERVAL - Cada X tiempo',desc:'Ejecuta periódicamente'}
-        ][t];
+       ${[0,1,2,3].map(t=>{
+         const cfg = [
+           {c:'#27ae60',txt:'🔄 EDGE - Cambios de estado',desc:'Se ejecuta cuando un sensor cambia'},
+           {c:'#2980b9',txt:'📊 THRESHOLD - Valores límite',desc:'Se ejecuta por umbral'},
+           {c:'#e67e22',txt:'⏰ TIME - A una hora',desc:'Ejecuta a una hora fija'},
+           {c:'#9b59b6',txt:'⏱️ INTERVAL - Cada X tiempo',desc:'Ejecuta periódicamente'}
+         ][t];
 
-        return `
-        <label style="display:flex;padding:10px;border:2px solid ${wizard.data.type===t?cfg.c:'#ddd'};border-radius:6px;cursor:pointer;background:${wizard.data.type===t?cfg.bg:'#fff'}">
-          <input type="radio" name="type" value="${t}" ${wizard.data.type===t?'checked':''} style="margin-right:10px">
-          <div>
-            <strong>${cfg.txt}</strong>
-            <small style="color:#666;display:block">${cfg.desc}</small>
-          </div>
-        </label>`;
-      }).join('')}
+         return `
+         <label style="display:flex;padding:10px;border:2px solid ${wizard.data.type===t?cfg.c:'rgba(255,255,255,.15)'};border-radius:6px;cursor:pointer;background:var(--card)">
+           <input type="radio" name="type" value="${t}" ${wizard.data.type===t?'checked':''} style="margin-right:10px">
+           <div>
+             <strong>${cfg.txt}</strong>
+             <small style="color:var(--text);opacity:.6;display:block">${cfg.desc}</small>
+           </div>
+         </label>`;
+       }).join('')}
 
     </div>`;
   }
@@ -1382,9 +1384,9 @@ function showStep(n){
             );
 
         content += `
-        <div style="border:1px solid #ddd;padding:10px;margin:6px;border-radius:6px">
+        <div style="border:1px solid var(--text);padding:10px;margin:6px;border-radius:6px">
           <b>${s.name}</b>
-          <span style="float:right;font-weight:bold;color:#555">${val}</span><br>
+          <span style="float:right;font-weight:bold;color:var(--text);opacity:.6">${val}</span><br>
           ${wizard.data.type === 0 ? `
             <select id="cmp_${sIdx}">
               <option value="0" ${cond.cmp===0?'selected':''}>RISING</option>
@@ -1411,17 +1413,17 @@ function showStep(n){
        content = `<h3>⏰ Rango de Fechas y Hora</h3>
        <div style="margin-bottom:12px">
          <label style="display:block;margin-bottom:6px"><strong>Desde cuándo:</strong></label>
-         <input id="date_start" type="date" value="${wizard.data.date_start}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ccc">
+         <input id="date_start" type="date" value="${wizard.data.date_start}" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--text)">
        </div>
        <div style="margin-bottom:12px">
          <label style="display:block;margin-bottom:6px"><strong>Hasta cuándo:</strong></label>
-         <input id="date_end" type="date" value="${wizard.data.date_end}" style="width:100%;padding:6px;border-radius:6px;border:1px solid #ccc">
+         <input id="date_end" type="date" value="${wizard.data.date_end}" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--text)">
        </div>
-       <div style="border-top:1px solid #ddd;padding-top:12px;margin-top:12px">
+       <div style="border-top:1px solid var(--text);padding-top:12px;margin-top:12px">
          <label style="display:block;margin-bottom:6px"><strong>Hora de ejecución:</strong></label>
          <div style="display:flex;gap:8px">
-           <input id="time_hour" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs" style="flex:1;padding:6px;border-radius:6px;border:1px solid #ccc">
-           <input id="time_minute" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min" style="flex:1;padding:6px;border-radius:6px;border:1px solid #ccc">
+           <input id="time_hour" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs" style="flex:1;padding:6px;border-radius:6px;border:1px solid var(--text)">
+           <input id="time_minute" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min" style="flex:1;padding:6px;border-radius:6px;border:1px solid var(--text)">
          </div>
        </div>`;
      } else if(wizard.data.sensors.length > 1) {
@@ -1460,9 +1462,9 @@ function showStep(n){
             : '-';
 
         content += `
-        <div style="border:1px solid #ddd;padding:8px;margin:5px;border-radius:6px">
+        <div style="border:1px solid var(--text);padding:8px;margin:5px;border-radius:6px">
           <b>${a.name}</b>
-          <span style="float:right;font-weight:bold;color:#555">${state}</span><br>
+          <span style="float:right;font-weight:bold;color:var(--text);opacity:.6">${state}</span><br>
           <select id="action_${i}">
             <option value="0" ${action===0?'selected':''}>ON</option>
             <option value="1" ${action===1?'selected':''}>OFF</option>
@@ -1496,7 +1498,8 @@ function showStep(n){
   /* ================= RENDER ================= */
 
   let html = `<div>${content}</div>`;
-  html += `<hr>
+   html += `<hr style="border:0;border-top:1px solid var(--text);opacity:.3">
+
   <div style="display:flex;justify-content:space-between">
     ${n>0?'<button onclick="prevStep()">Back</button>':''}
     ${n<steps.length-1?'<button onclick="nextStep()">Next</button>':'<button onclick="finishWizard()">Save</button>'}
