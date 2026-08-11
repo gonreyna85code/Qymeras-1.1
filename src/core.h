@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include <functional>
 #include "config.h"
 
 namespace core {

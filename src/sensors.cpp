@@ -142,7 +142,7 @@ void setRelay(const String &key, bool target) {
   // ---- Persistencia en EEPROM ----
   if (c.persist) {
     c.pers_state = c.state;
-    web::saveCalibration();
+    web::saveCalibrationSlot(idx);
   }
 
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
@@ -537,7 +537,7 @@ void onRemoteSensorDiscovered(
     auto &c = calibrations[idx];
     if (c.correction == 0 && sensor_correction != 0) {
       c.correction = sensor_correction;
-      web::saveCalibration();
+      web::saveCalibrationSlot(idx);
     }
     if (!timeValid() && sensor_value > 1704067200) {
       timeval tv;

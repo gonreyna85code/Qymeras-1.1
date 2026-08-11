@@ -236,12 +236,12 @@ ICACHE_FLASH_ATTR void loadCalibration() {
     CalibrationPersist p;
     EEPROM.get(addr, p);
     auto &c = sensors::calibrations[i];
-    c.pers_state = p.pers_state;
     Serial.printf(
       "LOAD %d pers=%d persist=%d\n",
       i,
       p.pers_state,
       p.persist);
+    c.pers_state = p.pers_state;
     c.min = p.min;
     c.max = p.max;
     c.correction = p.correction;
@@ -250,7 +250,11 @@ ICACHE_FLASH_ATTR void loadCalibration() {
     c.pulse = p.pulse;
     c.pulse_ms = p.pulse_ms;
     c.fade = p.fade;
-    c.value = 0;
+    // No pisar c.value si el sensor ya fue registrado por initSatellite()
+    // (uid != 0 indica que sensors::temperature()/humidity()/etc. lo registró)
+    if (c.uid == 0) {
+      c.value = 0;
+    }
   }
 }
 
@@ -270,6 +274,23 @@ ICACHE_FLASH_ATTR void saveCalibration() {
     }
   }
   EEPROM.commit();
+}
+
+ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
+  if (index < 0 || index >= MAX_PERSISTED_SENSORS) return;
+  EEPROM.begin(EEPROM_SIZE);
+  int addr = EEPROM_CALIB_START + index * sizeof(CalibrationPersist);
+  auto &c = sensors::calibrations[index];
+  CalibrationPersist current = {};
+  if (c.local && c.uid != 0) {
+    current = makePersist(c);
+  }
+  CalibrationPersist stored;
+  EEPROM.get(addr, stored);
+  if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
+    EEPROM.put(addr, current);
+    EEPROM.commit();
+  }
 }
 
 void handleDeleteRule() {

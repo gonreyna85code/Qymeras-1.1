@@ -13,6 +13,7 @@ static RemoteDevice remote_devices[MAX_SENSORS];
 static int remote_device_count = 0;
 static unsigned long last_cleanup = 0;
 static WiFiUDP mesh_udp;
+static WiFiUDP cmd_udp;
 static SensorDiscoveryCallback sensor_callback = nullptr;
 static CommandCallback command_cb = nullptr;
 
@@ -207,8 +208,7 @@ void sendCommand(
   pkt.id    = sensor_id;
   pkt.type  = type;
   pkt.value = value;
-  pkt.state = state ? 1 : 0;
-  WiFiUDP cmd_udp;
+   pkt.state = state ? 1 : 0;
   cmd_udp.beginPacket(remote_ip.c_str(), core::genset.command_port);
   cmd_udp.write((uint8_t *)&hdr, sizeof(hdr));
   cmd_udp.write((uint8_t *)&pkt, sizeof(pkt));

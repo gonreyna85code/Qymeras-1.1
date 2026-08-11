@@ -74,7 +74,6 @@ static bool isDateInRange(const Rule &r) {
 void tick(uint32_t now_ms) {
   if (now_ms - last_run < SAMPLE_MS) return;
   last_run = now_ms;
-  uint32_t now_time = millis() / 1000;
 
   for (int i = 0; i < MAX_RULES; i++) {
     Rule &r = rules[i];

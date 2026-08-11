@@ -1,6 +1,4 @@
 #include <ArduinoOTA.h>
-#include <vector>
-#include <string>
 #include "core.h"
 #include "config.h"
 #include "web.h"
@@ -107,11 +105,14 @@ void loop() {
     return;
   }
 
-  /// 3) Primera iteración: reporte inicial + aplicación de estados persistentes.
+  /// 3) Primera iteración: APLICAR estados persistentes ANTES del reporte
+  //     para evitar pise — los relays deben reflejar su estado persisted
+  //     antes de que report() publique valores al mesh.
   if (first_report) {
+    sensors::applyPersistedStates();
     ::report();
     first_report = false;
-    sensors::applyPersistedStates();
+    last_report = millis();
     Serial.println();
     Serial.println("apply");
   }
