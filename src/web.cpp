@@ -11,6 +11,39 @@
 #define ICACHE_FLASH_ATTR
 #endif
 
+#if defined(ESP32)
+#include <Preferences.h>
+static Preferences prefs;
+static bool prefs_ready = false;
+static void eeprom_begin() {
+  if (!prefs_ready) {
+    prefs_ready = prefs.begin("eeprom", false);
+  }
+}
+static uint8_t eeprom_read(int addr) {
+  return prefs.getUChar(String(addr).c_str(), 0);
+}
+static void eeprom_write(int addr, uint8_t val) {
+  prefs.putUChar(String(addr).c_str(), val);
+}
+template<typename T> static void eeprom_get(int addr, T &obj) {
+  prefs.getBytes(String(addr).c_str(), &obj, sizeof(T));
+}
+template<typename T> static void eeprom_put(int addr, const T &obj) {
+  prefs.putBytes(String(addr).c_str(), &obj, sizeof(T));
+}
+static void eeprom_commit() {
+  // Preferences auto-commits
+}
+#else
+static void eeprom_begin() { eeprom_begin(); }
+static uint8_t eeprom_read(int addr) { return eeprom_read(addr); }
+static void eeprom_write(int addr, uint8_t val) { eeprom_write(addr, val); }
+template<typename T> static void eeprom_get(int addr, T &obj) { eeprom_get(addr, obj); }
+template<typename T> static void eeprom_put(int addr, const T &obj) { eeprom_put(addr, obj); }
+static void eeprom_commit() { eeprom_commit(); }
+#endif
+
 namespace web {
 WebServerCompat server(80);
 
@@ -93,13 +126,13 @@ ICACHE_FLASH_ATTR void handleSave() {
 }
 
 ICACHE_FLASH_ATTR void loadGeneralSettings() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   int addr = EEPROM_GENSET_START;
-  EEPROM.get(addr, core::genset.broadcast_port);
+  eeprom_get(addr, core::genset.broadcast_port);
   addr += sizeof(uint16_t);
-  EEPROM.get(addr, core::genset.command_port);
+  eeprom_get(addr, core::genset.command_port);
   addr += sizeof(uint16_t);
-  EEPROM.get(addr, core::genset.report_interval);
+  eeprom_get(addr, core::genset.report_interval);
   addr += sizeof(uint32_t);
   if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
     core::genset.broadcast_port = BROADCAST_PORT;
@@ -110,23 +143,23 @@ ICACHE_FLASH_ATTR void loadGeneralSettings() {
 }
 
 ICACHE_FLASH_ATTR void loadCredentials() {
-  EEPROM.begin(EEPROM_SIZE);
-  int slen = EEPROM.read(EEPROM_CRED_START);
+  eeprom_begin();
+  int slen = eeprom_read(EEPROM_CRED_START);
   if (slen < 0 || slen > 32) slen = 0;
   char ssid_buf[33] = {0};
   for (int i = 0; i < slen; i++) {
-    char c = EEPROM.read(EEPROM_CRED_START + 1 + i);
+    char c = eeprom_read(EEPROM_CRED_START + 1 + i);
     if (c == 0xFF || c == 0) break;
     ssid_buf[i] = c;
   }
   core::ssid = ssid_buf;
 
   int plen_addr = EEPROM_CRED_START + 1 + slen;
-  int plen = EEPROM.read(plen_addr);
+  int plen = eeprom_read(plen_addr);
   if (plen < 0 || plen > 64) plen = 0;
   char pass_buf[65] = {0};
   for (int i = 0; i < plen; i++) {
-    char c = EEPROM.read(plen_addr + 1 + i);
+    char c = eeprom_read(plen_addr + 1 + i);
     if (c == 0xFF || c == 0) break;
     pass_buf[i] = c;
   }
@@ -134,7 +167,7 @@ ICACHE_FLASH_ATTR void loadCredentials() {
 }
 
 ICACHE_FLASH_ATTR void saveGeneralSettings() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   int addr = EEPROM_GENSET_START;
   if (core::genset.broadcast_port < 1024 || core::genset.broadcast_port > 65500)
     core::genset.broadcast_port = BROADCAST_PORT;
@@ -142,52 +175,56 @@ ICACHE_FLASH_ATTR void saveGeneralSettings() {
     core::genset.command_port = COMMAND_PORT;
   if (core::genset.report_interval < 5000 || core::genset.report_interval > 600000)
     core::genset.report_interval = BROADCAST_INTERVAL;
-  EEPROM.put(addr, core::genset.broadcast_port);
+  eeprom_put(addr, core::genset.broadcast_port);
   addr += sizeof(uint16_t);
-  EEPROM.put(addr, core::genset.command_port);
+  eeprom_put(addr, core::genset.command_port);
   addr += sizeof(uint16_t);
-  EEPROM.put(addr, core::genset.report_interval);
+  eeprom_put(addr, core::genset.report_interval);
   addr += sizeof(uint32_t);
-  EEPROM.commit();
+  eeprom_commit();
 }
 
 ICACHE_FLASH_ATTR void factoryReset() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
 
+#if defined(ESP32)
+  // Clear all preferences
+  prefs.clear();
+#else
   // --- Relay state ---
   memset(EEPROM.getDataPtr() + EEPROM_RELAY_STATE_START, 0, EEPROM_RELAY_STATE_SIZE);
 
   // --- WiFi credentials ---
   memset(EEPROM.getDataPtr() + EEPROM_CRED_START, 0, EEPROM_CRED_SIZE);
 
+  // --- Calibration + rules: clear rest of EEPROM ---
+  memset(EEPROM.getDataPtr() + EEPROM_GENSET_START + 12, 0, EEPROM_SIZE - EEPROM_GENSET_START - 12);
+
   // --- Genset config: write defaults ---
   int addr = EEPROM_GENSET_START;
   uint16_t def_broadcast = BROADCAST_PORT;
   uint16_t def_command = COMMAND_PORT;
   uint32_t def_interval = BROADCAST_INTERVAL;
-  EEPROM.put(addr, def_broadcast);
+  eeprom_put(addr, def_broadcast);
   addr += sizeof(uint16_t);
-  EEPROM.put(addr, def_command);
+  eeprom_put(addr, def_command);
   addr += sizeof(uint16_t);
-  EEPROM.put(addr, def_interval);
-  addr += sizeof(uint32_t);
+  eeprom_put(addr, def_interval);
+#endif
 
-  // --- Calibration + rules: clear rest of EEPROM ---
-  memset(EEPROM.getDataPtr() + addr, 0, EEPROM_SIZE - addr);
-
-  EEPROM.commit();
+  eeprom_commit();
   delay(100);
   RESET_MCU();
 }
 
 ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
-  EEPROM.begin(EEPROM_SIZE);
-  EEPROM.write(EEPROM_CRED_START, s.length());
-  for (int i = 0; i < s.length(); i++) EEPROM.write(EEPROM_CRED_START + 1 + i, s[i]);
+  eeprom_begin();
+  eeprom_write(EEPROM_CRED_START, s.length());
+  for (int i = 0; i < s.length(); i++) eeprom_write(EEPROM_CRED_START + 1 + i, s[i]);
   int offset = EEPROM_CRED_START + 1 + s.length();
-  EEPROM.write(offset, p.length());
-  for (int i = 0; i < p.length(); i++) EEPROM.write(offset + 1 + i, p[i]);
-  EEPROM.commit();
+  eeprom_write(offset, p.length());
+  for (int i = 0; i < p.length(); i++) eeprom_write(offset + 1 + i, p[i]);
+  eeprom_commit();
 }
 
 ICACHE_FLASH_ATTR void handleGenSetSave() {
@@ -263,11 +300,11 @@ void handleOtaStatus() {
 }
 
 ICACHE_FLASH_ATTR void loadCalibration() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
     CalibrationPersist p;
-    EEPROM.get(addr, p);
+    eeprom_get(addr, p);
     auto &c = sensors::calibrations[i];
     Serial.printf(
       "LOAD %d pers=%d persist=%d\n",
@@ -292,7 +329,7 @@ ICACHE_FLASH_ATTR void loadCalibration() {
 }
 
 ICACHE_FLASH_ATTR void saveCalibration() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
     auto &c = sensors::calibrations[i];
@@ -301,17 +338,17 @@ ICACHE_FLASH_ATTR void saveCalibration() {
       current = makePersist(c);
     }
     CalibrationPersist stored;
-    EEPROM.get(addr, stored);
+    eeprom_get(addr, stored);
     if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
-      EEPROM.put(addr, current);
+      eeprom_put(addr, current);
     }
   }
-  EEPROM.commit();
+  eeprom_commit();
 }
 
 ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
   if (index < 0 || index >= MAX_PERSISTED_SENSORS) return;
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   int addr = EEPROM_CALIB_START + index * sizeof(CalibrationPersist);
   auto &c = sensors::calibrations[index];
   CalibrationPersist current = {};
@@ -319,11 +356,11 @@ ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
     current = makePersist(c);
   }
   CalibrationPersist stored;
-  EEPROM.get(addr, stored);
+  eeprom_get(addr, stored);
   if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
-    EEPROM.put(addr, current);
+    eeprom_put(addr, current);
     logger::sensorsf("Calib slot %d saved (uid:%u)", index, c.uid);
-    EEPROM.commit();
+    eeprom_commit();
   }
 }
 

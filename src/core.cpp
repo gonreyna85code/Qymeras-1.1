@@ -7,6 +7,13 @@
 #include "automations.h"
 #include "log.h"
 
+extern void eeprom_begin();
+extern uint8_t eeprom_read(int addr);
+extern void eeprom_write(int addr, uint8_t val);
+extern void eeprom_commit();
+template<typename T> extern void eeprom_get(int addr, T &obj);
+template<typename T> extern void eeprom_put(int addr, const T &obj);
+
 namespace core {
 
 // ================= VARIABLES ===================
@@ -90,7 +97,7 @@ void begin() {
   logger::core("Settings loaded");
 
   // Load OTA flag from EEPROM
-  ota_enabled = EEPROM.read(EEPROM_OTA_FLAG_ADDR) == 1;
+  ota_enabled = eeprom_read(EEPROM_OTA_FLAG_ADDR) == 1;
   if (ota_enabled) {
     ArduinoOTA.begin();
     logger::core("OTA enabled");
@@ -118,9 +125,9 @@ bool is_connected() {
 
 void setOtaEnabled(bool enabled) {
   ota_enabled = enabled;
-  EEPROM.begin(EEPROM_SIZE);
-  EEPROM.write(EEPROM_OTA_FLAG_ADDR, enabled ? 1 : 0);
-  EEPROM.commit();
+  eeprom_begin();
+  eeprom_write(EEPROM_OTA_FLAG_ADDR, enabled ? 1 : 0);
+  eeprom_commit();
   if (enabled) {
     ArduinoOTA.begin();
     logger::core("OTA enabled");

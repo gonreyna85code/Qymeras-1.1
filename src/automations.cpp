@@ -3,6 +3,13 @@
 #include "sensors.h"
 #include "log.h"
 
+extern void eeprom_begin();
+extern uint8_t eeprom_read(int addr);
+extern void eeprom_write(int addr, uint8_t val);
+extern void eeprom_commit();
+template<typename T> extern void eeprom_get(int addr, T &obj);
+template<typename T> extern void eeprom_put(int addr, const T &obj);
+
 namespace automations {
 
 struct RulesHeader {
@@ -191,10 +198,10 @@ void tick(uint32_t now_ms) {
 }
 
 void loadRulesFromEEPROM() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   RulesHeader h;
   int addr = EEPROM_RULES_START;
-  EEPROM.get(addr, h);
+  eeprom_get(addr, h);
   addr += sizeof(RulesHeader);
   if (h.magic != RULES_MAGIC || h.version != RULES_VERSION) {
     memset(rules, 0, sizeof(rules));
@@ -202,13 +209,13 @@ void loadRulesFromEEPROM() {
     return;
   }
   for (int i = 0; i < MAX_RULES; i++) {
-    EEPROM.get(addr, rules[i]);
+    eeprom_get(addr, rules[i]);
     addr += sizeof(Rule);
   }
 }
 
 void saveRulesToEEPROM() {
-  EEPROM.begin(EEPROM_SIZE);
+  eeprom_begin();
   RulesHeader h;
   h.magic = RULES_MAGIC;
   h.version = RULES_VERSION;
@@ -218,25 +225,25 @@ void saveRulesToEEPROM() {
   // Only commit if header or any rule changed
   bool dirty = false;
   RulesHeader stored_h;
-  EEPROM.get(addr, stored_h);
+  eeprom_get(addr, stored_h);
   if (memcmp(&h, &stored_h, sizeof(RulesHeader)) != 0) {
     dirty = true;
-    EEPROM.put(addr, h);
+    eeprom_put(addr, h);
   }
   addr += sizeof(RulesHeader);
 
   for (int i = 0; i < MAX_RULES; i++) {
     Rule stored;
-    EEPROM.get(addr, stored);
+    eeprom_get(addr, stored);
     if (memcmp(&rules[i], &stored, sizeof(Rule)) != 0) {
       dirty = true;
-      EEPROM.put(addr, rules[i]);
+      eeprom_put(addr, rules[i]);
     }
     addr += sizeof(Rule);
   }
 
   if (dirty) {
-    EEPROM.commit();
+    eeprom_commit();
   }
 }
 
