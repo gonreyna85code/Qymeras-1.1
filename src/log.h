@@ -26,8 +26,7 @@ static const uint8_t LOG_BUFFER_SIZE = 30;
 void init();
 
 // ================= SERIAL CONTROL =================
-void setSerialEnabled(bool enabled);
-bool isSerialEnabled();
+
 
 // ================= LAYER FILTER =================
 void setLayerEnabled(Layer layer, bool enabled);
@@ -67,3 +66,6 @@ String getRecentLogsJson();
 void clearBuffer();
 
 }  // namespace logger
+
+void setSerialEnabled(bool enabled);
+bool isSerialEnabled();
