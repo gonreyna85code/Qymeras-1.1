@@ -226,6 +226,7 @@ void handleToggle(uint32_t uid) {
         c.pin,
         (uint8_t)(c.state ? pwm_val : 0));
     }
+    logger::sensorsf("Dimmer %s -> %s", c.name.c_str(), c.state ? "ON" : "OFF");
     mesh::setReport(
       idx,
       c.uid,
