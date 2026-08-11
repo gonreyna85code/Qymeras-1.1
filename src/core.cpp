@@ -84,8 +84,12 @@ void begin() {
   uid = String(GET_CHIP_ID(), HEX);
   logger::init();
   logger::core("Boot");
+  delay(100);
+  logger::core("Loading credentials...");
   web::loadCredentials();
+  logger::core("Loading settings...");
   web::loadGeneralSettings();
+  logger::core("Loading OTA flag...");
 
   // Load OTA flag from EEPROM
   ota_enabled = EEPROM.read(EEPROM_OTA_FLAG_ADDR) == 1;
