@@ -387,7 +387,7 @@ const char JS[] PROGMEM = R"rawliteral(
 
 /* -------------------- DEVICES -------------------- */
 
-let calibPromise = null;
+var calibPromise = null;
 let sensors = [];
 
 async function getCalib(force = false) {
@@ -695,12 +695,20 @@ async function toggleOta(enabled) {
 }
 
 async function syncOtaCheckbox() {
-  try {
-    const r = await fetch('/ota/status');
-    const j = await r.json();
-    document.getElementById('otaChk').checked = j.ota === 1;
-  } catch(e) {
-    console.log('syncOta err', e);
+  // Wait for checkbox to exist (loadCalib is async)
+  for (let i = 0; i < 10; i++) {
+    const el = document.getElementById('otaChk');
+    if (el) {
+      try {
+        const r = await fetch('/ota/status');
+        const j = await r.json();
+        el.checked = j.ota === 1;
+      } catch(e) {
+        console.log('syncOta err', e);
+      }
+      return;
+    }
+    await new Promise(r => setTimeout(r, 100));
   }
 }
 
