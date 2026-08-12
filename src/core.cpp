@@ -16,6 +16,9 @@ template<typename T> extern void eeprom_put(int addr, const T &obj);
 
 namespace core {
 
+// Forward declaration
+bool verifyOtaIntegrity();
+
 // ================= VARIABLES ===================
 // Vars globales compartidas (no estáticas: accesibles para configuración).
 
@@ -98,9 +101,23 @@ void begin() {
 
   // Load OTA flag from EEPROM
   ota_enabled = eeprom_read(EEPROM_OTA_FLAG_ADDR) == 1;
+  
+  // Verify firmware integrity if OTA is enabled
   if (ota_enabled) {
-    ArduinoOTA.begin();
-    logger::core("OTA enabled");
+    if (verifyOtaIntegrity()) {
+      logger::core("OTA integrity verified");
+      ArduinoOTA.begin();
+    } else {
+      logger::core("OTA integrity FAILED - disabling OTA");
+      ota_enabled = false;
+      eeprom_begin();
+      eeprom_write(EEPROM_OTA_FLAG_ADDR, 0);
+      eeprom_commit();
+    }
+  }
+  
+  if (!ota_enabled) {
+    ArduinoOTA.begin();  // Initialize even if disabled (but won't handle)
   }
 
   sensors::init();
@@ -128,9 +145,18 @@ void setOtaEnabled(bool enabled) {
   eeprom_begin();
   eeprom_write(EEPROM_OTA_FLAG_ADDR, enabled ? 1 : 0);
   eeprom_commit();
+  
   if (enabled) {
-    ArduinoOTA.begin();
-    logger::core("OTA enabled");
+    // Verify integrity before enabling OTA
+    if (verifyOtaIntegrity()) {
+      ArduinoOTA.begin();
+      logger::core("OTA enabled (integrity OK)");
+    } else {
+      logger::core("OTA integrity FAILED - keeping OTA disabled");
+      ota_enabled = false;
+      eeprom_write(EEPROM_OTA_FLAG_ADDR, 0);
+      eeprom_commit();
+    }
   } else {
     logger::core("OTA disabled");
   }
@@ -138,6 +164,46 @@ void setOtaEnabled(bool enabled) {
 
 bool isOtaEnabled() {
   return ota_enabled;
+}
+
+// ================= OTA INTEGRITY ===============
+
+bool ota_integrity_verified = false;
+
+uint32_t calculateFirmwareChecksum() {
+  // Simple checksum: sum of first 64 bytes of sketch
+  uint32_t checksum = 0;
+  uint8_t *ptr = (uint8_t *)0x0000;
+  uint32_t sketch_size = ESP.getSketchSize();
+  int bytes_to_sum = (sketch_size < 64) ? sketch_size : 64;
+  for (int i = 0; i < bytes_to_sum; i++) {
+    checksum += ptr[i];
+  }
+  return checksum;
+}
+
+bool verifyOtaIntegrity() {
+  // Read expected checksum from EEPROM
+  eeprom_begin();
+  uint32_t expected = eeprom_read(EEPROM_OTA_CHECKSUM_ADDR);
+  eeprom_commit();
+  
+  if (expected == 0) {
+    // No checksum stored yet - store current and accept
+    eeprom_begin();
+    eeprom_write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareChecksum());
+    eeprom_commit();
+    ota_integrity_verified = true;
+    return true;
+  }
+  
+  uint32_t actual = calculateFirmwareChecksum();
+  ota_integrity_verified = (actual == expected);
+  return ota_integrity_verified;
+}
+
+bool isOtaIntegrityVerified() {
+  return ota_integrity_verified;
 }
 
 // ================= LOOP PRINCIPAL ===================

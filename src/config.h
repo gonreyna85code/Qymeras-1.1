@@ -86,6 +86,9 @@ typedef WebServer WebServerCompat;
 /* OTA flag (last byte of relay state area) */
 #define EEPROM_OTA_FLAG_ADDR 9
 
+/* OTA firmware checksum (4 bytes after OTA flag) */
+#define EEPROM_OTA_CHECKSUM_ADDR 10
+
 /* WiFi credentials */
 #define EEPROM_CRED_START (EEPROM_RELAY_STATE_START + EEPROM_RELAY_STATE_SIZE)
 #define EEPROM_CRED_SIZE 100

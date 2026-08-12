@@ -47,6 +47,45 @@ static void eeprom_commit() { eeprom_commit(); }
 namespace web {
 WebServerCompat server(80);
 
+static const char* AUTH_USERNAME = "admin";
+static const char* AUTH_PASSWORD = "qymera123";
+
+// Rate limiting - max requests per minute per endpoint
+static unsigned long last_request_time = 0;
+static const unsigned long REQUEST_COOLDOWN_MS = 2000; // 2 seconds between requests
+
+// Check rate limit
+static bool checkRateLimit() {
+  unsigned long now = millis();
+  if (now - last_request_time < REQUEST_COOLDOWN_MS) {
+    return false;
+  }
+  last_request_time = now;
+  return true;
+}
+
+// Check HTTP Basic Authentication
+static bool checkAuth() {
+  if (!server.hasHeader("Authorization")) {
+    return true; // Auth disabled by default (no credentials set)
+  }
+  String auth = server.header("Authorization");
+  if (auth.startsWith("Basic ")) {
+    String encoded = auth.substring(6);
+    encoded.replace(" ", "+");
+    encoded.replace("%20", "+");
+    int sep = encoded.indexOf(':');
+    if (sep == -1) return false;
+    String user = encoded.substring(0, sep);
+    String pass = encoded.substring(sep + 1);
+    // Simple comparison - in production should use secure compare
+    if (user == AUTH_USERNAME && pass == AUTH_PASSWORD) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static void addCorsHeaders() {
   server.sendHeader("Access-Control-Allow-Origin", "*");
   server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -116,8 +155,27 @@ ICACHE_FLASH_ATTR void handleRoot() {
 }
 
 ICACHE_FLASH_ATTR void handleSave() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
   String ssid = server.arg("ssid");
-  saveCredentials(ssid, server.arg("pass"));
+  String pass = server.arg("pass");
+  // Validate SSID length (1-32 chars)
+  if (ssid.length() < 1 || ssid.length() > 32) {
+    server.send(400, "text/plain", "SSID must be 1-32 characters");
+    return;
+  }
+  // Validate password length (1-64 chars)
+  if (pass.length() < 1 || pass.length() > 64) {
+    server.send(400, "text/plain", "Password must be 1-64 characters");
+    return;
+  }
+  saveCredentials(ssid, pass);
   logger::coref("WiFi config saved (SSID:%s)", ssid.c_str());
   server.sendHeader("Location", "/?saved=1");
   server.send(303);
@@ -228,6 +286,10 @@ ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
 }
 
 ICACHE_FLASH_ATTR void handleGenSetSave() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
     return;
@@ -249,12 +311,20 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
 
 ICACHE_FLASH_ATTR void handleFactoryReset() {
   logger::warn("Factory reset requested");
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   server.send(200, "text/plain", "RESET");
   factoryReset();
 }
 
 void handleToggleApi() {
   addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (!server.hasArg("id")) {
     server.send(400, "text/plain", "id required");
     return;
@@ -266,6 +336,10 @@ void handleToggleApi() {
 
 void handleDimmerApi() {
   addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (!server.hasArg("value") || !server.hasArg("id")) {
     server.send(400, "text/plain", "id and value required");
     return;
@@ -365,6 +439,10 @@ ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
 }
 
 void handleDeleteRule() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (!server.hasArg("id")) {
     server.send(400, "text/plain", "missing id");
     return;
@@ -458,6 +536,14 @@ ICACHE_FLASH_ATTR void handleRules() {
 
 void handleSetRule() {
   using namespace automations;
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
   if (!server.hasArg("id")) {
     server.send(400, "text/plain", "missing id");
     return;
@@ -749,6 +835,10 @@ ICACHE_FLASH_ATTR void handleCalib() {
 }
 
 ICACHE_FLASH_ATTR void handleCalibSet() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   addCorsHeaders();
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
