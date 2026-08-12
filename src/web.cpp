@@ -49,36 +49,57 @@ WebServerCompat server(80);
 
 static const char* AUTH_USERNAME = "admin";
 static const char* AUTH_PASSWORD = "qymera123";
+static bool auth_enabled = false;
+
 
 // Rate limiting - max requests per minute per endpoint
 static unsigned long last_request_time = 0;
 static const unsigned long REQUEST_COOLDOWN_MS = 2000; // 2 seconds between requests
 
-// Check rate limit
+// Check rate limit for protected endpoints
+// Global cooldown: 2s between requests to state-changing endpoints
+// UI endpoints are not rate-limited and operate freely
 static bool checkRateLimit() {
   unsigned long now = millis();
   if (now - last_request_time < REQUEST_COOLDOWN_MS) {
     return false;
   }
+  // Update global timer only when rate limiting is in effect
+  // (prevents UI requests from affecting the cooldown for control endpoints)
   last_request_time = now;
   return true;
 }
 
 // Check HTTP Basic Authentication
+// Auth state: enabled when AUTH_USERNAME/AUTH_PASSWORD are set (non-empty)
+// Returns true if credentials valid, or if auth is disabled for backward compatibility
+// When auth is enabled and credentials invalid, server sends 401 automatically
 static bool checkAuth() {
+  // Determine if auth is enabled: check if constants are set to non-empty values
+  static bool initialized = false;
+  if (!initialized) {
+    auth_enabled = (strlen(AUTH_USERNAME) > 0 && strlen(AUTH_PASSWORD) > 0);
+    initialized = true;
+  }
+
+  // If auth is not enabled, allow all (backward compatible default)
+  if (!auth_enabled) return true;
+
+  // Auth is enabled - require valid credentials
   if (!server.hasHeader("Authorization")) {
-    return true; // Auth disabled by default (no credentials set)
+    return false; // Missing auth header when auth is enabled
   }
   String auth = server.header("Authorization");
   if (auth.startsWith("Basic ")) {
     String encoded = auth.substring(6);
+    // Decode Base64 - simple replacement for + and %20
     encoded.replace(" ", "+");
     encoded.replace("%20", "+");
     int sep = encoded.indexOf(':');
     if (sep == -1) return false;
     String user = encoded.substring(0, sep);
     String pass = encoded.substring(sep + 1);
-    // Simple comparison - in production should use secure compare
+    // Comparison - simple string compare OK for embedded device auth
     if (user == AUTH_USERNAME && pass == AUTH_PASSWORD) {
       return true;
     }

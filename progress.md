@@ -53,7 +53,7 @@
 - [x] Logging system finalized ✅
 - [x] Add web authentication on all endpoints ✅
 - [x] OTA firmware integrity verification ✅
-- [x] Memory leak testing under load ✅ (documented risks, compile verified)
+- [ ] Memory leak testing under load (documented risks identified, compile verified but not tested under load)
 
 ### Module Stabilization (P1)
 - [x] Core/runtime deterministic initialization ✅

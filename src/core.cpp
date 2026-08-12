@@ -166,47 +166,7 @@ bool isOtaEnabled() {
   return ota_enabled;
 }
 
-// ================= OTA INTEGRITY ===============
-
-bool ota_integrity_verified = false;
-
-uint32_t calculateFirmwareChecksum() {
-  // Simple checksum: sum of first 64 bytes of sketch
-  uint32_t checksum = 0;
-  uint8_t *ptr = (uint8_t *)0x0000;
-  uint32_t sketch_size = ESP.getSketchSize();
-  int bytes_to_sum = (sketch_size < 64) ? sketch_size : 64;
-  for (int i = 0; i < bytes_to_sum; i++) {
-    checksum += ptr[i];
-  }
-  return checksum;
-}
-
-bool verifyOtaIntegrity() {
-  // Read expected checksum from EEPROM
-  eeprom_begin();
-  uint32_t expected = eeprom_read(EEPROM_OTA_CHECKSUM_ADDR);
-  eeprom_commit();
-  
-  if (expected == 0) {
-    // No checksum stored yet - store current and accept
-    eeprom_begin();
-    eeprom_write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareChecksum());
-    eeprom_commit();
-    ota_integrity_verified = true;
-    return true;
-  }
-  
-  uint32_t actual = calculateFirmwareChecksum();
-  ota_integrity_verified = (actual == expected);
-  return ota_integrity_verified;
-}
-
-bool isOtaIntegrityVerified() {
-  return ota_integrity_verified;
-}
-
-// ================= LOOP PRINCIPAL ===================
+// ================= OTA INTEGRITY ===============// OTA firmware integrity verification// Computes a hash over the firmware image and compares with stored expected value.// Provides integrity verification (detects corruption), not authenticity.// A mismatch means the firmware image has changed since last provisioning.static bool ota_integrity_verified = false;static uint32_t calculateFirmwareHash() {  // Compute a hash over the firmware image using available bytes.  // On platforms with limited flash access, we hash the first 256 bytes  // as a practical compromise between security and feasibility.  // This is NOT a full-image hash but is much better than the previous 64-byte check.  uint32_t hash = 0;  uint8_t *ptr = (uint8_t *)0x0000;  uint32_t sketch_size = ESP.getSketchSize();  int bytes_to_hash = (sketch_size < 256) ? sketch_size : 256;  for (int i = 0; i < bytes_to_hash; i++) {    hash = (hash << 5) | (hash >> 27);  // rotate left 5    hash += ptr[i];  }  return hash;}bool verifyOtaIntegrity() {  // Read expected hash from EEPROM  eeprom_begin();  uint32_t expected = eeprom_read(EEPROM_OTA_CHECKSUM_ADDR);  eeprom_commit();    if (expected == 0) {    // No hash stored yet - store current firmware hash and accept.    // This is the provisioning step: first run stores the baseline hash.    eeprom_begin();    eeprom_write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareHash());    eeprom_commit();    ota_integrity_verified = true;    logger::core("OTA baseline hash stored (provisioning step)");    return true;  }    uint32_t actual = calculateFirmwareHash();  ota_integrity_verified = (actual == expected);    if (!ota_integrity_verified) {    logger::warnf("OTA integrity FAILED (stored:%08X actual:%08X)", expected, actual);  } else {    logger::core("OTA integrity verified");  }  return ota_integrity_verified;}bool isOtaIntegrityVerified() {  return ota_integrity_verified;}// ================= LOOP PRINCIPAL ===================
 
 /// Bucle de la aplicación: maneja HTTP, reconexión Wi-Fi si cae,
 /// reportes periódicos y tareas de sensores/mesh/automáticas.

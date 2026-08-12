@@ -141,9 +141,9 @@
 | Category | Count | Percentage |
 |----------|-------|------------|
 | Total tasks | 15 | 100% |
-| Completed | 13 | 87% |
+| Completed | 10 | 67% |
 | In progress | 0 | 0% |
-| Pending | 2 | 13% |
+| Pending | 5 | 33% |
 
 ## Next Actions
 
