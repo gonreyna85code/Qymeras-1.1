@@ -36,12 +36,25 @@ static void eeprom_commit() {
   // Preferences auto-commits
 }
 #else
-static void eeprom_begin() { eeprom_begin(); }
-static uint8_t eeprom_read(int addr) { return eeprom_read(addr); }
-static void eeprom_write(int addr, uint8_t val) { eeprom_write(addr, val); }
-template<typename T> static void eeprom_get(int addr, T &obj) { eeprom_get(addr, obj); }
-template<typename T> static void eeprom_put(int addr, const T &obj) { eeprom_put(addr, obj); }
-static void eeprom_commit() { eeprom_commit(); }
+#include <EEPROM.h>
+static void eeprom_begin() {
+  EEPROM.begin(EEPROM_SIZE);
+}
+static uint8_t eeprom_read(int addr) {
+  return EEPROM.read(addr);
+}
+static void eeprom_write(int addr, uint8_t val) {
+  EEPROM.write(addr, val);
+}
+template<typename T> static void eeprom_get(int addr, T &obj) {
+  EEPROM.get(addr, obj);
+}
+template<typename T> static void eeprom_put(int addr, const T &obj) {
+  EEPROM.put(addr, obj);
+}
+static void eeprom_commit() {
+  EEPROM.commit();
+}
 #endif
 
 namespace web {
@@ -51,7 +64,7 @@ static const char* AUTH_USERNAME = "admin";
 static const char* AUTH_PASSWORD = "qymera123";
 static bool auth_enabled = false;
 
-static const char* EXPECTED_AUTH_BASE64 = "YWRtaW46cXVlcnlwYXNz";
+static const char* EXPECTED_AUTH_BASE64 = "YWRtaW46cXltZXJhMTIz";
 
 
 // Rate limiting - max requests per minute per endpoint
@@ -109,6 +122,10 @@ static void addCorsHeaders() {
 }
 
 static void handleCorsOptions() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   addCorsHeaders();
   server.send(204, "text/plain", "");
 }
@@ -345,7 +362,13 @@ void handleToggleApi() {
     server.send(400, "text/plain", "id required");
     return;
   }
-  uint32_t id = strtoul(server.arg("id").c_str(), nullptr, 10);
+  const char* id_str = server.arg("id").c_str();
+  char* end;
+  uint32_t id = strtoul(id_str, &end, 10);
+  if (*end != ' ') {
+    server.send(400, "text/plain", "invalid id format");
+    return;
+  }
   sensors::handleToggle(id);
   server.send(200, "text/plain", "OK");
 }
@@ -360,8 +383,14 @@ void handleDimmerApi() {
     server.send(400, "text/plain", "id and value required");
     return;
   }
+  const char* id_str = server.arg("id").c_str();
+  char* end;
+  uint32_t id = strtoul(id_str, &end, 10);
+  if (*end != ' ') {
+    server.send(400, "text/plain", "invalid id format");
+    return;
+  }
   int value = server.arg("value").toInt();
-  uint32_t id = strtoul(server.arg("id").c_str(), nullptr, 10);
   sensors::handleDimmer(id, value);
   server.send(200, "text/plain", "OK");
 }
@@ -373,6 +402,10 @@ void handleLogs() {
 
 void handleOtaToggle() {
   addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (server.hasArg("enabled")) {
     bool enable = server.arg("enabled") == "1";
     core::setOtaEnabled(enable);
@@ -386,6 +419,10 @@ void handleOtaToggle() {
 
 void handleOtaStatus() {
   addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   server.send(200, "application/json", core::isOtaEnabled() ? "{\"ota\":1}" : "{\"ota\":0}");
 }
 
@@ -463,9 +500,15 @@ void handleDeleteRule() {
     server.send(400, "text/plain", "missing id");
     return;
   }
-  int id = server.arg("id").toInt();
-  if (id < 0 || id >= MAX_RULES) {
-    server.send(400, "text/plain", "invalid id");
+  const char* id_str = server.arg("id").c_str();
+  char* end;
+  uint32_t id = strtoul(id_str, &end, 10);
+  if (*end != ' ') {
+    server.send(400, "text/plain", "invalid id format");
+    return;
+  }
+  if (id >= MAX_RULES) {
+    server.send(400, "text/plain", "id out of bounds");
     return;
   }
   automations::deleteRule((uint8_t)id);
@@ -474,6 +517,10 @@ void handleDeleteRule() {
 }
 
 ICACHE_FLASH_ATTR void handleRules() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   if (server.method() != HTTP_GET) {
     server.send(405, "text/plain", "GET required");
     return;
@@ -784,6 +831,10 @@ void handleSetRule() {
 }
 
 ICACHE_FLASH_ATTR void handleCalib() {
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
   addCorsHeaders();
   if (server.method() != HTTP_GET) {
     server.send(405, "text/plain", "Method Not Allowed");
