@@ -1,27 +1,45 @@
 # Qymeras 1.1 - Production Readiness
 
-# PASS
+# BLOCKER
 
-Verified and production-ready.
+Verification found critical issues preventing production readiness.
 
-## Verified Improvements
-- HTTP Basic Authentication on 9 POST endpoints
-- OTA firmware integrity verification (CRC32 hash stored in EEPROM)
-- Input validation on /save, /rules/set endpoints
-- Rate limiting on POST /save and /rules/set
-- Factory reset reliability verified
-- Framework pinned to stable versions (3.30102.0 / 6.5.0)
-- raw_address() bug patched
-- EEPROM→Preferences migration for ESP32
-- Logging 3-layer architecture finalized
+## Blocker: EEPROM wrappers
+- eeprom_begin/eeprom_read/eeprom_write recursively call themselves on ESP8266
+- Fixed by using EEPROM.h direct calls instead of recursive stubs
 
-## Known Limitations
-- No authentication by default (can be enabled via AUTH_USERNAME/AUTH_PASSWORD)
+## Blocker: HTTP Basic Auth
+- Current implementation compares Authorization header against pre-encoded Base64 value
+- Credentials: admin:qymera123 (Base64: YWRtaW46cXVlcnlwYXNz)
+- Fix: Added EXPECTED_AUTH_BASE64 constant, compares received token against expected
+
+## Blocker: OTA Integrity
+- Current mechanism hashes only first 256 bytes with custom 32-bit hash
+- Not cryptographic full-image integrity
+- Provides integrity detection (firmware changed since provisioning), not authenticity
+- Full cryptographic integrity requires architecture changes beyond current scope
+
+## Known Issues
+- ESP8266 EEPROM wrappers fixed
+- HTTP Basic Auth Base64 comparison fixed
+- OTA integrity mechanism: integrity detection only, not authenticity
+
+## Platforms
+- ESP8266: Compiles, linker errors expected (setup()/loop() missing from user sketch)
+- ESP32: Compiles, linker errors expected (setup()/loop() missing from user sketch)
+
+## Status
+- Code compiles on both platforms
+- Key authentication and EEPROM bugs fixed
+- Documentation accurately reflects limitations
+- Further verification required before production release
+
+# WARN
+Known limitations that are acceptable for this release.
+
 - No HTTPS for OTA (HTTP only)
-- No extensive rate limiting beyond 2s cooldown on control endpoints
-- No input sanitization beyond bounds checking
-- Framework-level bugs pinned to fixed versions
+- Authentication requires setting AUTH_USERNAME/AUTH_PASSWORD constants
+- OTA integrity mechanism provides detection, not cryptographic authenticity
 
-## Platforms Verified
-- ESP8266 (d1_mini): Compiles, links (linker errors expected)
-- ESP32 (devkit): Compiles, links (linker errors expected)
+# FINAL
+Project requires further verification before production release.

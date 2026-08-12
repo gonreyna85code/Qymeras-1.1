@@ -35,12 +35,13 @@
 - [x] `todo.md` - Task list and priorities ✅
 
 ### Production Readiness Status
-- [x] Framework pinned to stable versions (3.30102.0 / 6.5.0)
-- [x] `raw_address()` issue patched
-- [x] EEPROM→Preferences migration completed
-- [x] OTA toggle functionality verified
-- [x] Logging system 3-layer architecture finalized
-- [x] All documentation files created
+- [x] Framework pinned to stable versions (3.30102.0 / 6.5.0) ✅
+- [x] `raw_address()` issue patched ✅
+- [x] EEPROM→Preferences migration completed ✅
+- [x] OTA toggle functionality verified ✅
+- [x] Logging system 3-layer architecture finalized ✅
+- [x] Web authentication added on all protected endpoints ✅
+- [x] Base64 Authorization header comparison implemented ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)

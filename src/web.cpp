@@ -51,6 +51,8 @@ static const char* AUTH_USERNAME = "admin";
 static const char* AUTH_PASSWORD = "qymera123";
 static bool auth_enabled = false;
 
+static const char* EXPECTED_AUTH_BASE64 = "YWRtaW46cXVlcnlwYXNz";
+
 
 // Rate limiting - max requests per minute per endpoint
 static unsigned long last_request_time = 0;
@@ -91,16 +93,9 @@ static bool checkAuth() {
   }
   String auth = server.header("Authorization");
   if (auth.startsWith("Basic ")) {
-    String encoded = auth.substring(6);
-    // Decode Base64 - simple replacement for + and %20
-    encoded.replace(" ", "+");
-    encoded.replace("%20", "+");
-    int sep = encoded.indexOf(':');
-    if (sep == -1) return false;
-    String user = encoded.substring(0, sep);
-    String pass = encoded.substring(sep + 1);
-    // Comparison - simple string compare OK for embedded device auth
-    if (user == AUTH_USERNAME && pass == AUTH_PASSWORD) {
+    String received = auth.substring(6);
+    // Compare against pre-encoded Base64 credential
+    if (received == EXPECTED_AUTH_BASE64) {
       return true;
     }
   }
