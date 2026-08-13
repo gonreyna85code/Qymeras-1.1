@@ -41,7 +41,7 @@ void clearAll() {
 
 #endif
 
-struct CalibrationPersist {
+struct __attribute__((packed)) CalibrationPersist {
   bool pers_state;
   float min;
   float max;

@@ -730,9 +730,9 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += (c.pers_state ? "true" : "false");
 
     char fb[24];
-    dtostrf(c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
-    dtostrf(c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
-    dtostrf(c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
+    dtostrf(isnan(c.min) || isinf(c.min) ? 0.0f : c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
+    dtostrf(isnan(c.max) || isinf(c.max) ? 0.0f : c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
+    dtostrf(isnan(c.correction) || isinf(c.correction) ? 0.0f : c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
 
     json += ",\"avail\":";           json += c.avail;
     json += ",\"pulse\":";           json += (c.pulse ? "true" : "false");
