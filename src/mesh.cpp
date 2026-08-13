@@ -38,6 +38,14 @@ void init() {
   espnow_init();
 }
 
+static bool udpTxReady() {
+#if defined(ESP32)
+  return WiFi.getMode() != WIFI_MODE_NULL;
+#else
+  return true;
+#endif
+}
+
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
   sensor_callback = cb;
 }
@@ -257,14 +265,16 @@ void sendBinaryReport() {
     memcpy(buf, &hdr, sizeof(hdr));
     memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
 
-    if (transport == TRANSPORT_UDP) {
+  if (transport == TRANSPORT_UDP) {
+    if (udpTxReady()) {
       udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
       udp.write(buf, sizeof(buf));
       udp.endPacket();
-    } else if (espnow_is_enabled()) {
-      espnow_send_broadcast(buf, sizeof(buf));
     }
+  } else if (espnow_is_enabled()) {
+    espnow_send_broadcast(buf, sizeof(buf));
   }
+}
 }
 
 void sendLog(uint8_t layer, uint8_t level, const char *message) {
@@ -285,9 +295,11 @@ void sendLog(uint8_t layer, uint8_t level, const char *message) {
   memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
 
   if (transport == TRANSPORT_UDP) {
-    udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
-    udp.write(buf, sizeof(buf));
-    udp.endPacket();
+    if (udpTxReady()) {
+      udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
+      udp.write(buf, sizeof(buf));
+      udp.endPacket();
+    }
   } else if (espnow_is_enabled()) {
     espnow_send_broadcast(buf, sizeof(buf));
   }
