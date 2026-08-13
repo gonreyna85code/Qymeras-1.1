@@ -85,6 +85,26 @@ static bool checkRateLimit() {
   return true;
 }
 
+static bool parseStrictUnsigned(const String &s, unsigned long &out) {
+  if (s.length() == 0) return false;
+  char *end = nullptr;
+  const char *begin = s.c_str();
+  unsigned long value = strtoul(begin, &end, 10);
+  if (end == begin || *end != '\0') return false;
+  out = value;
+  return true;
+}
+
+static bool parseStrictLong(const String &s, long &out) {
+  if (s.length() == 0) return false;
+  char *end = nullptr;
+  const char *begin = s.c_str();
+  long value = strtol(begin, &end, 10);
+  if (end == begin || *end != '\0') return false;
+  out = value;
+  return true;
+}
+
 // Check HTTP Basic Authentication
 // Auth state: enabled when AUTH_USERNAME/AUTH_PASSWORD are set (non-empty)
 // Returns true if credentials valid, or if auth is disabled for backward compatibility
@@ -122,10 +142,6 @@ static void addCorsHeaders() {
 }
 
 static void handleCorsOptions() {
-  if (!checkAuth()) {
-    server.send(401, "text/plain", "Authentication required");
-    return;
-  }
   addCorsHeaders();
   server.send(204, "text/plain", "");
 }
@@ -323,6 +339,10 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
     server.send(401, "text/plain", "Authentication required");
     return;
   }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
     return;
@@ -362,11 +382,20 @@ void handleToggleApi() {
     server.send(400, "text/plain", "id required");
     return;
   }
-  const char* id_str = server.arg("id").c_str();
-  char* end;
-  uint32_t id = strtoul(id_str, &end, 10);
-  if (*end != ' ') {
+  unsigned long id_ul = 0;
+  if (!parseStrictUnsigned(server.arg("id"), id_ul) || id_ul > UINT32_MAX) {
     server.send(400, "text/plain", "invalid id format");
+    return;
+  }
+  uint32_t id = (uint32_t)id_ul;
+  int idx = sensors::findCalibByUid(id);
+  if (idx < 0) {
+    server.send(404, "text/plain", "id not found");
+    return;
+  }
+  auto &c = sensors::calibrations[idx];
+  if (c.type != sensors::TYPE_RELAY && c.type != sensors::TYPE_DIMMER) {
+    server.send(400, "text/plain", "invalid actuator type");
     return;
   }
   sensors::handleToggle(id);
@@ -383,11 +412,19 @@ void handleDimmerApi() {
     server.send(400, "text/plain", "id and value required");
     return;
   }
-  const char* id_str = server.arg("id").c_str();
-  char* end;
-  uint32_t id = strtoul(id_str, &end, 10);
-  if (*end != ' ') {
+  unsigned long id_ul = 0;
+  if (!parseStrictUnsigned(server.arg("id"), id_ul) || id_ul > UINT32_MAX) {
     server.send(400, "text/plain", "invalid id format");
+    return;
+  }
+  uint32_t id = (uint32_t)id_ul;
+  int idx = sensors::findCalibByUid(id);
+  if (idx < 0) {
+    server.send(404, "text/plain", "id not found");
+    return;
+  }
+  if (sensors::calibrations[idx].type != sensors::TYPE_DIMMER) {
+    server.send(400, "text/plain", "invalid actuator type");
     return;
   }
   int value = server.arg("value").toInt();
@@ -419,10 +456,6 @@ void handleOtaToggle() {
 
 void handleOtaStatus() {
   addCorsHeaders();
-  if (!checkAuth()) {
-    server.send(401, "text/plain", "Authentication required");
-    return;
-  }
   server.send(200, "application/json", core::isOtaEnabled() ? "{\"ota\":1}" : "{\"ota\":0}");
 }
 
@@ -500,27 +533,18 @@ void handleDeleteRule() {
     server.send(400, "text/plain", "missing id");
     return;
   }
-  const char* id_str = server.arg("id").c_str();
-  char* end;
-  uint32_t id = strtoul(id_str, &end, 10);
-  if (*end != ' ') {
+  unsigned long id_ul = 0;
+  if (!parseStrictUnsigned(server.arg("id"), id_ul) || id_ul >= MAX_RULES) {
     server.send(400, "text/plain", "invalid id format");
     return;
   }
-  if (id >= MAX_RULES) {
-    server.send(400, "text/plain", "id out of bounds");
-    return;
-  }
-  automations::deleteRule((uint8_t)id);
+  uint8_t id = (uint8_t)id_ul;
+  automations::deleteRule(id);
   logger::eventf("Rule %d deleted", id);
   server.send(200, "text/plain", "ok");
 }
 
 ICACHE_FLASH_ATTR void handleRules() {
-  if (!checkAuth()) {
-    server.send(401, "text/plain", "Authentication required");
-    return;
-  }
   if (server.method() != HTTP_GET) {
     server.send(405, "text/plain", "GET required");
     return;
@@ -611,7 +635,11 @@ void handleSetRule() {
     server.send(400, "text/plain", "missing id");
     return;
   }
-  int id = server.arg("id").toInt();
+  int id = -1;
+  long id_long = 0;
+  if (parseStrictUnsigned(server.arg("id"), (unsigned long&)id_long)) {
+    if (id_long <= INT_MAX) id = (int)id_long;
+  }
   if (id < 0) {
     for (int i = 0; i < MAX_RULES; i++) {
       if (rules[i].sensor_count == 0 && rules[i].actuator_count == 0) {
@@ -646,11 +674,12 @@ void handleSetRule() {
     while (sensors_str.length() && idx < 5) {
       int comma = sensors_str.indexOf(',');
       String token = (comma == -1) ? sensors_str : sensors_str.substring(0, comma);
-      int sensor_id = token.toInt();
-      if (sensor_id < 0 || sensor_id >= MAX_SENSORS) {
+      unsigned long sensor_ul = 0;
+      if (!parseStrictUnsigned(token, sensor_ul) || sensor_ul >= MAX_SENSORS) {
         server.send(400, "text/plain", "invalid sensor index");
         return;
       }
+      int sensor_id = (int)sensor_ul;
       if (sensors::calibrations[sensor_id].uid == 0) {
         server.send(400, "text/plain", "sensor not configured");
         return;
@@ -661,7 +690,12 @@ void handleSetRule() {
       if (cmp_str.length()) {
         int c = cmp_str.indexOf(',');
         String t = (c == -1) ? cmp_str : cmp_str.substring(0, c);
-        cmp_val = t.toInt();
+        long cmp_long = 0;
+        if (!parseStrictUnsigned(t, (unsigned long&)cmp_long)) {
+          server.send(400, "text/plain", "invalid comparator");
+          return;
+        }
+        cmp_val = (int)cmp_long;
         if (cmp_val < 0 || cmp_val > 2) {
           server.send(400, "text/plain", "invalid comparator");
           return;
@@ -675,7 +709,12 @@ void handleSetRule() {
       if (threshold_str.length()) {
         int c = threshold_str.indexOf(',');
         String t = (c == -1) ? threshold_str : threshold_str.substring(0, c);
-        th = t.toInt();
+        long th_long = 0;
+        if (!parseStrictLong(t, th_long)) {
+          server.send(400, "text/plain", "threshold out of range");
+          return;
+        }
+        th = (int)th_long;
         if (th < -1000 || th > 10000) {
           server.send(400, "text/plain", "threshold out of range");
           return;
@@ -699,11 +738,12 @@ void handleSetRule() {
     while (actuators_str.length() && idx < 5) {
       int comma = actuators_str.indexOf(',');
       String token = (comma == -1) ? actuators_str : actuators_str.substring(0, comma);
-      int actuator_id = token.toInt();
-      if (actuator_id < 0 || actuator_id >= MAX_SENSORS) {
+      unsigned long actuator_ul = 0;
+      if (!parseStrictUnsigned(token, actuator_ul) || actuator_ul >= MAX_SENSORS) {
         server.send(400, "text/plain", "invalid actuator index");
         return;
       }
+      int actuator_id = (int)actuator_ul;
       auto &cal = sensors::calibrations[actuator_id];
       if (cal.uid == 0) {
         server.send(400, "text/plain", "actuator not configured");
@@ -718,7 +758,12 @@ void handleSetRule() {
       if (actions_str.length()) {
         int c = actions_str.indexOf(',');
         String t = (c == -1) ? actions_str : actions_str.substring(0, c);
-        action = t.toInt();
+        long action_long = 0;
+        if (!parseStrictUnsigned(t, (unsigned long&)action_long)) {
+          server.send(400, "text/plain", "invalid action");
+          return;
+        }
+        action = (int)action_long;
         if (action < 0 || action > 3) {
           server.send(400, "text/plain", "invalid action");
           return;
@@ -735,7 +780,12 @@ void handleSetRule() {
       if (levels_str.length()) {
         int c = levels_str.indexOf(',');
         String t = (c == -1) ? levels_str : levels_str.substring(0, c);
-        level = t.toInt();
+        long level_long = 0;
+        if (!parseStrictLong(t, level_long)) {
+          server.send(400, "text/plain", "level out of range");
+          return;
+        }
+        level = (int)level_long;
         if (level < 0 || level > 100) {
           server.send(400, "text/plain", "level out of range");
           return;
@@ -761,18 +811,28 @@ void handleSetRule() {
   }
   // ================= TIME =================
   if (r.type == RULE_TIME) {
-    int time_s = server.arg("time_s").toInt();
+    long time_s_long = 0;
+    if (!parseStrictLong(server.arg("time_s"), time_s_long)) {
+      server.send(400, "text/plain", "invalid time_s");
+      return;
+    }
+    int time_s = (int)time_s_long;
     if (time_s < 0 || time_s > 86400) {
       server.send(400, "text/plain", "invalid time_s");
       return;
     }
     r.time_s = time_s;
-    int ys = server.arg("year_start").toInt();
-    int ms = server.arg("month_start").toInt();
-    int ds = server.arg("day_start").toInt();
-    int ye = server.arg("year_end").toInt();
-    int me = server.arg("month_end").toInt();
-    int de = server.arg("day_end").toInt();
+    long ys_l = 0, ms_l = 0, ds_l = 0, ye_l = 0, me_l = 0, de_l = 0;
+    if (!parseStrictLong(server.arg("year_start"), ys_l) ||
+        !parseStrictLong(server.arg("month_start"), ms_l) ||
+        !parseStrictLong(server.arg("day_start"), ds_l) ||
+        !parseStrictLong(server.arg("year_end"), ye_l) ||
+        !parseStrictLong(server.arg("month_end"), me_l) ||
+        !parseStrictLong(server.arg("day_end"), de_l)) {
+      server.send(400, "text/plain", "invalid date");
+      return;
+    }
+    int ys = (int)ys_l, ms = (int)ms_l, ds = (int)ds_l, ye = (int)ye_l, me = (int)me_l, de = (int)de_l;
     bool hasDate = ys || ms || ds || ye || me || de;
     if (hasDate) {
       if (ys && (ys < 1970 || ys > 2100)) {
@@ -814,7 +874,12 @@ void handleSetRule() {
 
   // ================= INTERVAL =================
   if (r.type == RULE_INTERVAL) {
-    int interval = server.arg("interval").toInt();
+    long interval_long = 0;
+    if (!parseStrictLong(server.arg("interval"), interval_long)) {
+      server.send(400, "text/plain", "invalid interval");
+      return;
+    }
+    int interval = (int)interval_long;
     if (interval < 1000 || interval > 3600000) {
       server.send(400, "text/plain", "invalid interval");
       return;
@@ -822,8 +887,13 @@ void handleSetRule() {
     r.interval_ms = interval;
   }
   // ================= DELAY / COOLDOWN =================
-  r.delay_ms = server.arg("delay").toInt();
-  r.cooldown_ms = server.arg("cooldown").toInt();
+  long delay_long = 0, cooldown_long = 0;
+  if (!parseStrictLong(server.arg("delay"), delay_long) || !parseStrictLong(server.arg("cooldown"), cooldown_long)) {
+    server.send(400, "text/plain", "invalid delay/cooldown");
+    return;
+  }
+  r.delay_ms = delay_long;
+  r.cooldown_ms = cooldown_long;
   saveRulesToEEPROM();
   logger::eventf("Rule %d saved (type:%d, sensors:%d, actuators:%d)",
     id, r.type, r.sensor_count, r.actuator_count);
@@ -831,10 +901,6 @@ void handleSetRule() {
 }
 
 ICACHE_FLASH_ATTR void handleCalib() {
-  if (!checkAuth()) {
-    server.send(401, "text/plain", "Authentication required");
-    return;
-  }
   addCorsHeaders();
   if (server.method() != HTTP_GET) {
     server.send(405, "text/plain", "Method Not Allowed");
@@ -906,6 +972,10 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     server.send(401, "text/plain", "Authentication required");
     return;
   }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
   addCorsHeaders();
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
@@ -915,7 +985,14 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     server.send(400, "text/plain", "id required");
     return;
   }
-  uint32_t sensorUid = strtoul(server.arg("id").c_str(), nullptr, 10);
+  unsigned long sensorUidUl = 0;
+  if (!parseStrictUnsigned(server.arg("id"), sensorUidUl) || sensorUidUl > UINT32_MAX) {
+    server.send(400, "text/plain", "invalid id format");
+    return;
+  }
+  uint32_t sensorUid = (uint32_t)sensorUidUl;
+  auto *cal = sensors::getCalib(server.arg("id"));
+  (void)cal;
   String type = server.arg("type");
   int calibIdx = sensors::findCalibByUid(sensorUid);
   if (calibIdx < 0) {

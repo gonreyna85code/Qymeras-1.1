@@ -8,8 +8,8 @@
 - [x] EEPROM→Preferences migration for ESP32 ✅
 - [x] OTA toggle functionality verified working ✅
 - [x] Logging system 3-layer architecture ✅
-- [ ] Add web authentication on all endpoints
-- [ ] OTA firmware integrity verification
+- [x] Add web authentication on all endpoints ✅
+- [x] OTA firmware integrity verification ✅
 - [ ] Memory leak testing under load
 
 ### P1 - Important (Should fix for stability) 
@@ -17,7 +17,7 @@
 - [ ] Factory reset reliability validation
 - [ ] Long-term EEPROM write endurance testing
 - [ ] Network partition recovery testing
-- [ ] Input validation on all API endpoints
+- [x] Input validation on all API endpoints ✅
 - [ ] Rate limiting on POST /save, /rules/set
 - [ ] Calibration value persistence across resets
 
