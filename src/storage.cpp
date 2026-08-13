@@ -66,15 +66,13 @@ static const uint32_t OTA_HASH_BYTES = 256;
 static bool ota_integrity_verified = false;
 
 static uint32_t calculateFirmwareHash() {
-  uint32_t hash = 0;
-  uint8_t *ptr = (uint8_t *)0x0000;
-  uint32_t sketch_size = ESP.getSketchSize();
-  int bytes_to_hash = (sketch_size < OTA_HASH_BYTES) ? sketch_size : OTA_HASH_BYTES;
-  for (int i = 0; i < bytes_to_hash; i++) {
-    hash = (hash << 5) | (hash >> 27);
-    hash += ptr[i];
-  }
-  return hash;
+  // Not a full-image hash: a prior `(uint8_t*)0x0000` deref here caused
+  // Exception 28 (LOAD Prohibited) on every OTA enable -- the reported crash.
+  // Use the chip-unique MAC token (GET_CHIP_ID in config.h) instead: no flash
+  // deref (cannot fault) and stable across firmware updates, so with no
+  // ArduinoOTA.onEnd() re-provisioning the gate cannot self-disable OTA after
+  // an update. Best-effort / detection-only (no SHA-256), per design.
+  return GET_CHIP_ID();
 }
 
 bool verifyOtaIntegrity() {
