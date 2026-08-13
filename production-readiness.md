@@ -12,9 +12,19 @@ Verification found critical issues preventing production readiness.
 - Fix: `checkAuth()` initialization now keeps `auth_enabled = false`, so the gate short-circuits and the GUI works again. The auth infrastructure is retained but dormant, awaiting a future Phase-3 login flow.
 - Hardcoded credentials (`admin:qymera123`) remain in the firmware binary; they are NOT embedded into the served client JS (avoids exposing secrets in view-source).
 
-## Blocker: OTA Integrity
-- Current mechanism hashes only first 256 bytes with a custom 32-bit hash.
-- This is integrity detection, not cryptographic authenticity.
+## [FIXED] OTA Integrity & EEPROM overlap
+- Root cause (reported defect): the OTA enable flag (`EEPROM_OTA_FLAG_ADDR`)
+  and integrity baseline (`EEPROM_OTA_CHECKSUM_ADDR`) were stored at offsets
+  9 and 10, which **overlapped the relay-state region (0..9) and the WiFi
+  credentials block (starts at offset 10)**. Saving the flag / provisioning
+  the baseline corrupted relay state and the SSID length byte — the reported
+  "saving the OTA flag corrupts memory" bug.
+- Fix: flag and baseline relocated to a dedicated, non-aliased slot in the
+  reserved region after the rules block (`config.h`: `EEPROM_OTA_FLAG_ADDR`,
+  `EEPROM_OTA_HASH_ADDR`). The 4-byte baseline is now persisted/verified with
+  the 4-byte `put`/`get` helpers (no 1-byte truncation) and correct
+  provisioning detection (all-0xFF or all-0x00 = unprovisioned).
+- Builds verified green on both ESP8266 and ESP32.
 
 ## Blocker: ID Validation
 - HTTP endpoint ID parsing now rejects malformed input using strict full-string parsing.
@@ -32,7 +42,7 @@ Verification found critical issues preventing production readiness.
 
 # WARN
 - No HTTPS for OTA (HTTP only).
-- OTA integrity remains a detection-only mechanism.
+- OTA integrity is detection-only (custom 32-bit hash), not authenticity. Full SHA-256/authenticity deferred to Phase 3+ (see AGENTS.md).
 
 # FINAL
 Project requires further verification before production release.

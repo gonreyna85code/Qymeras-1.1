@@ -79,17 +79,19 @@ static uint32_t calculateFirmwareHash() {
 
 bool verifyOtaIntegrity() {
   begin();
-  uint32_t expected = read(EEPROM_OTA_CHECKSUM_ADDR);
+  uint32_t expected = 0;
+  get(EEPROM_OTA_HASH_ADDR, expected);
   commit();
-  if (expected == 0) {
+  bool provisioned = (expected != 0xFFFFFFFFu && expected != 0u);
+  uint32_t actual = calculateFirmwareHash();
+  if (!provisioned) {
     begin();
-    write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareHash());
+    put(EEPROM_OTA_HASH_ADDR, actual);
     commit();
     ota_integrity_verified = true;
     logger::core("OTA baseline hash stored (provisioning step)");
     return true;
   }
-  uint32_t actual = calculateFirmwareHash();
   ota_integrity_verified = (actual == expected);
   if (!ota_integrity_verified) logger::warnf("OTA integrity FAILED (stored:%08X actual:%08X)", expected, actual);
   else logger::core("OTA integrity verified");

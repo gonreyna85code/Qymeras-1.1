@@ -83,11 +83,8 @@ typedef WebServer WebServerCompat;
 #define EEPROM_RELAY_STATE_START 0
 #define EEPROM_RELAY_STATE_SIZE 10
 
-/* OTA flag (last byte of relay state area) */
-#define EEPROM_OTA_FLAG_ADDR 9
-
-/* OTA firmware checksum (4 bytes after OTA flag) */
-#define EEPROM_OTA_CHECKSUM_ADDR 10
+/* OTA flag & integrity hash relocated below (after the rules region) so they
+   do not alias the relay-state region (0..9) or the credentials block. */
 
 /* WiFi credentials */
 #define EEPROM_CRED_START (EEPROM_RELAY_STATE_START + EEPROM_RELAY_STATE_SIZE)
@@ -111,6 +108,16 @@ typedef WebServer WebServerCompat;
 
 #if (EEPROM_RULES_START + EEPROM_RULES_SIZE) > EEPROM_SIZE
 #error EEPROM layout overflow
+#endif
+
+/* OTA flag + 4-byte integrity baseline, placed in the reserved area after the
+   rules block. Non-aliased: does not overlap relay state (0..9) or credentials.
+   An all-0xFF or all-0x00 slot means "unprovisioned". */
+#define EEPROM_OTA_HASH_ADDR  (EEPROM_RULES_START + EEPROM_RULES_SIZE)
+#define EEPROM_OTA_HASH_SIZE  4
+#define EEPROM_OTA_FLAG_ADDR  (EEPROM_OTA_HASH_ADDR + EEPROM_OTA_HASH_SIZE)
+#if (EEPROM_OTA_FLAG_ADDR + 1) > EEPROM_SIZE
+#error OTA integrity region overflow
 #endif
 
 /* =========================

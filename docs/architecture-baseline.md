@@ -217,7 +217,7 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 
 ### Default State
 - **OTA disabled** at first boot
-- Flag stored in EEPROM offset 2048
+- Enable flag persisted at `EEPROM_OTA_FLAG_ADDR` (reserved region after the rules block)
 - Can be enabled via `/ota/toggle?enabled=1`
 
 ### Toggle Flow
@@ -232,10 +232,20 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 - `GET /ota/status` → `{"ota":1}` or `{"ota":0}`
 - Reflects current flag state
 
+### Integrity
+- 32-bit baseline hash of the running image, persisted as a full 4-byte value at
+  `EEPROM_OTA_HASH_ADDR` (reserved region). Provisioning on first enable / empty slot.
+- Mismatch disables OTA; `setOtaEnabled(true)` re-verifies before re-enabling.
+- The enable flag (`EEPROM_OTA_FLAG_ADDR`) and the baseline no longer alias the
+  relay-state region (0..9) or the WiFi credentials block — this fixes the
+  reported "saving the OTA flag corrupts memory" defect (the old flag/checksum
+  lived at offsets 9/10, overlapping relay state and the SSID length byte).
+- **Detection only, not cryptographic authenticity** (Phase 3+ candidate per AGENTS.md).
+
 ### Security
 - **No authentication** on OTA endpoint
 - **Recommended**: Only on local network
-- **Known limitation**: No firmware integrity check
+- **Known limitation**: Integrity is detection-only, not cryptographic authenticity
 
 ## Configuration
 
