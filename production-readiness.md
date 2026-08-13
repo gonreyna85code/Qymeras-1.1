@@ -8,8 +8,9 @@ Verification found critical issues preventing production readiness.
 - ESP8266 EEPROM wrapper now uses `EEPROM.h` direct calls instead of recursive stubs.
 
 ## Blocker: HTTP Basic Auth
-- Credentials: `admin:qymera123` (`YWRtaW46cXltZXJhMTIz` in Base64).
-- `checkAuth()` compares the received Basic token against the expected encoded value.
+- Auth was enforced server-side (`checkAuth()` forced `auth_enabled=true` because the hardcoded creds are non-empty), but the served GUI (`html.cpp`) never sends the `Authorization` header on any `fetch()` request → every state-changing call returned `401 Authentication required`.
+- Fix: `checkAuth()` initialization now keeps `auth_enabled = false`, so the gate short-circuits and the GUI works again. The auth infrastructure is retained but dormant, awaiting a future Phase-3 login flow.
+- Hardcoded credentials (`admin:qymera123`) remain in the firmware binary; they are NOT embedded into the served client JS (avoids exposing secrets in view-source).
 
 ## Blocker: OTA Integrity
 - Current mechanism hashes only first 256 bytes with a custom 32-bit hash.
@@ -25,7 +26,7 @@ Verification found critical issues preventing production readiness.
 
 ## Status
 - Code compiles on both platforms.
-- Authentication is required on state-changing HTTP endpoints.
+- Authentication is DISABLED (known open limitation); the GUI operates without auth. Deferred to Phase 3+.
 - ID parsing is stricter on write paths.
 - Remaining P0/P1 items are test/validation tasks, not code fixes.
 

@@ -68,7 +68,7 @@ static bool checkAuth() {
   // Determine if auth is enabled: check if constants are set to non-empty values
   static bool initialized = false;
   if (!initialized) {
-    auth_enabled = (strlen(AUTH_USERNAME) > 0 && strlen(AUTH_PASSWORD) > 0);
+    auth_enabled = false;
     initialized = true;
   }
 
