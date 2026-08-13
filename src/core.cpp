@@ -111,10 +111,10 @@ void begin() {
   ::initSatellite();
   storage::loadCalibration();
   automations::init();
+  startWiFi();
   mesh::init();
   logger::coref("Mesh UDP ready (bc:%u, cmd:%u)", genset.broadcast_port, genset.command_port);
   web::init();
-  startWiFi();
   logger::coref("Free heap: %u B", ESP.getFreeHeap());
 }
 
