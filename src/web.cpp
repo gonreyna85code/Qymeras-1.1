@@ -636,10 +636,8 @@ void handleSetRule() {
     return;
   }
   int id = -1;
-  long id_long = 0;
-  if (parseStrictUnsigned(server.arg("id"), (unsigned long&)id_long)) {
-    if (id_long <= INT_MAX) id = (int)id_long;
-  }
+  unsigned long id_ul = 0;
+  if (parseStrictUnsigned(server.arg("id"), id_ul) && id_ul <= INT_MAX) id = (int)id_ul;
   if (id < 0) {
     for (int i = 0; i < MAX_RULES; i++) {
       if (rules[i].sensor_count == 0 && rules[i].actuator_count == 0) {
@@ -991,8 +989,6 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     return;
   }
   uint32_t sensorUid = (uint32_t)sensorUidUl;
-  auto *cal = sensors::getCalib(server.arg("id"));
-  (void)cal;
   String type = server.arg("type");
   int calibIdx = sensors::findCalibByUid(sensorUid);
   if (calibIdx < 0) {
