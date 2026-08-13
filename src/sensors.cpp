@@ -259,10 +259,6 @@ void startFade(const String &key, uint8_t pin, int from, int to, unsigned long d
   activeFades[idx].active = true;
 }
 
-void updateFades() {
-  applyFades();
-}
-
 void temperature(const String &key, float raw) {
   int idx = findCalib(key);
   if (idx < 0) idx = findFreeCalib();

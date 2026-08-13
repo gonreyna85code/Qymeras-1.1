@@ -120,8 +120,6 @@ void dimmer(const String &key, uint8_t pin, bool inverted = false);
 
 // Fades
 void startFade(const String &key, uint8_t pin, int from, int to, unsigned long dur);
-void updateFades();
-
 // Calibración
 float calibrate(const String &key, float raw);
 Calibration *getCalib(const String &key);

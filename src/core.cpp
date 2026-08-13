@@ -5,19 +5,12 @@
 #include "sensors.h"
 #include "mesh.h"
 #include "automations.h"
+#include "storage.h"
 #include "log.h"
-
-extern void eeprom_begin();
-extern uint8_t eeprom_read(int addr);
-extern void eeprom_write(int addr, uint8_t val);
-extern void eeprom_commit();
-template<typename T> extern void eeprom_get(int addr, T &obj);
-template<typename T> extern void eeprom_put(int addr, const T &obj);
 
 namespace core {
 
-// Forward declaration
-bool verifyOtaIntegrity();
+
 
 // ================= VARIABLES ===================
 // Vars globales compartidas (no estáticas: accesibles para configuración).
@@ -29,7 +22,6 @@ static bool wifi_connected = false;
 static unsigned long last_attempt = 0;
 static unsigned long last_report = 0;
 static bool first_report = true;
-static bool ota_enabled = false;
 GeneralSettings genset;
 
  // ================= HELPERS ===================
@@ -94,35 +86,30 @@ void begin() {
   uid = String(GET_CHIP_ID(), HEX);
   logger::init();
   logger::core("Boot");
-  web::loadCredentials();
+  storage::loadCredentials(ssid, password);
   logger::core("Credentials loaded");
-  web::loadGeneralSettings();
+  storage::loadGeneralSettings(genset.broadcast_port, genset.command_port, genset.report_interval);
   logger::core("Settings loaded");
 
-  // Load OTA flag from EEPROM
-  ota_enabled = eeprom_read(EEPROM_OTA_FLAG_ADDR) == 1;
-  
   // Verify firmware integrity if OTA is enabled
-  if (ota_enabled) {
-    if (verifyOtaIntegrity()) {
+  bool ota_flag = storage::loadOtaFlag() == 1;
+  if (ota_flag) {
+    if (storage::verifyOtaIntegrity()) {
       logger::core("OTA integrity verified");
       ArduinoOTA.begin();
     } else {
       logger::core("OTA integrity FAILED - disabling OTA");
-      ota_enabled = false;
-      eeprom_begin();
-      eeprom_write(EEPROM_OTA_FLAG_ADDR, 0);
-      eeprom_commit();
+      storage::setOtaEnabled(false);
     }
   }
   
-  if (!ota_enabled) {
+  if (!ota_flag) {
     ArduinoOTA.begin();  // Initialize even if disabled (but won't handle)
   }
 
   sensors::init();
   ::initSatellite();
-  web::loadCalibration();
+  storage::loadCalibration();
   automations::init();
   mesh::init();
   logger::coref("Mesh UDP ready (bc:%u, cmd:%u)", genset.broadcast_port, genset.command_port);
@@ -141,29 +128,11 @@ bool is_connected() {
 // ================= OTA CONTROL =================
 
 void setOtaEnabled(bool enabled) {
-  ota_enabled = enabled;
-  eeprom_begin();
-  eeprom_write(EEPROM_OTA_FLAG_ADDR, enabled ? 1 : 0);
-  eeprom_commit();
-  
-  if (enabled) {
-    // Verify integrity before enabling OTA
-    if (verifyOtaIntegrity()) {
-      ArduinoOTA.begin();
-      logger::core("OTA enabled (integrity OK)");
-    } else {
-      logger::core("OTA integrity FAILED - keeping OTA disabled");
-      ota_enabled = false;
-      eeprom_write(EEPROM_OTA_FLAG_ADDR, 0);
-      eeprom_commit();
-    }
-  } else {
-    logger::core("OTA disabled");
-  }
+  storage::setOtaEnabled(enabled);
 }
 
 bool isOtaEnabled() {
-  return ota_enabled;
+  return storage::isOtaEnabled();
 }
 
 // ================= OTA INTEGRITY ===============// OTA firmware integrity verification// Computes a hash over the firmware image and compares with stored expected value.// Provides integrity verification (detects corruption), not authenticity.// A mismatch means the firmware image has changed since last provisioning.static bool ota_integrity_verified = false;static uint32_t calculateFirmwareHash() {  // Compute a hash over the firmware image using available bytes.  // On platforms with limited flash access, we hash the first 256 bytes  // as a practical compromise between security and feasibility.  // This is NOT a full-image hash but is much better than the previous 64-byte check.  uint32_t hash = 0;  uint8_t *ptr = (uint8_t *)0x0000;  uint32_t sketch_size = ESP.getSketchSize();  int bytes_to_hash = (sketch_size < 256) ? sketch_size : 256;  for (int i = 0; i < bytes_to_hash; i++) {    hash = (hash << 5) | (hash >> 27);  // rotate left 5    hash += ptr[i];  }  return hash;}bool verifyOtaIntegrity() {  // Read expected hash from EEPROM  eeprom_begin();  uint32_t expected = eeprom_read(EEPROM_OTA_CHECKSUM_ADDR);  eeprom_commit();    if (expected == 0) {    // No hash stored yet - store current firmware hash and accept.    // This is the provisioning step: first run stores the baseline hash.    eeprom_begin();    eeprom_write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareHash());    eeprom_commit();    ota_integrity_verified = true;    logger::core("OTA baseline hash stored (provisioning step)");    return true;  }    uint32_t actual = calculateFirmwareHash();  ota_integrity_verified = (actual == expected);    if (!ota_integrity_verified) {    logger::warnf("OTA integrity FAILED (stored:%08X actual:%08X)", expected, actual);  } else {    logger::core("OTA integrity verified");  }  return ota_integrity_verified;}bool isOtaIntegrityVerified() {  return ota_integrity_verified;}// ================= LOOP PRINCIPAL ===================
@@ -213,7 +182,7 @@ void loop() {
     mesh::sendBinaryReport();
   }
 
-  if (ota_enabled) {
+  if (storage::isOtaEnabled()) {
     ArduinoOTA.handle();
   }
 }
