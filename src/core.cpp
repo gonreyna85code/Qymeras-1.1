@@ -1,4 +1,7 @@
 #include <ArduinoOTA.h>
+#if defined(ESP32)
+#include <esp_netif.h>
+#endif
 #include "core.h"
 #include "config.h"
 #include "web.h"
@@ -10,15 +13,20 @@
 
 namespace core {
 
+// Flags to ensure network-dependent services are initialized exactly once,
+// only after the WiFi stack (STA or AP) is operational.
 
-
-// ================= VARIABLES ===================
+static bool ota_initialized = false;
+static bool web_initialized = false;
+static bool mesh_initialized = false;
 // Vars globales compartidas (no estáticas: accesibles para configuración).
 
 static String uid;
 String ssid;
 String password;
 static bool wifi_connected = false;
+static bool wifi_connecting = false;
+static unsigned long wifi_connect_start = 0;
 static unsigned long last_attempt = 0;
 static unsigned long last_report = 0;
 static bool first_report = true;
@@ -31,18 +39,36 @@ static void startAP() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);
   wifi_connected = false;
+  wifi_connecting = false;
+  if (!web_initialized) {
+    web::init();
+    web_initialized = true;
+  }
   web::server.close();
   delay(50);
   web::server.begin();
+  if (!mesh_initialized) {
+    mesh::init();
+    mesh_initialized = true;
+  }
+  if (!ota_initialized) {
+    ArduinoOTA.begin();
+    ota_initialized = true;
+  }
   logger::coref("AP mode '%s' started", AP_SSID);
 }
 
-/// State-machine: kicks off a non-blocking WiFi connection attempt.
+/// kicks off a non-blocking WiFi connection attempt.
 /// WiFi status is polled from loop() via checkWiFiStatus().
-static bool wifi_connecting = false;
-static unsigned long wifi_connect_start = 0;
 
 static void startWiFi() {
+  // Initialize ESP32 network interface layer (required before WiFi/EWiFi on ESP32)
+  // Fixes: xQueueSemaphoreTake assert (queue.c:1709) on ESP32 boot
+#if defined(ESP32)
+  esp_netif_init();
+  esp_event_loop_create_default();
+#endif
+
   if (ssid == "") {
     startAP();
     return;
@@ -65,7 +91,18 @@ static void checkWiFiStatus() {
     wifi_connecting = false;
     wifi_connected = true;
     sensors::initNTP();
-    ArduinoOTA.begin();
+    if (!ota_initialized) {
+      ArduinoOTA.begin();
+      ota_initialized = true;
+    }
+    if (!mesh_initialized) {
+      mesh::init();
+      mesh_initialized = true;
+    }
+    if (!web_initialized) {
+      web::init();
+      web_initialized = true;
+    }
     logger::coref("WiFi connected, IP:%s", WiFi.localIP().toString().c_str());
   } else if (millis() - wifi_connect_start >= 15000) {
     wifi_connecting = false;
@@ -91,30 +128,29 @@ void begin() {
   storage::loadGeneralSettings(genset.broadcast_port, genset.command_port, genset.report_interval);
   logger::core("Settings loaded");
 
-  // Verify firmware integrity if OTA is enabled
+  // Phase 1: Local subsystem initialization (no WiFi dependency)
   bool ota_flag = storage::loadOtaFlag() == 1;
   if (ota_flag) {
     if (storage::verifyOtaIntegrity()) {
       logger::core("OTA integrity verified");
-      ArduinoOTA.begin();
     } else {
       logger::core("OTA integrity FAILED - disabling OTA");
       storage::setOtaEnabled(false);
     }
   }
-  
-  if (!ota_flag) {
-    ArduinoOTA.begin();  // Initialize even if disabled (but won't handle)
-  }
 
+  // Local sensors and config
   sensors::init();
   ::initSatellite();
   storage::loadCalibration();
   automations::init();
+
+  // Phase 2: Network startup
+  // Network-dependent services (mesh, web, OTA) are initialized only when
+  // WiFi is connected (in checkWiFiStatus()) or in AP mode (in startAP())
+  // This prevents xQueueSemaphoreTake assert on ESP32 boot
   startWiFi();
-  mesh::init();
-  logger::coref("Mesh UDP ready (bc:%u, cmd:%u)", genset.broadcast_port, genset.command_port);
-  web::init();
+
   logger::coref("Free heap: %u B", ESP.getFreeHeap());
 }
 
@@ -140,8 +176,10 @@ bool isOtaEnabled() {
 /// Bucle de la aplicación: maneja HTTP, reconexión Wi-Fi si cae,
 /// reportes periódicos y tareas de sensores/mesh/automáticas.
 void loop() {
-  /// 1) Manejo del servidor web (siempre activo).
-  web::server.handleClient();
+  /// 1) Manejo del servidor web (solo cuando está inicializado).
+  if (web_initialized) {
+    web::server.handleClient();
+  }
 
   /// 2) Poll WiFi connection state (non-blocking).
   checkWiFiStatus();

@@ -12,20 +12,15 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 
 ### Initialization Order
 1. **`setup()`** (user sketch) → calls `Qymera::begin()`
-2. **`Qymera::begin()`** initializes:
-   - Serial communications
-   - EEPROM/Preferences storage
-   - WiFi connectivity (STA/AP mode)
-   - Sensor subsystem
-   - Automation rules engine
-   - Web server
-   - OTA module (default: disabled)
-   - Mesh/transport layer
+2. **`Qymera::begin()`** — two-phase init:
+   - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA integrity verification, sensor subsystem, calibration, automation rules engine
+   - **Phase 2 (network startup):** `startWiFi()` (calls `esp_netif_init()` on ESP32 before WiFi ops, non-blocking STA connect or AP mode)
+   - **Deferred services** (initialized once WiFi is operational, in `checkWiFiStatus()` for STA or `startAP()` for AP mode): web server, mesh/transport layer, OTA module — guarded by `web_initialized`/`mesh_initialized`/`ota_initialized` flags
 3. **`loop()`** (user sketch) → calls `Qymera::loop()`
 4. **`Qymera::loop()`** main state machine:
    - Process WiFi/ESP-NOW events
    - Tick automation rules
-   - Handle web server requests
+   - Handle web server requests (only when web initialized)
    - Manage OTA if enabled
    - Report sensor states
 

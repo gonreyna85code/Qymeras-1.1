@@ -42,6 +42,7 @@
 - [x] Logging system 3-layer architecture finalized ✅
 - [x] Web authentication added on all protected endpoints ✅
 - [x] Base64 Authorization header comparison implemented ✅
+- [x] ESP32 network lifecycle refactor (esp_netif_init + deferred mesh/web/OTA init) ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)
@@ -54,6 +55,7 @@
 - [x] Logging system finalized ✅
 - [x] Add web authentication on all endpoints ✅
 - [x] OTA firmware integrity verification ✅
+- [x] ESP32 boot crash fix (xQueueSemaphoreTake assert) ✅
 - [ ] Memory leak testing under load (documented risks identified, compile verified but not tested under load)
 
 ### Module Stabilization (P1)
