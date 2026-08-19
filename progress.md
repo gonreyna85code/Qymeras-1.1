@@ -52,8 +52,8 @@
 - [x] Remote sensor lifecycle: stale remotes hidden from /calib + unreferenced slots reclaimed ✅
 - [x] Remote logs ingested without re-broadcast (no broadcast ping-pong) ✅
 - [x] /calib validation (uid!=0, valid SensorType, stale remotes excluded) ✅
-- [x] Settings UI local-only + type-based renderer (no DEFAULT fallback, one General card) ✅
-- [x] Devices UI active filter (local + recent remote only) ✅
+- [x] Settings UI local+remote type-based renderer (no DEFAULT fallback, one General card, remote config via isVirtual) ✅
+- [x] Devices UI active filter (local + recent remote only, `id`/`age_ms` timebase fix) ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)

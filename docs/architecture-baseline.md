@@ -138,11 +138,17 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - **Calibration editor**: Per-sensor min/max/offset
 - **Devices tab**: renders local devices + active (recent) remote devices only.
   Stale remotes, `SENSOR_NONE`, and invalid types are filtered by
-  `isDeviceVisible()` before rendering; one card per active entry.
-- **Settings tab**: renders ONLY local configurable sensors/actuators
-  (`s.local === true`). Renderers are resolved by sensor type via
-  `TYPE_RENDERERS`; unknown types are skipped with a `console.warn` — GENERAL
-  SETTINGS is never used as a fallback and is rendered exactly once, explicitly.
+  `isDeviceVisible()` before rendering; one card per active entry. Remote
+  recency uses the server-computed `age_ms` field (same `millis()` timebase as
+  `MESH_TIMEOUT`); `id` carries the sensor uid (the JSON does not duplicate it
+  as `uid`).
+- **Settings tab**: renders cards for ANY valid/configurable entity — local or
+  remote — since `local` indicates provenance, not configurability. Remote
+  configuration is routed to the owning device over HTTP via `isVirtual()`.
+  Renderers are resolved by sensor type via `TYPE_RENDERERS` (all 14 valid
+  types incl. AIDIG/AIANA); unknown types are skipped with a `console.warn` —
+  GENERAL SETTINGS (node-level config: WiFi/ports/interval/OTA/factory reset)
+  is never used as a fallback and is rendered exactly once, explicitly.
 
 ## UDP Transport
 

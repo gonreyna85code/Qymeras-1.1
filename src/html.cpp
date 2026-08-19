@@ -413,12 +413,14 @@ async function getCalib(force = false) {
 
 function isDeviceVisible(s) {
   if (!s) return false;
-  if (s.uid === 0 || s.uid == null) return false;
+  // /calib serializes the sensor uid as "id"; reject entries without a valid one.
+  if (s.id === 0 || s.id == null) return false;
   if (s.type === undefined || s.type === SensorType.SENSOR_NONE) return false;
   if (!(s.type in TYPE_ORDER)) return false;       // unknown/invalid type
   if (s.local === true) return true;
-  // Remote: only while active/recent (MESH_TIMEOUT = 30000 ms).
-  return !!s.last_update && (Date.now() - s.last_update) <= 30000;
+  // Remote: only while active/recent (MESH_TIMEOUT = 30000 ms). age_ms is
+  // computed server-side from millis(), same timebase as the timeout.
+  return typeof s.age_ms === 'number' && s.age_ms <= 30000;
 }
 
 async function loadDevices() {
@@ -483,7 +485,9 @@ const TYPE_RENDERERS = {
   [SensorType.SENSOR_GENERIC]: cardRenderers.GENERIC,
   [SensorType.SENSOR_CONTACT]: cardRenderers.CONTACT,
   [SensorType.SENSOR_TIME]: cardRenderers.TIME,
-  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI
+  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI,
+  [SensorType.SENSOR_AIDIG]: cardRenderers.AIDIG,
+  [SensorType.SENSOR_AIANA]: cardRenderers.AIANA
 };
 
 async function loadCalib() {
@@ -491,16 +495,16 @@ async function loadCalib() {
     const data = await getCalib(true);
     let html = "<div class='settings-grid'>";
     data.forEach((s, i) => {
-      // Settings shows ONLY local configurable sensors/actuators. Remote
-      // sensors (active or not) must never generate Settings cards.
-      if (s.local !== true) return;
-      // Unknown/invalid types are skipped with a warning, never rendered as
+      // Settings shows cards for ANY valid/configurable entity: local or
+      // remote. `local` only indicates provenance, NOT configurability. Unknown
+      // or invalid types are skipped with a warning and never rendered as
       // GENERAL SETTINGS.
       const render = sensorCardRenderer(s);
       if (!render) return;
       html += render(s, i);
     });
-    // Exactly ONE General Settings card, appended explicitly.
+    // Exactly ONE General Settings card (node configuration), appended
+    // explicitly: it is NOT an entity and must not be duplicated.
     html += `
       <div class="settings-general">
         ${cardRenderers.DEFAULT(
@@ -542,6 +546,10 @@ async function updateSettingsValues() {
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
       else if (s.type === SensorType.SENSOR_CONTACT)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? "CLOSED" : "OPEN";
+      else if (s.type === SensorType.SENSOR_AIDIG)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? "ON" : "OFF";
+      else if (s.type === SensorType.SENSOR_AIANA)
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
       else if (s.type === SensorType.SENSOR_TIME)
         el.innerHTML = formatTime(s);
       else

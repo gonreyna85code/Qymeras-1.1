@@ -747,6 +747,10 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += ",\"pin\":";             json += c.pin;
     json += ",\"local\":";           json += (c.local ? "true" : "false");
     json += ",\"last_update\":";     json += c.local ? 0 : c.last_update;
+    // Elapsed ms since the last remote packet, computed server-side from the
+    // same millis() timebase as MESH_TIMEOUT (client Date.now() is epoch-based
+    // and cannot be compared directly with the device uptime counter).
+    json += ",\"age_ms\":";          json += c.local ? 0 : (uint32_t)(millis() - c.last_update);
 
     json += ",\"ip\":\"";
     if (c.local) {
