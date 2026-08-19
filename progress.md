@@ -54,6 +54,7 @@
 - [x] /calib validation (uid!=0, valid SensorType, stale remotes excluded) ✅
 - [x] Settings UI local+remote type-based renderer (no DEFAULT fallback, one General card, remote config via isVirtual) ✅
 - [x] Devices UI active filter (local + recent remote only, `id`/`age_ms` timebase fix) ✅
+- [x] Discovery redistribution loop eliminated (findLocalCalib: remote entities never rebound as local) ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)

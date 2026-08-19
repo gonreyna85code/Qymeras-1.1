@@ -41,6 +41,19 @@ static void bindLocalSensor(uint8_t idx, const String &name, SensorType type) {
    snprintf(c.device_ip, sizeof(c.device_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 }
 
+// Local-only name lookup for the sensor read/registration functions. A name
+// match against a REMOTE entity must never rebind that entity as local:
+// bindLocalSensor() would then re-announce it under a NEW local uid, which
+// feeds the discovery redistribution loop (remote -> stolen -> re-broadcast
+// -> duplicate). Remote entities are read-only for binding purposes.
+static int findLocalCalib(const String &key) {
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    if (calibrations[i].local && calibrations[i].uid != 0 &&
+        calibrations[i].name == key) return i;
+  }
+  return -1;
+}
+
 void init() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     calibrations[i] = Calibration();
@@ -298,7 +311,7 @@ void startFade(const String &key, uint8_t pin, int from, int to, unsigned long d
 }
 
 void temperature(const String &key, float raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -308,7 +321,7 @@ void temperature(const String &key, float raw) {
 }
 
 void humidity(const String &key, int raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -318,7 +331,7 @@ void humidity(const String &key, int raw) {
 }
 
 void luminosity(const String &key, int raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -328,7 +341,7 @@ void luminosity(const String &key, int raw) {
 }
 
 void level(const String &key, int raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -338,7 +351,7 @@ void level(const String &key, int raw) {
 }
 
 void pressure(const String &key, float raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -348,7 +361,7 @@ void pressure(const String &key, float raw) {
 }
 
 void airQ(const String &key, const int &v) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -358,7 +371,7 @@ void airQ(const String &key, const int &v) {
 }
 
 void rain(const String &key, bool v) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -369,7 +382,7 @@ void rain(const String &key, bool v) {
 }
 
 void custom(const String &key, float raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -379,7 +392,7 @@ void custom(const String &key, float raw) {
 }
 
 void contact(const String &key, bool v) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -390,7 +403,7 @@ void contact(const String &key, bool v) {
 }
 
 void aidig(const String &key, bool v) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -401,7 +414,7 @@ void aidig(const String &key, bool v) {
 }
 
 void aiana(const String &key, float raw) {
-  int idx = findCalib(key);
+  int idx = findLocalCalib(key);
   if (idx < 0) idx = findFreeCalib();
   if (idx < 0) return;
   auto &c = calibrations[idx];
@@ -671,6 +684,11 @@ void onRemoteSensorDiscovered(
   if (is_new) {
     logger::sensorsf("New remote sensor '%s' (type:%d, uid:%u)", c.name.c_str(), sensor_type, sensor_id);
   }
+  // TEMP-DEBUG discovery RX: sender ip, owner device_uid, sensor uid, local
+  // flag, packet type, name, slot index, is_new. A remote entity must keep
+  // local=0 and its owner fields untouched (never rebound by name).
+  logger::sensorsf("[DISC RX] sender_ip=%s owner=%08X sensor=%08X local=%d type=%d name=%s idx=%d is_new=%d",
+    remote_ip, remote_uid, sensor_id, (int)c.local, (int)sensor_type, c.name.c_str(), idx, is_new ? 1 : 0);
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 

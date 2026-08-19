@@ -204,6 +204,25 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - `/calib` only exposes entries with `uid != 0`, a valid `SensorType` (1..14)
   and, for remote entries, a non-stale `last_update`.
 
+### Discovery Redistribution Loop (fixed)
+
+- Discovery announces ONLY local entities: `mesh::sendBinaryReport()` skips
+  `!c.local`. The loop source was on the RECEIVING side: the sensor read
+  functions (`temperature`, `humidity`, `luminosity`, `level`, `pressure`,
+  `airQ`, `rain`, `custom`, `contact`, `aidig`, `aiana`) looked up slots by name
+  via `findCalib()` (ANY entity) and then called `bindLocalSensor()`
+  unconditionally. A name collision with a discovered REMOTE sensor rebound it:
+  `local = true`, `uid = makeSensorUid()` (a NEW local uid), `device_uid`/IP =
+  this node → the remote was re-announced as a local entity of this node →
+  the peer registered it back → cross-node duplicates.
+- Fix: the read/registration functions now use `findLocalCalib()` (matches only
+  `local == true && uid != 0`). A remote entity is never rebound as local; its
+  `uid`/`device_uid`/`device_ip` stay owned by the originating node. `relay()`
+  and `dimmer()` were already safe (they only bind when `is_new`).
+- Architectural rule enforced: LOCAL entity → may announce; REMOTE entity → may
+  be visualized/configured/used, never re-announced as this node's own. A remote
+  entity's uid must be stable and owned by its originating node.
+
 ## ESP-NOW Transport
 
 ### Configuration

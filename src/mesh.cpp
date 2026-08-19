@@ -285,6 +285,10 @@ void sendBinaryReport() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
     if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
+    // TEMP-DEBUG discovery TX: sender ip, owner device_uid, sensor uid,
+    // local flag, packet type, name. Only local entities are ever announced.
+    logger::coref("[DISC TX] sender_ip=%s owner=%08X sensor=%08X local=1 type=%d name=%s",
+      WiFi.localIP().toString().c_str(), GET_CHIP_ID(), c.uid, (int)c.type, c.name.c_str());
     PacketHeaderV4 hdr;
     hdr.magic = 0xA5;
     hdr.version = PACKET_VERSION;
