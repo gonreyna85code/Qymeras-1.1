@@ -250,7 +250,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - Known limitation: no SHA-256/signature verification (Phase 3+ candidate per AGENTS.md).
 - The enable flag (`EEPROM_OTA_FLAG_ADDR`) and the baseline no longer alias the
   relay-state region (0..9) or the WiFi credentials block — this fixes the
-  reported "saving the OTA flag corrupts memory" defect (the old flag/checksum
+  reported "saving the OTA flag corrupts memory" defect (the old flag/token
   lived at offsets 9/10, overlapping relay state and the SSID length byte).
 
 ### Security
@@ -402,7 +402,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 ## Recommended Implementation Order (Phase 2)
 
 1. **Authentication layer** on web/API endpoints
-2. **OTA firmware integrity** verification
+2. **OTA device identity check** (chip token) + optional SHA-256 authenticity (Phase 3+)
 3. **Memory profiling** and leak fixes
 4. **Long-term endurance** testing
 5. **Network resilience** recovery tests
