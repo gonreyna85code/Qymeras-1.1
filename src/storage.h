@@ -7,8 +7,8 @@ namespace storage {
 void begin();
 uint8_t read(int addr);
 void write(int addr, uint8_t val);
-template<typename T> void get(int addr, T &obj);
-template<typename T> void put(int addr, const T &obj);
+template<typename T> bool get(int addr, T &obj);
+template<typename T> bool put(int addr, const T &obj);
 void commit();
 
 void loadCredentials(String &ssid, String &password);
@@ -29,7 +29,6 @@ void saveRules();
 void deleteRule(uint8_t idx);
 
 bool verifyOtaIntegrity();
-void setOtaEnabled(bool enabled);
 bool isOtaEnabled();
 bool isOtaIntegrityVerified();
 

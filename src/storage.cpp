@@ -3,7 +3,6 @@
 #ifdef ESP32
 #include <Preferences.h>
 #endif
-#include <ArduinoOTA.h>
 #include "automations.h"
 #include "core.h"
 #include "log.h"
@@ -17,12 +16,24 @@ static Preferences prefs;
 static bool prefs_ready = false;
 
 void begin() {
-  if (!prefs_ready) prefs_ready = prefs.begin("eeprom", false);
+  if (!prefs_ready) {
+    prefs_ready = prefs.begin("eeprom", false);
+    if (!prefs_ready) logger::error("Preferences begin FAILED - defaults will be used");
+  }
 }
 uint8_t read(int addr) { return prefs.getUChar(String(addr).c_str(), 0); }
 void write(int addr, uint8_t val) { prefs.putUChar(String(addr).c_str(), val); }
-template<typename T> void get(int addr, T &obj) { prefs.getBytes(String(addr).c_str(), &obj, sizeof(T)); }
-template<typename T> void put(int addr, const T &obj) { prefs.putBytes(String(addr).c_str(), &obj, sizeof(T)); }
+template<typename T> bool get(int addr, T &obj) {
+  // IMPORTANT: prefs.getBytes() leaves the buffer untouched when the key is
+  // missing or corrupted. Zero-fill first so unprovisioned slots never expose
+  // stack garbage (this was the "random fade on every sensor" bug).
+  memset(&obj, 0, sizeof(T));
+  size_t n = prefs.getBytes(String(addr).c_str(), &obj, sizeof(T));
+  return n == sizeof(T);
+}
+template<typename T> bool put(int addr, const T &obj) {
+  return prefs.putBytes(String(addr).c_str(), &obj, sizeof(T)) == sizeof(T);
+}
 void commit() {}
 void clearAll() { prefs.clear(); }
 
@@ -30,8 +41,8 @@ void clearAll() { prefs.clear(); }
 void begin() { EEPROM.begin(EEPROM_SIZE); }
 uint8_t read(int addr) { return EEPROM.read(addr); }
 void write(int addr, uint8_t val) { EEPROM.write(addr, val); }
-template<typename T> void get(int addr, T &obj) { EEPROM.get(addr, obj); }
-template<typename T> void put(int addr, const T &obj) { EEPROM.put(addr, obj); }
+template<typename T> bool get(int addr, T &obj) { EEPROM.get(addr, obj); return true; }
+template<typename T> bool put(int addr, const T &obj) { EEPROM.put(addr, obj); return true; }
 void commit() { EEPROM.commit(); }
 void clearAll() {
   memset(EEPROM.getDataPtr() + EEPROM_RELAY_STATE_START, 0, EEPROM_RELAY_STATE_SIZE);
@@ -41,7 +52,16 @@ void clearAll() {
 
 #endif
 
+/* Persisted calibration slot.
+   magic/version validate the slot is provisioned and current; uid ties the
+   slot to the registered device so persistence survives index reordering. */
+static const uint32_t CALIB_MAGIC = 0x514D434C;  // "QMCL"
+static const uint16_t CALIB_VERSION = 1;
+
 struct __attribute__((packed)) CalibrationPersist {
+  uint32_t magic;
+  uint16_t version;
+  uint32_t uid;
   bool pers_state;
   float min;
   float max;
@@ -52,6 +72,8 @@ struct __attribute__((packed)) CalibrationPersist {
   uint32_t pulse_ms;
   uint32_t fade;
 };
+static_assert(sizeof(CalibrationPersist) == EEPROM_CALIB_SLOT_SIZE,
+              "CalibrationPersist size must match EEPROM_CALIB_SLOT_SIZE in config.h");
 
 struct RulesHeader {
   uint32_t magic;
@@ -100,28 +122,14 @@ bool isOtaIntegrityVerified() { return ota_integrity_verified; }
 
 uint8_t loadOtaFlag() {
   begin();
-  return read(EEPROM_OTA_FLAG_ADDR);
+  // Normalize: only 1 means enabled. 0xFF (unprovisioned) or anything else = disabled.
+  return (read(EEPROM_OTA_FLAG_ADDR) == 1) ? 1 : 0;
 }
 
 void saveOtaFlag(uint8_t flag) {
   begin();
-  write(EEPROM_OTA_FLAG_ADDR, flag);
+  write(EEPROM_OTA_FLAG_ADDR, (flag == 1) ? 1 : 0);
   commit();
-}
-
-void setOtaEnabled(bool enabled) {
-  saveOtaFlag(enabled ? 1 : 0);
-  if (enabled) {
-    if (verifyOtaIntegrity()) {
-      ArduinoOTA.begin();
-      logger::core("OTA enabled (integrity OK)");
-    } else {
-      saveOtaFlag(0);
-      logger::core("OTA integrity FAILED - keeping OTA disabled");
-    }
-  } else {
-    logger::core("OTA disabled");
-  }
 }
 
 bool isOtaEnabled() { return loadOtaFlag() == 1; }
@@ -205,9 +213,16 @@ void loadCalibration() {
   begin();
   for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) {
     int addr = EEPROM_CALIB_START + i * sizeof(CalibrationPersist);
-    CalibrationPersist p;
-    get(addr, p);
-    auto &c = sensors::calibrations[i];
+    CalibrationPersist p = {};
+    if (!get(addr, p)) continue;                    // missing/corrupt key on ESP32
+    if (p.magic != CALIB_MAGIC || p.version != CALIB_VERSION) continue;  // unprovisioned
+    if (p.uid == 0) continue;
+    if (!isfinite(p.min) || !isfinite(p.max) || !isfinite(p.correction)) continue;
+    if (p.fade > 3600000UL) continue;               // sane fade cap (1h)
+    int idx = sensors::findCalibByUid(p.uid);       // attach to the exact device
+    if (idx < 0) continue;                          // no registered device with this uid
+    auto &c = sensors::calibrations[idx];
+    if (!c.local) continue;
     c.pers_state = p.pers_state;
     c.min = p.min;
     c.max = p.max;
@@ -217,7 +232,6 @@ void loadCalibration() {
     c.pulse = p.pulse;
     c.pulse_ms = p.pulse_ms;
     c.fade = p.fade;
-    if (c.uid == 0) c.value = 0;
   }
 }
 
@@ -228,9 +242,20 @@ void saveCalibrationSlot(int index) {
   auto &c = sensors::calibrations[index];
   CalibrationPersist current = {};
   if (c.local && c.uid != 0) {
-    current = {c.pers_state, c.min, c.max, c.correction, c.avail, c.persist, c.pulse, c.pulse_ms, c.fade};
+    current.magic = CALIB_MAGIC;
+    current.version = CALIB_VERSION;
+    current.uid = c.uid;
+    current.pers_state = c.pers_state;
+    current.min = c.min;
+    current.max = c.max;
+    current.correction = c.correction;
+    current.avail = c.avail;
+    current.persist = c.persist;
+    current.pulse = c.pulse;
+    current.pulse_ms = c.pulse_ms;
+    current.fade = c.fade;
   }
-  CalibrationPersist stored;
+  CalibrationPersist stored = {};
   get(addr, stored);
   if (memcmp(&current, &stored, sizeof(CalibrationPersist)) != 0) {
     put(addr, current);

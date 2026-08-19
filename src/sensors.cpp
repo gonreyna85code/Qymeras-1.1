@@ -53,18 +53,13 @@ void applyPersistedStates() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = calibrations[i];
     if (c.type != TYPE_RELAY) continue;
-    Serial.printf(
-      "Relay=%s pers=%d state=%d inv=%d pin=%d\n",
-      c.name.c_str(),
-      c.pers_state,
-      c.state,
-      c.inverted,
-      c.pin);
-    if (!c.persist) continue;
     if (!c.local) continue;
+    // Deterministic boot state, applied exactly once before any report:
+    // persistent relays restore their last state; non-persistent relays are OFF.
+    bool on = c.persist ? c.pers_state : false;
     pinMode(c.pin, OUTPUT);
-    digitalWrite(c.pin, c.inverted ? !c.pers_state : c.pers_state);
-    c.state = c.pers_state;
+    digitalWrite(c.pin, c.inverted ? !on : on);
+    c.state = on;
     mesh::setReport(i, c.uid, c.value, c.value, c.state);
   }
 }
@@ -390,8 +385,10 @@ void relay(const String &key, uint8_t pin, bool inverted) {
     bindLocalSensor(idx, key, TYPE_RELAY);
     c.pin = pin;
     c.inverted = inverted;
+    // Only configure the pin here. The initial GPIO state is applied once in
+    // applyPersistedStates() (before the first report) to avoid an
+    // OFF -> ON glitch on persistent relays at boot.
     pinMode(pin, OUTPUT);
-    digitalWrite(pin, inverted ? HIGH : LOW);
   }
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }

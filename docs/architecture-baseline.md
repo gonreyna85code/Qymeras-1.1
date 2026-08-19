@@ -13,15 +13,22 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 ### Initialization Order
 1. **`setup()`** (user sketch) → calls `Qymera::begin()`
 2. **`Qymera::begin()`** — two-phase init:
-   - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA integrity verification, sensor subsystem, calibration, automation rules engine
+   - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA integrity verification, sensor subsystem
+   - **Phase 1b (device registration, correct order):**
+     1. `sensors::init()` — zero sensor/calibration tables
+     2. `initSatellite()` (user) — register/discover local sensors and actuators
+     3. `storage::loadCalibration()` — load persistent config, **UID-matched** to already-registered devices (magic+version validated; missing/corrupt slots → defaults)
+     4. `sensors::applyPersistedStates()` — write GPIO exactly once before any report (persistent relays restore state, non-persistent → OFF)
+     5. `automations::init()` — rules
    - **Phase 2 (network startup):** `startWiFi()` (calls `esp_netif_init()` on ESP32 before WiFi ops, non-blocking STA connect or AP mode)
-   - **Deferred services** (initialized once WiFi is operational, in `checkWiFiStatus()` for STA or `startAP()` for AP mode): web server, mesh/transport layer, OTA module — guarded by `web_initialized`/`mesh_initialized`/`ota_initialized` flags
+   - **Deferred services** (initialized once WiFi is operational, in `checkWiFiStatus()` for STA or `startAP()` for AP mode): web server, mesh/transport layer, OTA module — guarded by `web_initialized`/`mesh_initialized`/`ota_initialized` flags; ArduinoOTA only starts when `ota_enabled` is true
 3. **`loop()`** (user sketch) → calls `Qymera::loop()`
 4. **`Qymera::loop()`** main state machine:
    - Process WiFi/ESP-NOW events
    - Tick automation rules
    - Handle web server requests (only when web initialized)
-   - Manage OTA if enabled
+   - Manage OTA if enabled (runtime flag, `ArduinoOTA.handle()` every loop)
+   - First iteration: initial `report()` (persisted relay states already applied in `begin()`)
    - Report sensor states
 
 ### Runtime States
@@ -47,13 +54,14 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 | `SENSOR_GENERIC` | Generic sensor |
 
 ### Calibration Model
-- Each sensor has individual calibration stored in EEPROM
-- Calibration parameters: min, max, offset, filter
+- Each sensor has individual calibration persisted per-slot
+- Persisted slot: `CalibrationPersist` — magic + version + **device uid** + pers_state/min/max/correction/avail/persist/pulse/pulse_ms/fade (34 bytes, 40 slots)
+- Loaded **by UID match** to the registered device (survives index reordering); slots with invalid magic/version, missing keys, or non-finite floats are ignored → defaults
+- **ESP32 root cause fix**: `prefs.getBytes()` leaves the buffer untouched on missing keys → `storage::get()` now zero-fills first, eliminating the "every sensor shows the same random fade value from boot" corruption
 - Calibration values survive factory reset of relay states
-- **Known issue**: Calibration values lost on EEPROM reset (separate from relay states)
 
 ### Actuators
-- `TYPE_RELAY`: On/off control with pulse/fade modes
+- `TYPE_RELAY`: On/off control with pulse modes; **persisted state restored at boot** (UID-matched, single GPIO write before first report — no OFF→ON glitch); non-persistent relays boot OFF
 - `TYPE_DIMMER`: PWM value control (0-100%)
 - Pulse mode: Non-blocking duration control
 - Fade mode: Smooth transition between values
@@ -86,22 +94,19 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 ### EEPROM Layout (4 KB)
 | Offset | Size | Content |
 |--------|------|---------|
-| 0 | 512 | WiFi credentials |
-| 512 | 512 | Relay states |
-| 1024 | 512 | Sensor calibrations |
-| 1536 | 512 | Rule definitions |
-| 2048 | 512 | OTA flags and settings |
-| 2560 | 512 | Reserved |
-| 3072 | 256 | Log buffers (3 layers × 12 entries) |
-| 3328 | 192 | Reserved/padding |
+| 0 | 10 | Relay state (reserved) |
+| 10 | 100 | WiFi credentials |
+| 110 | 12 | General settings (ports/interval) |
+| 122 | 1360 | Sensor calibrations (40 × 34B UID slots) |
+| 1482 | 1600 | Rule definitions |
+| 3082 | 4 | OTA integrity baseline |
+| 3086 | 1 | OTA enable flag |
+| 3087 | - | Reserved (to 4096) |
 
-### Preferences (ESP32)
-- Replaces EEPROM for ESP32 due to known bugs
-- Namespaces: "qymeras", "wifi", "ota", "rules", "sensors"
-- Larger capacity than 4KB EEPROM
+ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespace `eeprom`. Missing/corrupt keys are handled by zero-fill + validation, never assumed valid.
 
 ### Flag Persistence
-- `ota_enabled`: Stored in EEPROM offset 2048
+- `ota_enabled`: Stored at `EEPROM_OTA_FLAG_ADDR`, **normalized** (only `1` = enabled; `0xFF`/unprovisioned → disabled), loaded once into a runtime flag
 - survives reboot, cleared on factory reset
 - `transport_mode`: UDP (STA) or ESP-NOW (AP)
 
@@ -216,12 +221,18 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 - Can be enabled via `/ota/toggle?enabled=1`
 
 ### Toggle Flow
-1. `GET /ota/toggle?enabled=1` → enables OTA
-2. Log: `"OTA enabled"` in CORE layer
+1. `GET /ota/toggle?enabled=1` → `core::setOtaEnabled(true)`
+2. Runtime flag updated + flag persisted (`storage::saveOtaFlag(1)`) + integrity re-verified
 3. Device reboots
-4. On boot: `ota_enabled` flag checked
-5. If enabled: HTTP server accepts OTA requests
-6. If disabled: OTA endpoint returns 404
+4. On boot: runtime `ota_enabled` loaded from normalized flag
+5. If enabled + WiFi/AP ready: `startOtaService()` → single `ArduinoOTA.begin()` (guarded by `ota_initialized`)
+6. `ArduinoOTA.handle()` runs every loop only when `ota_enabled && ota_initialized` (no per-loop Preferences reads)
+7. If disabled: ArduinoOTA never bound, no stale listener
+
+### OTA Lifecycle Separation
+- **storage** owns only persistent config: `saveOtaFlag()`, `loadOtaFlag()`, `isOtaEnabled()`, `verifyOtaIntegrity()`
+- **core/network** owns the lifecycle: `ArduinoOTA.begin()`, `ArduinoOTA.handle()`, diagnostic callbacks (`onStart`/`onProgress`/`onEnd`/`onError`), single `ota_initialized` guard
+- Storage never calls `ArduinoOTA.begin()` (removed) — exactly one controlled OTA initialization path exists
 
 ### OTA Status Endpoint
 - `GET /ota/status` → `{"ota":1}` or `{"ota":0}`

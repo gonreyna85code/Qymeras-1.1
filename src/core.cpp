@@ -19,6 +19,7 @@ namespace core {
 static bool ota_initialized = false;
 static bool web_initialized = false;
 static bool mesh_initialized = false;
+static bool ota_enabled = false;
 // Vars globales compartidas (no estáticas: accesibles para configuración).
 
 static String uid;
@@ -34,7 +35,8 @@ GeneralSettings genset;
 
  // ================= HELPERS ===================
 
-/// Reanuda el servidor hotspot en modo AP tras una conexión WiFi fallida.
+ /// Reanuda el servidor hotspot en modo AP tras una conexión WiFi fallida.
+static void startOtaService();
 static void startAP() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID);
@@ -51,11 +53,33 @@ static void startAP() {
     mesh::init();
     mesh_initialized = true;
   }
-  if (!ota_initialized) {
-    ArduinoOTA.begin();
-    ota_initialized = true;
-  }
+  startOtaService();
   logger::coref("AP mode '%s' started", AP_SSID);
+}
+
+/// Single controlled OTA initialization path.
+/// Only starts ArduinoOTA when the runtime flag says it is enabled and the
+/// network interface is already operational. Never called from storage.
+static void startOtaService() {
+  if (ota_initialized || !ota_enabled) return;
+  static String ota_hostname;
+  ota_hostname = "qymera-" + String(GET_CHIP_ID());
+  ArduinoOTA.setHostname(ota_hostname.c_str());
+  ArduinoOTA.onStart([]() {
+    logger::core("OTA: transfer started");
+  });
+  ArduinoOTA.onProgress([](unsigned int p, unsigned int t) {
+    if (p % 25 == 0) logger::coref("OTA: %u%%", p);
+  });
+  ArduinoOTA.onEnd([]() {
+    logger::core("OTA: transfer complete");
+  });
+  ArduinoOTA.onError([](ota_error_t e) {
+    logger::warnf("OTA error: %d", (int)e);
+  });
+  ArduinoOTA.begin();
+  ota_initialized = true;
+  logger::core("ArduinoOTA started");
 }
 
 /// kicks off a non-blocking WiFi connection attempt.
@@ -91,10 +115,7 @@ static void checkWiFiStatus() {
     wifi_connecting = false;
     wifi_connected = true;
     sensors::initNTP();
-    if (!ota_initialized) {
-      ArduinoOTA.begin();
-      ota_initialized = true;
-    }
+    startOtaService();
     if (!mesh_initialized) {
       mesh::init();
       mesh_initialized = true;
@@ -129,20 +150,27 @@ void begin() {
   logger::core("Settings loaded");
 
   // Phase 1: Local subsystem initialization (no WiFi dependency)
-  bool ota_flag = storage::loadOtaFlag() == 1;
-  if (ota_flag) {
+  ota_enabled = storage::loadOtaFlag() == 1;
+  if (ota_enabled) {
     if (storage::verifyOtaIntegrity()) {
       logger::core("OTA integrity verified");
     } else {
-      logger::core("OTA integrity FAILED - disabling OTA");
-      storage::setOtaEnabled(false);
+      logger::warnf("OTA integrity FAILED - disabling OTA");
+      ota_enabled = false;
+      storage::saveOtaFlag(0);
     }
   }
 
-  // Local sensors and config
+  // Correct boot order:
+  // 1. init sensor subsystem
+  // 2. register/discover local sensors and actuators (user initSatellite)
+  // 3. load persistent configuration (UID-matched to registered devices)
+  // 4. apply persisted relay states (writes GPIO exactly once, before any report)
+  // 5. automations rules
   sensors::init();
   ::initSatellite();
   storage::loadCalibration();
+  sensors::applyPersistedStates();
   automations::init();
 
   // Phase 2: Network startup
@@ -164,14 +192,32 @@ bool is_connected() {
 // ================= OTA CONTROL =================
 
 void setOtaEnabled(bool enabled) {
-  storage::setOtaEnabled(enabled);
+  ota_enabled = enabled;
+  storage::saveOtaFlag(enabled ? 1 : 0);
+  if (enabled) {
+    if (!storage::verifyOtaIntegrity()) {
+      ota_enabled = false;
+      storage::saveOtaFlag(0);
+      logger::warnf("OTA integrity FAILED - keeping OTA disabled");
+      return;
+    }
+    // Network must be operational before ArduinoOTA.begin(). If it already is
+    // (e.g. toggled via web), start now; otherwise the deferred network-init
+    // path (startOtaService) will start it once WiFi is up.
+    if (wifi_connected || WiFi.getMode() == WIFI_AP) {
+      startOtaService();
+    }
+    logger::core("OTA enabled");
+  } else {
+    logger::core("OTA disabled");
+  }
 }
 
 bool isOtaEnabled() {
-  return storage::isOtaEnabled();
+  return ota_enabled;
 }
 
-// ================= OTA INTEGRITY ===============// OTA firmware integrity verification// Computes a hash over the firmware image and compares with stored expected value.// Provides integrity verification (detects corruption), not authenticity.// A mismatch means the firmware image has changed since last provisioning.static bool ota_integrity_verified = false;static uint32_t calculateFirmwareHash() {  // Compute a hash over the firmware image using available bytes.  // On platforms with limited flash access, we hash the first 256 bytes  // as a practical compromise between security and feasibility.  // This is NOT a full-image hash but is much better than the previous 64-byte check.  uint32_t hash = 0;  uint8_t *ptr = (uint8_t *)0x0000;  uint32_t sketch_size = ESP.getSketchSize();  int bytes_to_hash = (sketch_size < 256) ? sketch_size : 256;  for (int i = 0; i < bytes_to_hash; i++) {    hash = (hash << 5) | (hash >> 27);  // rotate left 5    hash += ptr[i];  }  return hash;}bool verifyOtaIntegrity() {  // Read expected hash from EEPROM  eeprom_begin();  uint32_t expected = eeprom_read(EEPROM_OTA_CHECKSUM_ADDR);  eeprom_commit();    if (expected == 0) {    // No hash stored yet - store current firmware hash and accept.    // This is the provisioning step: first run stores the baseline hash.    eeprom_begin();    eeprom_write(EEPROM_OTA_CHECKSUM_ADDR, calculateFirmwareHash());    eeprom_commit();    ota_integrity_verified = true;    logger::core("OTA baseline hash stored (provisioning step)");    return true;  }    uint32_t actual = calculateFirmwareHash();  ota_integrity_verified = (actual == expected);    if (!ota_integrity_verified) {    logger::warnf("OTA integrity FAILED (stored:%08X actual:%08X)", expected, actual);  } else {    logger::core("OTA integrity verified");  }  return ota_integrity_verified;}bool isOtaIntegrityVerified() {  return ota_integrity_verified;}// ================= LOOP PRINCIPAL ===================
+// ================= LOOP PRINCIPAL ===================
 
 /// Bucle de la aplicación: maneja HTTP, reconexión Wi-Fi si cae,
 /// reportes periódicos y tareas de sensores/mesh/automáticas.
@@ -194,16 +240,13 @@ void loop() {
   /// Si no hay red, usar ESP-NOW; si hay red, usar UDP
   mesh::setTransport(wifi_connected ? mesh::TRANSPORT_UDP : mesh::TRANSPORT_ESPNOW);
 
-  /// 4) Primera iteración: APLICAR estados persistentes ANTES del reporte
-  //     para evitar piso — los relays deben reflejar su estado persistente
-  //     antes de que report() publique valores al mesh.
+  /// 4) Primera iteración: reporte inicial.
+  //     Los estados persistentes ya fueron aplicados en begin() ANTES de
+  //     cualquier reporte, así que aquí solo se publica el primer estado.
   if (first_report) {
-    sensors::applyPersistedStates();
     ::report();
     first_report = false;
     last_report = millis();
-    Serial.println();
-    Serial.println("apply");
   }
 
   /// 4) Tareas periódicas: clock NTP, mesh tick, automatización.
@@ -220,7 +263,7 @@ void loop() {
     mesh::sendBinaryReport();
   }
 
-  if (storage::isOtaEnabled()) {
+  if (ota_enabled && ota_initialized) {
     ArduinoOTA.handle();
   }
 }

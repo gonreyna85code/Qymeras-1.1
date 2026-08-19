@@ -95,8 +95,12 @@ typedef WebServer WebServerCompat;
 #define EEPROM_GENSET_SIZE 12
 
 /* Calibration (solo sensores físicos aprox) */
+/* Slot layout must match CalibrationPersist in storage.cpp:
+   magic(4)+version(2)+uid(4)+pers_state(1)+min(4)+max(4)+correction(4)+
+   avail(1)+persist(1)+pulse(1)+pulse_ms(4)+fade(4) = 34 bytes */
+#define EEPROM_CALIB_SLOT_SIZE 34
 #define EEPROM_CALIB_START (EEPROM_GENSET_START + EEPROM_GENSET_SIZE)
-#define EEPROM_CALIB_SIZE 1024
+#define EEPROM_CALIB_SIZE (MAX_PERSISTED_SENSORS * EEPROM_CALIB_SLOT_SIZE)
 
 /* Automation rules */
 #define EEPROM_RULES_START (EEPROM_CALIB_START + EEPROM_CALIB_SIZE)

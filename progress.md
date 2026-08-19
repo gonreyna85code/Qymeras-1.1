@@ -43,6 +43,10 @@
 - [x] Web authentication added on all protected endpoints ✅
 - [x] Base64 Authorization header comparison implemented ✅
 - [x] ESP32 network lifecycle refactor (esp_netif_init + deferred mesh/web/OTA init) ✅
+- [x] Storage zero-fill on missing keys (fixes random fade on ESP32) ✅
+- [x] UID-based calibration persistence (magic+version validation) ✅
+- [x] Single controlled OTA init path (ArduinoOTA moved out of storage) ✅
+- [x] OTA flag normalization (0xFF → disabled) + runtime caching ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)
@@ -56,6 +60,9 @@
 - [x] Add web authentication on all endpoints ✅
 - [x] OTA firmware integrity verification ✅
 - [x] ESP32 boot crash fix (xQueueSemaphoreTake assert) ✅
+- [x] Random fade corruption fix (zero-fill missing EEPROM/Preferences keys) ✅
+- [x] Relay persistence fix (UID-matched, no boot GPIO glitch) ✅
+- [x] OTA "sending invitation" lifecycle fix (single init, runtime flag, callbacks) ✅
 - [ ] Memory leak testing under load (documented risks identified, compile verified but not tested under load)
 
 ### Module Stabilization (P1)
