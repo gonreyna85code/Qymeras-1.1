@@ -9,17 +9,17 @@
 - [x] OTA toggle functionality verified working ✅
 - [x] Logging system 3-layer architecture ✅
 - [x] Add web authentication on all endpoints ✅
-- [x] OTA firmware integrity verification ✅
+- [x] OTA device identity/provisioning check ✅
 - [ ] Memory leak testing under load
 
 ### P1 - Important (Should fix for stability) 
 - [x] Compile verification on ESP8266 and ESP32 ✅
-- [ ] Factory reset reliability validation
+- [ ] Factory reset reliability validation (hardware test pending)
 - [ ] Long-term EEPROM write endurance testing
-- [ ] Network partition recovery testing
+- [x] Network partition recovery (disconnect/GOT_IP events + auto-reconnect; hardware test pending)
 - [x] Input validation on all API endpoints ✅
 - [ ] Rate limiting on POST /save, /rules/set
-- [ ] Calibration value persistence across resets
+- [x] Calibration value persistence (UID-based, survives reboot; reconfig after storage-layout migration)
 
 ### P2 - Nice-to-Have (Improve after 1.1)
 - [ ] HTTPS for OTA transfers
@@ -77,11 +77,11 @@
 - [x] Test authentication flow (compile verification on both platforms)
 - [x] Document limitations (auth disabled by default, credentials "admin"/"qymera123", can be disabled by not sending Authorization header)
 
-### T007: OTA Firmware Integrity ✅ COMPLETE
-- [x] Add firmware checksum verification (stored in EEPROM)
-- [x] Verify OTA image before enabling (compare calculated vs stored checksum)
-- [x] Disable OTA automatically on integrity failure
-- [x] Document security model (integrity check prevents corrupted firmware updates)
+### T007: OTA Device Identity Check ✅ COMPLETE (naming corrected)
+- [x] Store chip-unique device token (`GET_CHIP_ID()`) in EEPROM/Preferences
+- [x] Verify token on boot/toggle; mismatch disables OTA
+- [x] Document accurately: device identity/provisioning check, **NOT** firmware hash/authenticity
+- [x] SHA-256/signature authenticity deferred to Phase 3+ (per AGENTS.md)
 
 ### T008: Memory Leak Testing ⏳ PENDING
 - [ ] Run extended build/flash cycles
@@ -95,17 +95,17 @@
 - [ ] Confirm reboot to AP mode
 - [ ] Validate state after reset
 
-### T010: Network Resilience ⏳ PENDING
-- [ ] Test WiFi disconnect/reconnect
-- [ ] Test ESP-NOW fallback
-- [ ] Verify transport mode switching
-- [ ] Test mesh message loss
+### T010: Network Resilience 🔄 CODE APPLIED, HARDWARE TEST PENDING
+- [x] WiFi disconnect detection (STA_DISCONNECTED event clears wifi_connected)
+- [x] Re-connect detection (STA_GOT_IP event sets wifi_connected)
+- [x] Auto-reconnect enabled on both platforms (ESP8266 setAutoReconnect added)
+- [ ] Test on hardware: disconnect/reconnect, ESP-NOW fallback, transport switching, mesh message loss
 
-### T011: API Input Validation ⏳ PENDING
-- [ ] Validate all JSON payloads
-- [ ] Add bounds checking
-- [ ] Reject oversized packets
-- [ ] Document valid input ranges
+### T011: API Input Validation ✅ CODE COMPLETE
+- [x] Strict full-string parsing on all ID/value fields (rejects malformed/overflow)
+- [x] Bounds checks on sensor/actuator/rule indices, thresholds, levels, dates, ports
+- [x] Reject oversized/invalid rule payloads
+- [ ] Document valid input ranges (docs pending)
 
 ### T012: Long-term Endurance ⏳ PENDING
 - [ ] Run 1000+ boot cycles
@@ -141,9 +141,14 @@
 | Category | Count | Percentage |
 |----------|-------|------------|
 | Total tasks | 15 | 100% |
-| Completed | 10 | 67% |
-| In progress | 0 | 0% |
-| Pending | 5 | 33% |
+| Completed (code + docs) | 11 | 73% |
+| Code applied, hardware test pending | 2 | 13% |
+| Pending (requires hardware) | 2 | 13% |
+
+## Final validation state
+See `progress.md` "FINAL VALIDATION STATUS TABLE". No area is marked PASS without
+hardware evidence; all hardware-dependent areas are currently NOT TESTED (no boards
+attached to this machine). Production gate: NOT READY until physical tests pass.
 
 ## Next Actions
 

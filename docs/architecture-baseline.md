@@ -13,7 +13,7 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 ### Initialization Order
 1. **`setup()`** (user sketch) → calls `Qymera::begin()`
 2. **`Qymera::begin()`** — two-phase init:
-   - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA integrity verification, sensor subsystem
+   - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA identity check, sensor subsystem
    - **Phase 1b (device registration, correct order):**
      1. `sensors::init()` — zero sensor/calibration tables
      2. `initSatellite()` (user) — register/discover local sensors and actuators
@@ -99,7 +99,7 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 | 110 | 12 | General settings (ports/interval) |
 | 122 | 1360 | Sensor calibrations (40 × 34B UID slots) |
 | 1482 | 1600 | Rule definitions |
-| 3082 | 4 | OTA integrity baseline |
+| 3082 | 4 | OTA device identity token |
 | 3086 | 1 | OTA enable flag |
 | 3087 | - | Reserved (to 4096) |
 
@@ -222,7 +222,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 
 ### Toggle Flow
 1. `GET /ota/toggle?enabled=1` → `core::setOtaEnabled(true)`
-2. Runtime flag updated + flag persisted (`storage::saveOtaFlag(1)`) + integrity re-verified
+2. Runtime flag updated + flag persisted (`storage::saveOtaFlag(1)`) + identity token re-verified
 3. Device reboots
 4. On boot: runtime `ota_enabled` loaded from normalized flag
 5. If enabled + WiFi/AP ready: `startOtaService()` → single `ArduinoOTA.begin()` (guarded by `ota_initialized`)
@@ -238,15 +238,20 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - `GET /ota/status` → `{"ota":1}` or `{"ota":0}`
 - Reflects current flag state
 
-### Integrity
-- 32-bit baseline hash of the running image, persisted as a full 4-byte value at
-  `EEPROM_OTA_HASH_ADDR` (reserved region). Provisioning on first enable / empty slot.
-- Mismatch disables OTA; `setOtaEnabled(true)` re-verifies before re-enabling.
+### Integrity (device identity / provisioning check — NOT a firmware hash)
+- The "integrity" mechanism stores a **chip-unique device token** (`GET_CHIP_ID()`)
+  in a 4-byte slot at `EEPROM_OTA_HASH_ADDR`. Provisioned on first enable / empty slot.
+- On each boot/toggle it compares the stored token against the current device token;
+  a mismatch disables OTA.
+- **Accurate naming**: this is a **device identity / provisioning check only**. It
+  detects a device with a different identity (e.g. a swapped module), **not** firmware
+  corruption, authenticity, or tampering. It is not cryptographic and does not hash
+  the firmware image.
+- Known limitation: no SHA-256/signature verification (Phase 3+ candidate per AGENTS.md).
 - The enable flag (`EEPROM_OTA_FLAG_ADDR`) and the baseline no longer alias the
   relay-state region (0..9) or the WiFi credentials block — this fixes the
   reported "saving the OTA flag corrupts memory" defect (the old flag/checksum
   lived at offsets 9/10, overlapping relay state and the SSID length byte).
-- **Detection only, not cryptographic authenticity** (Phase 3+ candidate per AGENTS.md).
 
 ### Security
 - **No authentication** on OTA endpoint
@@ -323,7 +328,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 
 ### Current State
 - **HTTP Basic Auth available** (disabled by default, can be enabled via `AUTH_USERNAME`/`AUTH_PASSWORD` constants in `web.cpp`)
-- **OTA firmware integrity verification** (checksum stored in EEPROM, verified on boot and toggle)
+- **OTA device identity check** (chip token, not a firmware hash; verified on boot and toggle)
 - **No encryption** on web UI or API (HTTP only)
 - **No rate limiting** on POST endpoints
 - **No input validation** beyond basic bounds checking
@@ -372,15 +377,15 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - All source files compile
 - Build verification on ESP8266 and ESP32
 - Web authentication (HTTP Basic Auth) ✅
-- OTA firmware integrity verification ✅
+- OTA device identity check (chip token, not a firmware hash) ✅
 
 ### ⚠️ Requires Attention
 - [ ] Web authentication implementation ✅ (completed - HTTP Basic Auth added)
-- [ ] OTA firmware integrity verification ✅ (completed - checksum verification added)
-- [ ] Memory leak testing under load
-- [ ] Long-term EEPROM write endurance
-- [ ] Network partition recovery
-- [ ] Factory reset reliability
+- [ ] OTA device identity check ✅ (completed - chip-token verification added)
+- [ ] Memory leak testing under load (NOT TESTED on hardware)
+- [ ] Long-term EEPROM write endurance (NOT TESTED)
+- [ ] Network partition recovery (code fix applied; hardware test pending)
+- [ ] Factory reset reliability (hardware test pending)
 
 ### ❌ Production Blockers
 - [ ] None critical - all compile and run

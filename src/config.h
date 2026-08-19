@@ -14,7 +14,7 @@ typedef ESP8266WebServer WebServerCompat;
 #define PROGMEM_ATTR ICACHE_FLASH_ATTR
 #define GET_CHIP_ID() ESP.getChipId()
 #define SET_WIFI_SLEEP() WiFi.setSleepMode(WIFI_NONE_SLEEP)
-#define SET_AUTO_CONNECT() WiFi.setAutoConnect(true)
+#define SET_AUTO_CONNECT() WiFi.setAutoConnect(true), WiFi.setAutoReconnect(true)
 #define RESET_MCU() ESP.reset()
 
 #elif defined(ESP32)
@@ -79,7 +79,9 @@ typedef WebServer WebServerCompat;
 
 #define EEPROM_SIZE 4096
 
-/* Relay state */
+/* Relay state (LEGACY/RESERVED region)
+   Relay persistence now lives inside CalibrationPersist slots; this region is
+   kept only as the layout anchor and is zeroed by factory reset. Do not use. */
 #define EEPROM_RELAY_STATE_START 0
 #define EEPROM_RELAY_STATE_SIZE 10
 

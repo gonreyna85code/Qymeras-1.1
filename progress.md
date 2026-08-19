@@ -58,7 +58,7 @@
 - [x] OTA toggle functionality verified ✅
 - [x] Logging system finalized ✅
 - [x] Add web authentication on all endpoints ✅
-- [x] OTA firmware integrity verification ✅
+- [x] OTA device identity/provisioning check (chip token, NOT firmware hash) ✅
 - [x] ESP32 boot crash fix (xQueueSemaphoreTake assert) ✅
 - [x] Random fade corruption fix (zero-fill missing EEPROM/Preferences keys) ✅
 - [x] Relay persistence fix (UID-matched, no boot GPIO glitch) ✅
@@ -95,3 +95,30 @@
 - [ ] Build both platforms
 - [ ] Test critical paths
 - [ ] Qymeras 1.1 production release
+
+---
+
+## FINAL VALIDATION STATUS TABLE (2026)
+
+Legend: PASS (hardware evidence) / FAIL / BLOCKED / NOT TESTED / N/A.
+Code-review-only items are NOT marked PASS.
+
+| Area | Status | Evidence |
+|------|--------|----------|
+| ESP8266 boot | NOT TESTED | no hardware on this machine (COM9 absent) |
+| ESP32 boot | NOT TESTED | no hardware on this machine (COM3 absent); compile green |
+| Sensors | NOT TESTED | hardware required |
+| Actuators | NOT TESTED | hardware required |
+| Automations | NOT TESTED | logic review only |
+| Persistence (storage) | PASS (static) | zero-fill + magic/version/uid validation, dual-build green |
+| Relay persistence | PASS (static) | UID-matched load, applied before first report, no boot glitch |
+| Factory reset | NOT TESTED | prefs.clear()/clearAll() reviewed; hardware test pending |
+| WiFi | NOT TESTED | hardware required |
+| Network recovery | PASS (static) | disconnect/GOT_IP events + auto-reconnect added; hardware pending |
+| Web/API | PASS (static) | strict parsing + bounds checks reviewed |
+| Authentication | PASS (static) | HTTP Basic Auth gate reviewed (dormant by default) |
+| OTA | NOT TESTED | lifecycle code fixed; real upload requires hardware |
+| Memory stability | NOT TESTED | 24h soak requires hardware |
+| Storage endurance | NOT TESTED | 1000-cycle test requires controlled hardware |
+
+Production gate: NOT READY until physical tests above are completed and pass.

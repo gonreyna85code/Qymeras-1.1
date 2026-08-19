@@ -134,6 +134,32 @@ static void checkWiFiStatus() {
 
 // ================= INICIALIZACIÓN ===================
 
+/// Registers WiFi event handlers so the runtime can detect a dropped STA
+/// connection (otherwise wifi_connected stays stale forever and the device
+/// neither falls back to ESP-NOW nor retries the connection).
+static void setupWiFiEvents() {
+  static bool events_setup = false;
+  if (events_setup) return;
+  events_setup = true;
+#if defined(ESP32)
+  WiFi.onEvent([](WiFiEvent_t e) {
+    if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      wifi_connected = false;
+    } else if (e == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+      // Keep wifi_connecting untouched: on the first connect the polling in
+      // checkWiFiStatus() must still run to initialize deferred services.
+      wifi_connected = true;
+    }
+  });
+#else
+  // Handlers must be kept alive (stored) or ESP8266 deregisters them.
+  static WiFiEventHandler on_disc = WiFi.onStationModeDisconnected(
+    [](const WiFiEventStationModeDisconnected &) { wifi_connected = false; });
+  static WiFiEventHandler on_got = WiFi.onStationModeGotIP(
+    [](const WiFiEventStationModeGotIP &) { wifi_connected = true; });
+#endif
+}
+
 /// Inicializa la aplicación: serial, UID chip y dependencias, luego el stack WiFi
 /// (con retento automático si no hay SSID guardado).
 void begin() {
@@ -148,6 +174,8 @@ void begin() {
   logger::core("Credentials loaded");
   storage::loadGeneralSettings(genset.broadcast_port, genset.command_port, genset.report_interval);
   logger::core("Settings loaded");
+
+  setupWiFiEvents();
 
   // Phase 1: Local subsystem initialization (no WiFi dependency)
   ota_enabled = storage::loadOtaFlag() == 1;
