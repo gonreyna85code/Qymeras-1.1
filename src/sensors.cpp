@@ -5,6 +5,7 @@
 #include "core.h"
 #include "mesh.h"
 #include "web.h"
+#include "automations.h"
 #include "log.h"
 
 
@@ -61,6 +62,48 @@ void applyPersistedStates() {
     digitalWrite(c.pin, c.inverted ? !on : on);
     c.state = on;
     mesh::setReport(i, c.uid, c.value, c.value, c.state);
+  }
+}
+
+// ================= REMOTE SENSOR LIFECYCLE =================
+
+bool isValidSensorType(uint8_t type) {
+  return type > SENSOR_NONE && type <= SENSOR_AIANA;
+}
+
+bool isStaleRemote(int index) {
+  if (index < 0 || index >= MAX_SENSORS) return false;
+  auto &c = calibrations[index];
+  if (c.local || c.uid == 0) return false;
+  // Wrap-safe elapsed check (millis() overflow after ~49 days).
+  return (uint32_t)(millis() - c.last_update) > MESH_TIMEOUT;
+}
+
+bool isEntryVisible(int index) {
+  if (index < 0 || index >= MAX_SENSORS) return false;
+  auto &c = calibrations[index];
+  if (c.uid == 0) return false;
+  if (!isValidSensorType((uint8_t)c.type)) return false;
+  if (c.local) return true;
+  return !isStaleRemote(index);
+}
+
+void reclaimStaleSlots() {
+  static unsigned long last_pass = 0;
+  // Run at most once per timeout window.
+  if ((uint32_t)(millis() - last_pass) < MESH_TIMEOUT) return;
+  last_pass = millis();
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    auto &c = calibrations[i];
+    if (c.local || c.uid == 0) continue;
+    if (!isStaleRemote(i)) continue;
+    // Never reclaim a slot an automation still references: rules address
+    // sensors/actuators by calibration index, so reusing the slot would change
+    // what the rule acts on. Referenced stale entries are kept (hidden) and
+    // stay occupied until the rule is deleted.
+    if (automations::isIndexReferenced((uint8_t)i)) continue;
+    calibrations[i] = Calibration();
+    logger::sensorsf("Reclaimed stale remote slot %d", i);
   }
 }
 

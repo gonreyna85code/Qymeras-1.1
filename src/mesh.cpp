@@ -6,6 +6,15 @@
 
 namespace mesh {
 
+// Wire-format guards: any change to the packed structs that alters their size
+// must be reviewed against parseBuffer/senders (protocol compatibility).
+static_assert(sizeof(PacketHeader) == 8, "PacketHeader must be 8 bytes");
+static_assert(sizeof(PacketHeaderV4) == 9, "PacketHeaderV4 must be 9 bytes");
+static_assert(sizeof(PacketV1) == 10, "PacketV1 must be 10 bytes");
+static_assert(sizeof(PacketV2) == 34, "PacketV2 must be 34 bytes");
+static_assert(sizeof(Packet) == 47, "Packet must be 47 bytes");
+static_assert(sizeof(LogPacket) == 66, "LogPacket must be 66 bytes");
+
 WiFiUDP udp;
 ReportEntry reports[MAX_SENSORS];
 float MIN_VAL = -50.0f;
@@ -61,15 +70,51 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
   PacketHeader hdr;
   memcpy(&hdr, buf, sizeof(hdr));
   if (hdr.magic != 0xA5) return;
-  if (hdr.version != 1 && hdr.version != 2 && hdr.version != PACKET_VERSION) return;
+  if (hdr.version < 1 || hdr.version > PACKET_VERSION) return;
   if (hdr.size != len) return;
   uint32_t local_uid = GET_CHIP_ID();
   bool is_remote = (hdr.uid != local_uid);
-  int remaining = hdr.size - sizeof(PacketHeader);
+
+  // Protocol v4 carries an explicit packet kind byte. Legacy v1/v2/v3 have no
+  // kind byte and are always sensor packets.
+  int header_size = sizeof(PacketHeader);
+  PacketKind kind = PACKET_SENSOR;
+  if (hdr.version == PACKET_VERSION) {
+    if (len < header_size + 1) return;
+    kind = (PacketKind)buf[header_size];
+    header_size += 1;
+    if (kind != PACKET_SENSOR && kind != PACKET_LOG) {
+      logger::warnf("Mesh: unknown packet kind %u rejected", (uint8_t)kind);
+      return;
+    }
+  }
+
+  int remaining = hdr.size - header_size;
+  if (remaining <= 0) return;
+
+  // ---- Log payload: must NEVER reach sensor_callback() ----
+  if (kind == PACKET_LOG) {
+    if (remaining != (int)sizeof(LogPacket)) return;  // exact-size validation
+    LogPacket lp;
+    memcpy(&lp, buf + header_size, sizeof(lp));
+    lp.message[sizeof(lp.message) - 1] = '\0';
+    if (is_remote && lp.layer <= logger::EVENTS && lp.level <= logger::ERROR) {
+      // Ingest into the local log GUI/serial buffer WITHOUT re-broadcasting
+      // (prevents a broadcast ping-pong loop between devices).
+      logger::logRemote((logger::Layer)lp.layer, (logger::Level)lp.level, lp.message);
+    }
+    return;
+  }
+
+  // ---- Sensor payload (v4 PACKET_SENSOR, or legacy v1/v2/v3) ----
   int packet_len = (hdr.version == 1) ? sizeof(PacketV1) :
                    (hdr.version == 2) ? sizeof(PacketV2) :
                                         sizeof(Packet);
-  const uint8_t *ptr = buf + sizeof(PacketHeader);
+  // Exact-multiple validation: a payload whose size is not a whole number of
+  // sensor packets is rejected. Legacy v3 log packets (66-byte payloads) fail
+  // this check and are dropped instead of being fragmented into fake sensors.
+  if (remaining % packet_len != 0) return;
+  const uint8_t *ptr = buf + header_size;
 
   while (remaining >= packet_len) {
     Packet pkt;
@@ -210,11 +255,12 @@ uint32_t encodeFloat(float v) {
 
 void sendCommand(uint32_t remote_uid, const char *remote_ip, uint32_t sensor_id, uint8_t type, uint32_t value, bool state) {
   if (!getRemoteDevice(remote_uid)) return;
-  PacketHeader hdr;
+  PacketHeaderV4 hdr;
   hdr.magic   = 0xA5;
   hdr.version = PACKET_VERSION;
   hdr.uid     = GET_CHIP_ID();
-  hdr.size    = sizeof(PacketHeader) + sizeof(Packet);
+  hdr.kind    = PACKET_SENSOR;
+  hdr.size    = sizeof(PacketHeaderV4) + sizeof(Packet);
   Packet pkt;
   memset(&pkt, 0, sizeof(pkt));
   pkt.id    = sensor_id;
@@ -222,7 +268,7 @@ void sendCommand(uint32_t remote_uid, const char *remote_ip, uint32_t sensor_id,
   pkt.value = value;
   pkt.state = state ? 1 : 0;
 
-  uint8_t buf[sizeof(PacketHeader) + sizeof(Packet)];
+  uint8_t buf[sizeof(PacketHeaderV4) + sizeof(Packet)];
   memcpy(buf, &hdr, sizeof(hdr));
   memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
 
@@ -239,11 +285,12 @@ void sendBinaryReport() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
     if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
-    PacketHeader hdr;
+    PacketHeaderV4 hdr;
     hdr.magic = 0xA5;
     hdr.version = PACKET_VERSION;
     hdr.uid = GET_CHIP_ID();
-    hdr.size = sizeof(PacketHeader) + sizeof(Packet);
+    hdr.kind = PACKET_SENSOR;
+    hdr.size = sizeof(PacketHeaderV4) + sizeof(Packet);
     Packet pkt;
     memset(&pkt, 0, sizeof(pkt));
     pkt.id = c.uid;
@@ -261,7 +308,7 @@ void sendBinaryReport() {
     } else {
       pkt.value = encodeFloat(c.value);
     }
-    uint8_t buf[sizeof(PacketHeader) + sizeof(Packet)];
+    uint8_t buf[sizeof(PacketHeaderV4) + sizeof(Packet)];
     memcpy(buf, &hdr, sizeof(hdr));
     memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
 
@@ -278,11 +325,12 @@ void sendBinaryReport() {
 }
 
 void sendLog(uint8_t layer, uint8_t level, const char *message) {
-  PacketHeader hdr;
+  PacketHeaderV4 hdr;
   hdr.magic = 0xA5;
   hdr.version = PACKET_VERSION;
   hdr.uid = GET_CHIP_ID();
-  hdr.size = sizeof(PacketHeader) + sizeof(LogPacket);
+  hdr.kind = PACKET_LOG;
+  hdr.size = sizeof(PacketHeaderV4) + sizeof(LogPacket);
 
   LogPacket pkt;
   memset(&pkt, 0, sizeof(pkt));
@@ -290,7 +338,7 @@ void sendLog(uint8_t layer, uint8_t level, const char *message) {
   pkt.level = level;
   strncpy(pkt.message, message, sizeof(pkt.message) - 1);
 
-  uint8_t buf[sizeof(PacketHeader) + sizeof(LogPacket)];
+  uint8_t buf[sizeof(PacketHeaderV4) + sizeof(LogPacket)];
   memcpy(buf, &hdr, sizeof(hdr));
   memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
 

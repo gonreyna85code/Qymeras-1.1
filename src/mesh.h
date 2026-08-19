@@ -71,14 +71,31 @@ extern WiFiUDP udp;
 
 #pragma pack(push, 1)
 
-static const uint8_t PACKET_VERSION = 3;
+static const uint8_t PACKET_VERSION = 4;
 static const uint8_t SENSOR_NAME_LEN = 24;
 
+/* Explicit payload kind. Required so LogPacket payloads are never parsed as
+   sensor Packet payloads (they share the broadcast transport). */
+enum PacketKind : uint8_t {
+  PACKET_SENSOR = 1,
+  PACKET_LOG = 2
+};
+
+/* Legacy base header (protocol v1/v2/v3, no kind byte). */
 struct PacketHeader {
   uint8_t magic;
   uint8_t version;
   uint16_t size;
   uint32_t uid;
+};
+
+/* Current header (protocol v4): adds the explicit kind byte. */
+struct PacketHeaderV4 {
+  uint8_t magic;
+  uint8_t version;
+  uint16_t size;
+  uint32_t uid;
+  uint8_t kind;
 };
 
 struct PacketV1 {
@@ -130,8 +147,6 @@ void sendBinaryReport();
 // ============================
 // LOG OVER UDP
 // ============================
-
-static const uint8_t PACKET_TYPE_LOG = 0xFF;
 
 struct LogPacket {
   uint8_t layer;

@@ -411,9 +411,19 @@ async function getCalib(force = false) {
   return calibPromise;
 }
 
+function isDeviceVisible(s) {
+  if (!s) return false;
+  if (s.uid === 0 || s.uid == null) return false;
+  if (s.type === undefined || s.type === SensorType.SENSOR_NONE) return false;
+  if (!(s.type in TYPE_ORDER)) return false;       // unknown/invalid type
+  if (s.local === true) return true;
+  // Remote: only while active/recent (MESH_TIMEOUT = 30000 ms).
+  return !!s.last_update && (Date.now() - s.last_update) <= 30000;
+}
+
 async function loadDevices() {
   try {
-    const data = await getCalib(true);
+    const data = (await getCalib(true)).filter(isDeviceVisible);
     let mobile = '';
     let actuators = '';
     let deviceSensors = '';
@@ -449,27 +459,48 @@ async function loadDevices() {
 
 /* -------------------- CALIB -------------------- */
 
+function sensorCardRenderer(s) {
+  const renderer = TYPE_RENDERERS[s.type];
+  if (!renderer) {
+    console.warn(`[calib] unknown sensor type ${s.type} for '${s.name}', skipped`);
+    return null;
+  }
+  return renderer;
+}
+
+// Type-based resolution for Settings cards. DEFAULT (General Settings) is never
+// a fallback: unknown types are skipped, and General Settings is rendered once
+// explicitly in loadCalib().
+const TYPE_RENDERERS = {
+  [SensorType.TYPE_RELAY]: cardRenderers.REL,
+  [SensorType.TYPE_DIMMER]: cardRenderers.DIMM,
+  [SensorType.SENSOR_TEMP]: cardRenderers.TEMP,
+  [SensorType.SENSOR_LUMI]: cardRenderers.LUMI,
+  [SensorType.SENSOR_PRESS]: cardRenderers.PRES,
+  [SensorType.SENSOR_RAIN]: cardRenderers.RAIN,
+  [SensorType.SENSOR_AIRQ]: cardRenderers.AIRQ,
+  [SensorType.SENSOR_LEVEL]: cardRenderers.LEVE,
+  [SensorType.SENSOR_GENERIC]: cardRenderers.GENERIC,
+  [SensorType.SENSOR_CONTACT]: cardRenderers.CONTACT,
+  [SensorType.SENSOR_TIME]: cardRenderers.TIME,
+  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI
+};
+
 async function loadCalib() {
   try {
     const data = await getCalib(true);
     let html = "<div class='settings-grid'>";
     data.forEach((s, i) => {
-      const render =
-        s.type === SensorType.TYPE_RELAY ? cardRenderers.REL :
-        s.type === SensorType.TYPE_DIMMER ? cardRenderers.DIMM :
-        s.type === SensorType.SENSOR_TEMP ? cardRenderers.TEMP :
-        s.type === SensorType.SENSOR_LUMI ? cardRenderers.LUMI :
-        s.type === SensorType.SENSOR_PRESS ? cardRenderers.PRES :
-        s.type === SensorType.SENSOR_RAIN ? cardRenderers.RAIN :
-        s.type === SensorType.SENSOR_AIRQ ? cardRenderers.AIRQ :
-        s.type === SensorType.SENSOR_LEVEL ? cardRenderers.LEVE :
-        s.type === SensorType.SENSOR_GENERIC ? cardRenderers.GENERIC :
-        s.type === SensorType.SENSOR_CONTACT ? cardRenderers.CONTACT :
-        s.type === SensorType.SENSOR_TIME ? cardRenderers.TIME :
-        s.type === SensorType.SENSOR_HUMI ? cardRenderers.HUMI :
-        cardRenderers[s.name] ?? cardRenderers.DEFAULT;
+      // Settings shows ONLY local configurable sensors/actuators. Remote
+      // sensors (active or not) must never generate Settings cards.
+      if (s.local !== true) return;
+      // Unknown/invalid types are skipped with a warning, never rendered as
+      // GENERAL SETTINGS.
+      const render = sensorCardRenderer(s);
+      if (!render) return;
       html += render(s, i);
     });
+    // Exactly ONE General Settings card, appended explicitly.
     html += `
       <div class="settings-general">
         ${cardRenderers.DEFAULT(

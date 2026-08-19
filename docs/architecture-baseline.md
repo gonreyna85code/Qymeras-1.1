@@ -136,6 +136,13 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - **Status panels**: Connection, OTA, Memory, Last reset
 - **Log viewer**: 3 layers (CORE, EVENTS, SENSORS)
 - **Calibration editor**: Per-sensor min/max/offset
+- **Devices tab**: renders local devices + active (recent) remote devices only.
+  Stale remotes, `SENSOR_NONE`, and invalid types are filtered by
+  `isDeviceVisible()` before rendering; one card per active entry.
+- **Settings tab**: renders ONLY local configurable sensors/actuators
+  (`s.local === true`). Renderers are resolved by sensor type via
+  `TYPE_RENDERERS`; unknown types are skipped with a `console.warn` — GENERAL
+  SETTINGS is never used as a fallback and is rendered exactly once, explicitly.
 
 ## UDP Transport
 
@@ -153,6 +160,43 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 ### Known Issues
 - Port < 1024 or > 65500: reset to default
 - Interval < 5000ms or > 600000ms: reset to default
+
+### Wire Protocol (v4) - Packet Kind Dispatch
+- Legacy protocols v1/v2/v3 use the 8-byte `PacketHeader` (magic, version, size,
+  uid) with an always-sensor payload.
+- **v4** adds an explicit `kind` byte (`PacketHeaderV4`, 9 bytes) after the base
+  header so the receiver can dispatch the payload before parsing it:
+  - `PACKET_SENSOR = 1` → one or more `Packet` structs (47 bytes each).
+  - `PACKET_LOG = 2` → one `LogPacket` (66 bytes: layer, level, message[64]).
+- `parseBuffer()` rejects unknown kinds and requires the sensor payload size to
+  be an exact multiple of the packet length. This guarantees a `LogPacket` is
+  NEVER parsed as a sensor `Packet` (they share the broadcast transport).
+- Root-cause fix: previously the same 8-byte `PacketHeader` was used for sensor
+  reports, commands AND logs, so `LogPacket` payloads were interpreted as
+  `Packet` payloads and generated phantom remote sensors with garbage
+  type/name bytes (e.g. types 108/109/115/119) and phantom UI cards.
+- Logs received over the mesh are ingested into the local log buffer via
+  `logger::logRemote()` (no re-broadcast, preventing a broadcast ping-pong).
+- Compatibility: v1/v2 sensor packets and v3 sensor packets are still accepted
+  (no kind byte → sensor payload). Legacy v3 log packets fail the exact-size
+  validation and are dropped instead of being fragmented into fake sensors.
+- Wire-format sizes are enforced by `static_assert` in `mesh.cpp`.
+
+## Remote Sensor Lifecycle
+
+- Remote sensors discovered over the mesh live in `sensors::calibrations[]`
+  with `local = false`, `device_uid`, `uid` and `last_update`.
+- A remote entry is **active** while `millis() - last_update <= MESH_TIMEOUT`
+  (30000 ms); afterwards it is **stale**.
+- Stale remotes are excluded from `/calib` (and therefore from Devices/Settings
+  UIs) even while their slot still exists internally.
+- Slots are reclaimed only when the entry is stale AND no automation rule
+  references the index (`automations::isIndexReferenced()`). Rules address
+  sensors/actuators by calibration index, so referenced slots are kept (hidden)
+  until the rule is deleted; local sensor indexes never change and nothing is
+  shifted.
+- `/calib` only exposes entries with `uid != 0`, a valid `SensorType` (1..14)
+  and, for remote entries, a non-stale `last_update`.
 
 ## ESP-NOW Transport
 

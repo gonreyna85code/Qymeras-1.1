@@ -47,6 +47,13 @@
 - [x] UID-based calibration persistence (magic+version validation) ✅
 - [x] Single controlled OTA init path (ArduinoOTA moved out of storage) ✅
 - [x] OTA flag normalization (0xFF → disabled) + runtime caching ✅
+- [x] Packet protocol v4: explicit PacketKind byte (PACKET_SENSOR / PACKET_LOG) ✅
+- [x] UDP log packets no longer parsed as remote sensor packets (phantom devices root cause) ✅
+- [x] Remote sensor lifecycle: stale remotes hidden from /calib + unreferenced slots reclaimed ✅
+- [x] Remote logs ingested without re-broadcast (no broadcast ping-pong) ✅
+- [x] /calib validation (uid!=0, valid SensorType, stale remotes excluded) ✅
+- [x] Settings UI local-only + type-based renderer (no DEFAULT fallback, one General card) ✅
+- [x] Devices UI active filter (local + recent remote only) ✅
 - [ ] Full production readiness audit pending
 
 ## Phase 2: Production Stabilization (Planned)
@@ -63,6 +70,8 @@
 - [x] Random fade corruption fix (zero-fill missing EEPROM/Preferences keys) ✅
 - [x] Relay persistence fix (UID-matched, no boot GPIO glitch) ✅
 - [x] OTA "sending invitation" lifecycle fix (single init, runtime flag, callbacks) ✅
+- [x] UDP protocol dispatch fix (LogPacket never reaches sensor_callback) ✅
+- [x] Remote sensor staleness lifecycle (MESH_TIMEOUT + safe slot reclamation) ✅
 - [ ] Memory leak testing under load (documented risks identified, compile verified but not tested under load)
 
 ### Module Stabilization (P1)

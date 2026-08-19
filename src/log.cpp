@@ -79,6 +79,18 @@ Level getMinLevel() {
 
 // ================= OUTPUT =================
 
+static void store_to_buffer(Layer layer, Level level, const char *msg) {
+  if (layer <= EVENTS) {
+    LogEntry &entry = buffers[layer][buffer_head[layer]];
+    entry.level = level;
+    entry.timestamp = millis();
+    strncpy(entry.message, msg, MAX_LOG_MSG - 1);
+    entry.message[MAX_LOG_MSG - 1] = '\0';
+    buffer_head[layer] = (buffer_head[layer] + 1) % LOG_BUFFER_SIZE;
+    if (buffer_count[layer] < LOG_BUFFER_SIZE) buffer_count[layer]++;
+  }
+}
+
 static void output(Layer layer, Level level, const char *msg) {
   // Filter
   if (level < min_level) return;
@@ -90,18 +102,24 @@ static void output(Layer layer, Level level, const char *msg) {
   }
 
   // --- GUI buffer (per-layer) ---
-  if (layer <= EVENTS) {
-    LogEntry &entry = buffers[layer][buffer_head[layer]];
-    entry.level = level;
-    entry.timestamp = millis();
-    strncpy(entry.message, msg, MAX_LOG_MSG - 1);
-    entry.message[MAX_LOG_MSG - 1] = '\0';
-    buffer_head[layer] = (buffer_head[layer] + 1) % LOG_BUFFER_SIZE;
-    if (buffer_count[layer] < LOG_BUFFER_SIZE) buffer_count[layer]++;
-  }
+  store_to_buffer(layer, level, msg);
 
   // --- UDP broadcast ---
   mesh::sendLog(layer, level, msg);
+}
+
+void logRemote(Layer layer, Level level, const char *msg) {
+  // Remote mesh logs: same filters/output as local logs, but WITHOUT the UDP
+  // broadcast (mesh::sendLog). Re-broadcasting received logs would create an
+  // unbounded broadcast ping-pong between devices.
+  if (level < min_level) return;
+  if (!layer_enabled[layer]) return;
+
+  if (serial_enabled) {
+    Serial.printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
+  }
+
+  store_to_buffer(layer, level, msg);
 }
 
 // ================= LOG FUNCTIONS =================

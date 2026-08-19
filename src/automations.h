@@ -46,5 +46,9 @@ void init();
 void tick(uint32_t now_ms);
 void saveRulesToEEPROM();
 void deleteRule(uint8_t idx);
+// True when any rule references the given calibration index (as sensor or
+// actuator). Used by the remote-sensor lifecycle to avoid reclaiming a slot
+// that an automation still depends on.
+bool isIndexReferenced(uint8_t idx);
 
 }

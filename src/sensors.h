@@ -88,6 +88,12 @@ void checkPulses();
 extern int findCalib(const String &key);
 extern int findCalibByUid(uint32_t uid);
 extern int findCalibByIndex(uint8_t index);
+// Remote-sensor lifecycle: stale remotes are hidden from the active API/UI and
+// their unreferenced slots are reclaimed so MAX_SENSORS cannot be exhausted.
+bool isValidSensorType(uint8_t type);
+bool isStaleRemote(int index);
+bool isEntryVisible(int index);
+void reclaimStaleSlots();
 void setRelay(const String &key, bool target);
 void handleDimmer(uint32_t uid, int value);
 void handleToggle(uint32_t uid);

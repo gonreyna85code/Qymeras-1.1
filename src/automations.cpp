@@ -205,6 +205,21 @@ void deleteRule(uint8_t idx) {
   saveRulesToEEPROM();
 }
 
+bool isIndexReferenced(uint8_t idx) {
+  if (idx >= MAX_SENSORS) return false;
+  for (int i = 0; i < MAX_RULES; i++) {
+    const Rule &r = rules[i];
+    if (r.sensor_count == 0 && r.actuator_count == 0) continue;
+    for (int j = 0; j < r.sensor_count; j++) {
+      if (r.sensor_idxs[j] == idx) return true;
+    }
+    for (int j = 0; j < r.actuator_count; j++) {
+      if (r.actuator_idxs[j] == idx) return true;
+    }
+  }
+  return false;
+}
+
 // ----------------- INIT -----------------
 void init() {
   loadRulesFromEEPROM();

@@ -280,6 +280,7 @@ void loop() {
   /// 4) Tareas periódicas: clock NTP, mesh tick, automatización.
   sensors::updateNTPTime();
   mesh::tick(millis());
+  sensors::reclaimStaleSlots();
   automations::tick(millis());
   sensors::applyFades();
   sensors::checkPulses();

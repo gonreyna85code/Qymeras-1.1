@@ -705,7 +705,10 @@ ICACHE_FLASH_ATTR void handleCalib() {
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
     auto &r = mesh::reports[i];
-    if (c.uid == 0) continue;
+    // Expose only active, well-formed entries: valid uid, valid type, and
+    // remote entries that are still within MESH_TIMEOUT. Stale remote sensors,
+    // SENSOR_NONE and invalid/garbage types are never reported as devices.
+    if (!sensors::isEntryVisible(i)) continue;
     if (!firstObj) json += ',';
     firstObj = false;
 
@@ -743,6 +746,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += ",\"type\":";            json += c.type;
     json += ",\"pin\":";             json += c.pin;
     json += ",\"local\":";           json += (c.local ? "true" : "false");
+    json += ",\"last_update\":";     json += c.local ? 0 : c.last_update;
 
     json += ",\"ip\":\"";
     if (c.local) {

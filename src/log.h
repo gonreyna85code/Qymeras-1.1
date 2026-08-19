@@ -61,6 +61,11 @@ void error(const String &msg);
 void warnf(const char *fmt, ...);
 void errorf(const char *fmt, ...);
 
+// ================= REMOTE MESH LOGS =================
+// Ingest a log received over the mesh into the serial/GUI buffers WITHOUT
+// re-broadcasting it (prevents a broadcast ping-pong loop between devices).
+void logRemote(Layer layer, Level level, const char *msg);
+
 // ================= GUI ACCESS =================
 String getRecentLogsJson();
 void clearBuffer();
