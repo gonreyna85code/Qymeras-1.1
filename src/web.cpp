@@ -458,6 +458,9 @@ void handleSetRule() {
   }
   Rule &r = rules[id];
   memset(&r, 0, sizeof(Rule));
+  // ================= LOGICAL OPERATOR =================
+  // UI sends 'logic' (1 = AND, 0 = OR). Defaults to OR when absent.
+  r.logical_and = server.hasArg("logic") && server.arg("logic") == "1";
   // ================= TYPE =================
   if (!server.hasArg("type")) {
     server.send(400, "text/plain", "type required");
