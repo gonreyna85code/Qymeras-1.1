@@ -43,7 +43,12 @@ typedef void (*SensorDiscoveryCallback)(
   float sensor_min,
   float sensor_max,
   float sensor_correction,
-  uint8_t sensor_avail);
+  uint8_t sensor_avail,
+  uint32_t sensor_fade,
+  bool sensor_persist,
+  bool sensor_pers_state,
+  bool sensor_pulse,
+  uint32_t sensor_pulse_ms);
 
 typedef void (*CommandCallback)(
   uint8_t command_type,
@@ -71,7 +76,7 @@ extern WiFiUDP udp;
 
 #pragma pack(push, 1)
 
-static const uint8_t PACKET_VERSION = 4;
+static const uint8_t PACKET_VERSION = 5;
 static const uint8_t SENSOR_NAME_LEN = 24;
 
 /* Explicit payload kind. Required so LogPacket payloads are never parsed as
@@ -113,6 +118,23 @@ struct PacketV2 {
   char name[SENSOR_NAME_LEN];
 };
 
+/* Protocol v4 sensor packet (47 bytes): no persistence/config fields. Kept so
+   mixed fleets (v4 peers still announcing) are parsed instead of dropped. */
+struct PacketV4 {
+  uint32_t id;
+  uint8_t type;
+  uint32_t value;
+  uint8_t state;
+  char name[SENSOR_NAME_LEN];
+  float min;
+  float max;
+  float correction;
+  uint8_t avail;
+};
+
+/* Current sensor packet (protocol v5, 58 bytes): adds fade, persist,
+   pers_state, pulse and pulse_ms so remote entities mirror the owner's
+   persistence/actuator config in the UI. */
 struct Packet {
   uint32_t id;
   uint8_t type;
@@ -123,6 +145,11 @@ struct Packet {
   float max;
   float correction;
   uint8_t avail;
+  uint32_t fade;
+  uint8_t persist;
+  uint8_t pers_state;
+  uint8_t pulse;
+  uint32_t pulse_ms;
 };
 
 #pragma pack(pop)
@@ -190,8 +217,8 @@ bool isDeviceOnline(uint32_t uid);
 
 // Discovery UDP batching: one datagram carries multiple local entities instead
 // of one datagram per sensor. The limit keeps a batch below the Ethernet MTU to
-// avoid IP fragmentation: sizeof(PacketHeaderV4)=9 and sizeof(Packet)=47, so
-// up to floor((1400-9)/47)=29 sensors fit per datagram.
+// avoid IP fragmentation: sizeof(PacketHeaderV4)=9 and sizeof(Packet)=58, so
+// up to floor((1400-9)/58)=23 sensors fit per datagram.
 #define DISCOVERY_MAX_UDP_PACKET 1400
 
 // UDP RX drain cap per socket per tick: a broadcast storm must never starve

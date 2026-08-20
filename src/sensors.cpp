@@ -630,7 +630,12 @@ void onRemoteSensorDiscovered(
   float sensor_min,
   float sensor_max,
   float sensor_correction,
-  uint8_t sensor_avail) {
+  uint8_t sensor_avail,
+  uint32_t sensor_fade,
+  bool sensor_persist,
+  bool sensor_pers_state,
+  bool sensor_pulse,
+  uint32_t sensor_pulse_ms) {
   if (sensor_type == SENSOR_TIME) {
     int idx = findCalib("TIME");
     if (idx < 0) return;
@@ -681,6 +686,13 @@ void onRemoteSensorDiscovered(
   if (is_new) c.avail = 0;
   c.state = sensor_state;
   c.last_update = millis();
+  // Mirror the owner's persistence/actuator config so the local GUI shows the
+  // real remote values (fade, persist, pers_state, pulse, pulse_ms).
+  c.fade = sensor_fade;
+  c.persist = sensor_persist;
+  c.pers_state = sensor_pers_state;
+  c.pulse = sensor_pulse;
+  c.pulse_ms = sensor_pulse_ms;
   if (c.type == SENSOR_LUMI) {
     c.value = (uint32_t)sensor_value;
   } else {

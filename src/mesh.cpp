@@ -12,7 +12,8 @@ static_assert(sizeof(PacketHeader) == 8, "PacketHeader must be 8 bytes");
 static_assert(sizeof(PacketHeaderV4) == 9, "PacketHeaderV4 must be 9 bytes");
 static_assert(sizeof(PacketV1) == 10, "PacketV1 must be 10 bytes");
 static_assert(sizeof(PacketV2) == 34, "PacketV2 must be 34 bytes");
-static_assert(sizeof(Packet) == 47, "Packet must be 47 bytes");
+static_assert(sizeof(PacketV4) == 47, "PacketV4 must be 47 bytes");
+static_assert(sizeof(Packet) == 58, "Packet must be 58 bytes");
 static_assert(sizeof(LogPacket) == 66, "LogPacket must be 66 bytes");
 
 WiFiUDP udp;
@@ -75,11 +76,11 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
   uint32_t local_uid = GET_CHIP_ID();
   bool is_remote = (hdr.uid != local_uid);
 
-  // Protocol v4 carries an explicit packet kind byte. Legacy v1/v2/v3 have no
+  // Protocol v4/v5 carry an explicit packet kind byte. Legacy v1/v2/v3 have no
   // kind byte and are always sensor packets.
   int header_size = sizeof(PacketHeader);
   PacketKind kind = PACKET_SENSOR;
-  if (hdr.version == PACKET_VERSION) {
+  if (hdr.version == 4 || hdr.version == PACKET_VERSION) {
     if (len < header_size + 1) return;
     kind = (PacketKind)buf[header_size];
     header_size += 1;
@@ -106,9 +107,10 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
     return;
   }
 
-  // ---- Sensor payload (v4 PACKET_SENSOR, or legacy v1/v2/v3) ----
+  // ---- Sensor payload (v4/v5 PACKET_SENSOR, or legacy v1/v2/v3) ----
   int packet_len = (hdr.version == 1) ? sizeof(PacketV1) :
                    (hdr.version == 2) ? sizeof(PacketV2) :
+                   (hdr.version <= 4) ? sizeof(PacketV4) :
                                         sizeof(Packet);
   // Exact-multiple validation: a payload whose size is not a whole number of
   // sensor packets is rejected. Legacy v3 log packets (66-byte payloads) fail
@@ -139,6 +141,22 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
       memcpy(pkt.name, pkt_v2.name, sizeof(pkt.name));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
       pkt.min = 0; pkt.max = 100; pkt.correction = 0; pkt.avail = 0;
+    } else if (hdr.version == 3 || hdr.version == 4) {
+      // Legacy 47-byte v3/v4 packet: copy into the 58-byte v5 layout. The extra
+      // config fields (fade/persist/pers_state/pulse/pulse_ms) stay 0 because
+      // the legacy peer did not transmit them.
+      PacketV4 pkt_v4;
+      memcpy(&pkt_v4, ptr, sizeof(pkt_v4));
+      pkt.id        = pkt_v4.id;
+      pkt.type      = pkt_v4.type;
+      pkt.value     = pkt_v4.value;
+      pkt.state     = pkt_v4.state;
+      memcpy(pkt.name, pkt_v4.name, sizeof(pkt.name));
+      pkt.name[sizeof(pkt.name) - 1] = '\0';
+      pkt.min       = pkt_v4.min;
+      pkt.max       = pkt_v4.max;
+      pkt.correction = pkt_v4.correction;
+      pkt.avail     = pkt_v4.avail;
     } else {
       memcpy(&pkt, ptr, sizeof(pkt));
       pkt.name[sizeof(pkt.name) - 1] = '\0';
@@ -154,7 +172,8 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
           pkt.id, String(pkt.name),
           pkt.type, pkt.state,
           pkt.value, pkt.min, pkt.max,
-          pkt.correction, pkt.avail);
+          pkt.correction, pkt.avail,
+          pkt.fade, pkt.persist, pkt.pers_state, pkt.pulse, pkt.pulse_ms);
       }
       int idx = -1;
       for (int i = 0; i < remote_device_count; i++) {
@@ -299,6 +318,11 @@ static void fillPacket(const sensors::Calibration &c, Packet &pkt) {
   pkt.max = c.max;
   pkt.correction = c.correction;
   pkt.avail = c.avail;
+  pkt.fade = c.fade;
+  pkt.persist = c.persist ? 1 : 0;
+  pkt.pers_state = c.pers_state ? 1 : 0;
+  pkt.pulse = c.pulse ? 1 : 0;
+  pkt.pulse_ms = c.pulse_ms;
   strncpy(pkt.name, c.name.c_str(), sizeof(pkt.name) - 1);
   if (c.type == sensors::SENSOR_LUMI || c.type == sensors::SENSOR_TIME) {
     pkt.value = (uint32_t)c.value;

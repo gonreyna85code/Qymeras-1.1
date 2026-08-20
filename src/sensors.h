@@ -145,7 +145,12 @@ void onRemoteSensorDiscovered(
   float sensor_min,
   float sensor_max,
   float sensor_correction,
-  uint8_t sensor_avail);
+  uint8_t sensor_avail,
+  uint32_t sensor_fade,
+  bool sensor_persist,
+  bool sensor_pers_state,
+  bool sensor_pulse,
+  uint32_t sensor_pulse_ms);
 
 void onRemoteCommand(
   uint8_t command_type,
