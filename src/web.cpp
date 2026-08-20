@@ -22,22 +22,30 @@ static bool auth_enabled = false;
 static const char* EXPECTED_AUTH_BASE64 = "YWRtaW46cXltZXJhMTIz";
 
 
-// Rate limiting - max requests per minute per endpoint
+// Rate limiting - sliding window with a small burst allowance.
+// A single UI action (e.g. enabling persistence) issues several back-to-back
+// POSTs; a hard 1-per-2s rule made those fail with 429. The burst allowance
+// keeps UI flows working while still throttling sustained floods.
 static unsigned long last_request_time = 0;
-static const unsigned long REQUEST_COOLDOWN_MS = 2000; // 2 seconds between requests
+static unsigned char burst_count = 0;
+static const unsigned long REQUEST_COOLDOWN_MS = 2000; // window
+static const unsigned char RATE_LIMIT_BURST = 6;       // requests per window
 
 // Check rate limit for protected endpoints
-// Global cooldown: 2s between requests to state-changing endpoints
-// UI endpoints are not rate-limited and operate freely
+// UI flows issue small bursts; sustained floods are throttled.
 static bool checkRateLimit() {
   unsigned long now = millis();
-  if (now - last_request_time < REQUEST_COOLDOWN_MS) {
-    return false;
+  if (now - last_request_time > REQUEST_COOLDOWN_MS) {
+    // New window: reset the burst counter.
+    last_request_time = now;
+    burst_count = 0;
+    return true;
   }
-  // Update global timer only when rate limiting is in effect
-  // (prevents UI requests from affecting the cooldown for control endpoints)
-  last_request_time = now;
-  return true;
+  if (burst_count < RATE_LIMIT_BURST) {
+    burst_count++;
+    return true;
+  }
+  return false;
 }
 
 static bool parseStrictUnsigned(const String &s, unsigned long &out) {
@@ -133,6 +141,7 @@ ICACHE_FLASH_ATTR void handleRoot() {
 }
 
 ICACHE_FLASH_ATTR void handleSave() {
+  addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
     return;
@@ -182,6 +191,7 @@ ICACHE_FLASH_ATTR void saveCredentials(const String &s, const String &p) {
 }
 
 ICACHE_FLASH_ATTR void handleGenSetSave() {
+  addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
     return;
@@ -210,6 +220,7 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
 }
 
 ICACHE_FLASH_ATTR void handleFactoryReset() {
+  addCorsHeaders();
   logger::warn("Factory reset requested");
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
@@ -417,6 +428,7 @@ ICACHE_FLASH_ATTR void handleRules() {
 
 void handleSetRule() {
   using namespace automations;
+  addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
     return;
@@ -768,6 +780,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
 }
 
 ICACHE_FLASH_ATTR void handleCalibSet() {
+  addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
     return;
@@ -776,7 +789,6 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
     return;
   }
-  addCorsHeaders();
   if (server.method() != HTTP_POST) {
     server.send(405, "text/plain", "POST required");
     return;
