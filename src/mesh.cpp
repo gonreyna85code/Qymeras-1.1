@@ -115,6 +115,7 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
   // this check and are dropped instead of being fragmented into fake sensors.
   if (remaining % packet_len != 0) return;
   const uint8_t *ptr = buf + header_size;
+  int parsed_packets = 0;
 
   while (remaining >= packet_len) {
     Packet pkt;
@@ -144,6 +145,7 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
     }
     ptr += packet_len;
     remaining -= packet_len;
+    parsed_packets++;
 
     if (is_remote) {
       if (sensor_callback) {
@@ -187,15 +189,22 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
 // ================= UDP PARSER =================
 
 static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
-  int packet_size = socket.parsePacket();
-  if (packet_size < (int)sizeof(PacketHeader)) return;
-  uint8_t buf[512];
-  int len = socket.read(buf, sizeof(buf));
-  if (len <= 0) return;
-  char remote_ip[16];
-  IPAddress rip = socket.remoteIP();
-  snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
-  parseBuffer(buf, len, remote_ip, now_ms);
+  // RX buffer must hold the largest configured discovery batch.
+  static uint8_t buf[DISCOVERY_MAX_UDP_PACKET];
+  int processed = 0;
+  int packet_size;
+  // Drain up to MAX_RX_PACKETS_PER_TICK datagrams per socket per tick. A UDP
+  // storm must not monopolize loop(); leftovers are handled on the next tick().
+  while (processed < MAX_RX_PACKETS_PER_TICK && (packet_size = socket.parsePacket()) > 0) {
+    int len = socket.read(buf, sizeof(buf));
+    if (len > 0) {
+      char remote_ip[16];
+      IPAddress rip = socket.remoteIP();
+      snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
+      parseBuffer(buf, len, remote_ip, now_ms);
+    }
+    processed++;
+  }
 }
 
 // ================= TICK =================
@@ -281,51 +290,81 @@ void sendCommand(uint32_t remote_uid, const char *remote_ip, uint32_t sensor_id,
   }
 }
 
-void sendBinaryReport() {
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    auto &c = sensors::calibrations[i];
-    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
-    // TEMP-DEBUG discovery TX: sender ip, owner device_uid, sensor uid,
-    // local flag, packet type, name. Only local entities are ever announced.
-    logger::coref("[DISC TX] sender_ip=%s owner=%08X sensor=%08X local=1 type=%d name=%s",
-      WiFi.localIP().toString().c_str(), GET_CHIP_ID(), c.uid, (int)c.type, c.name.c_str());
-    PacketHeaderV4 hdr;
-    hdr.magic = 0xA5;
-    hdr.version = PACKET_VERSION;
-    hdr.uid = GET_CHIP_ID();
-    hdr.kind = PACKET_SENSOR;
-    hdr.size = sizeof(PacketHeaderV4) + sizeof(Packet);
-    Packet pkt;
-    memset(&pkt, 0, sizeof(pkt));
-    pkt.id = c.uid;
-    pkt.type = c.type;
-    pkt.state = c.state ? 1 : 0;
-    pkt.min = c.min;
-    pkt.max = c.max;
-    pkt.correction = c.correction;
-    pkt.avail = c.avail;
-    strncpy(pkt.name, c.name.c_str(), sizeof(pkt.name) - 1);
-    if (c.type == sensors::SENSOR_LUMI) {
-      pkt.value = (uint32_t)c.value;
-    } else if (c.type == sensors::SENSOR_TIME) {
-      pkt.value = (uint32_t)c.value;
-    } else {
-      pkt.value = encodeFloat(c.value);
-    }
-    uint8_t buf[sizeof(PacketHeaderV4) + sizeof(Packet)];
-    memcpy(buf, &hdr, sizeof(hdr));
-    memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
-
-  if (transport == TRANSPORT_UDP) {
-    if (udpTxReady()) {
-      udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
-      udp.write(buf, sizeof(buf));
-      udp.endPacket();
-    }
-  } else if (espnow_is_enabled()) {
-    espnow_send_broadcast(buf, sizeof(buf));
+static void fillPacket(const sensors::Calibration &c, Packet &pkt) {
+  memset(&pkt, 0, sizeof(pkt));
+  pkt.id = c.uid;
+  pkt.type = c.type;
+  pkt.state = c.state ? 1 : 0;
+  pkt.min = c.min;
+  pkt.max = c.max;
+  pkt.correction = c.correction;
+  pkt.avail = c.avail;
+  strncpy(pkt.name, c.name.c_str(), sizeof(pkt.name) - 1);
+  if (c.type == sensors::SENSOR_LUMI || c.type == sensors::SENSOR_TIME) {
+    pkt.value = (uint32_t)c.value;
+  } else {
+    pkt.value = encodeFloat(c.value);
   }
 }
+
+// Send one UDP discovery batch: a v4 header followed by sensor_count Packets.
+// The receiver already parses N packets per datagram (remaining % packet_len).
+static void sendUdpBatch(uint8_t *buf, int sensor_count) {
+  if (sensor_count <= 0) return;
+  PacketHeaderV4 hdr;
+  hdr.magic = 0xA5;
+  hdr.version = PACKET_VERSION;
+  hdr.uid = GET_CHIP_ID();
+  hdr.kind = PACKET_SENSOR;
+  hdr.size = sizeof(PacketHeaderV4) + sensor_count * sizeof(Packet);
+  memcpy(buf, &hdr, sizeof(hdr));
+  if (udpTxReady()) {
+    udp.beginPacket("255.255.255.255", core::genset.broadcast_port);
+    udp.write(buf, hdr.size);
+    udp.endPacket();
+  }
+}
+
+void sendBinaryReport() {
+  if (transport == TRANSPORT_UDP) {
+    // Batching: group local entities into datagrams of up to
+    // DISCOVERY_MAX_UDP_PACKET bytes. Only local entities are announced.
+    static uint8_t batch[DISCOVERY_MAX_UDP_PACKET];
+    int sensor_count = 0;
+    const int header_size = sizeof(PacketHeaderV4);
+    for (int i = 0; i < MAX_SENSORS; i++) {
+      auto &c = sensors::calibrations[i];
+      if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
+      if (sensor_count > 0 &&
+          header_size + (sensor_count + 1) * sizeof(Packet) > DISCOVERY_MAX_UDP_PACKET) {
+        sendUdpBatch(batch, sensor_count);
+        sensor_count = 0;
+      }
+      Packet pkt;
+      fillPacket(c, pkt);
+      memcpy(batch + header_size + sensor_count * sizeof(Packet), &pkt, sizeof(pkt));
+      sensor_count++;
+    }
+    sendUdpBatch(batch, sensor_count);
+  } else if (espnow_is_enabled()) {
+    // ESP-NOW: one entity per broadcast (RX side uses a 250-byte buffer).
+    for (int i = 0; i < MAX_SENSORS; i++) {
+      auto &c = sensors::calibrations[i];
+      if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
+      PacketHeaderV4 hdr;
+      hdr.magic = 0xA5;
+      hdr.version = PACKET_VERSION;
+      hdr.uid = GET_CHIP_ID();
+      hdr.kind = PACKET_SENSOR;
+      hdr.size = sizeof(PacketHeaderV4) + sizeof(Packet);
+      Packet pkt;
+      fillPacket(c, pkt);
+      uint8_t buf[sizeof(PacketHeaderV4) + sizeof(Packet)];
+      memcpy(buf, &hdr, sizeof(hdr));
+      memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
+      espnow_send_broadcast(buf, sizeof(buf));
+    }
+  }
 }
 
 void sendLog(uint8_t layer, uint8_t level, const char *message) {

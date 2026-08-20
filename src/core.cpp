@@ -192,13 +192,13 @@ void begin() {
   // Correct boot order:
   // 1. init sensor subsystem
   // 2. register/discover local sensors and actuators (user initSatellite)
-  // 3. load persistent configuration (UID-matched to registered devices)
-  // 4. apply persisted relay states (writes GPIO exactly once, before any report)
-  // 5. automations rules
+  // 3. automations rules
+  // loadCalibration() + applyPersistedStates() are deferred to the first
+  // loop() iteration, right after the first report(): entities are only
+  // registered at that point, so persisted min/max/correction/persist/
+  // pers_state/fade/pulse can be matched by UID and restored.
   sensors::init();
   ::initSatellite();
-  storage::loadCalibration();
-  sensors::applyPersistedStates();
   automations::init();
 
   // Phase 2: Network startup
@@ -268,11 +268,14 @@ void loop() {
   /// Si no hay red, usar ESP-NOW; si hay red, usar UDP
   mesh::setTransport(wifi_connected ? mesh::TRANSPORT_UDP : mesh::TRANSPORT_ESPNOW);
 
-  /// 4) Primera iteración: reporte inicial.
-  //     Los estados persistentes ya fueron aplicados en begin() ANTES de
-  //     cualquier reporte, así que aquí solo se publica el primer estado.
+  /// 4) Primera iteración: reporte inicial + carga de configuración persistente.
+  //     Los estados persistentes se aplican justo después del primer reporte
+  //     (que registra las entidades) y ANTES de cualquier announce de mesh.
   if (first_report) {
     ::report();
+    sensors::ensureTimeRegistered();
+    storage::loadCalibration();
+    sensors::applyPersistedStates();
     first_report = false;
     last_report = millis();
   }

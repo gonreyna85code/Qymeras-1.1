@@ -85,6 +85,9 @@ void init();
 void applyPersistedStates();
 void applyFades();
 void checkPulses();
+// Registers the TIME entity deterministically (before loadCalibration()) so its
+// persisted correction/timezone can be restored. Safe to call before NTP sync.
+void ensureTimeRegistered();
 extern int findCalib(const String &key);
 extern int findCalibByUid(uint32_t uid);
 extern int findCalibByIndex(uint8_t index);

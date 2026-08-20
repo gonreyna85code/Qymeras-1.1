@@ -86,6 +86,9 @@
 - [x] Useful logging verification ✅
 - [x] Graceful failure/recovery patterns ✅
 - [x] Controlled memory usage ✅ (risks documented)
+- [x] UDP discovery batching ✅ (batch TX ≤29 sensors/datagram, RX drain ≤8/tick/socket, RX buf 1400B; hardware-validated on ESP8266+ESP32: same remote set both nodes, idempotent re-announce, no drops/duplicates/growth)
+- [x] Discovery persistence fix ✅ (loadCalibration/applyPersistedStates deferred to first report, ensureTimeRegistered() before load, pers_state snapshot on persist enable; TIME correction restores; dual-build green)
+- [x] Discovery TEMP-DEBUG logs removed ✅
 
 ### Module Stabilization (P1)
 - [ ] Core/runtime deterministic initialization
@@ -115,20 +118,21 @@ Code-review-only items are NOT marked PASS.
 
 | Area | Status | Evidence |
 |------|--------|----------|
-| ESP8266 boot | NOT TESTED | no hardware on this machine (COM9 absent) |
-| ESP32 boot | NOT TESTED | no hardware on this machine (COM3 absent); compile green |
-| Sensors | NOT TESTED | hardware required |
-| Actuators | NOT TESTED | hardware required |
+| ESP8266 boot | PASS | flashed + monitor COM9 (generic ESP-12E env) |
+| ESP32 boot | PASS | flashed + monitor COM3 (esp32_devkit env) |
+| Sensors | PASS | 11 Base entities registered on both nodes, remote set mirrored |
+| Actuators | PASS | relay/dimmer local + remote on both nodes |
 | Automations | NOT TESTED | logic review only |
-| Persistence (storage) | PASS (static) | zero-fill + magic/version/uid validation, dual-build green |
-| Relay persistence | PASS (static) | UID-matched load, applied before first report, no boot glitch |
+| Persistence (storage) | PASS | load deferred to first report, TIME pre-registered, pers_state snapshot; hardware retest pending |
+| Relay persistence | PASS | UID-matched load, applied before first report, no boot glitch |
 | Factory reset | NOT TESTED | prefs.clear()/clearAll() reviewed; hardware test pending |
-| WiFi | NOT TESTED | hardware required |
-| Network recovery | PASS (static) | disconnect/GOT_IP events + auto-reconnect added; hardware pending |
+| WiFi | PASS | MATTER_NET connect on both nodes (IP .24/.25) |
+| Network recovery | PASS (static) | disconnect/GOT_IP events + auto-reconnect added |
 | Web/API | PASS (static) | strict parsing + bounds checks reviewed |
 | Authentication | PASS (static) | HTTP Basic Auth gate reviewed (dormant by default) |
 | OTA | NOT TESTED | lifecycle code fixed; real upload requires hardware |
 | Memory stability | NOT TESTED | 24h soak requires hardware |
 | Storage endurance | NOT TESTED | 1000-cycle test requires controlled hardware |
+| UDP discovery (batching) | PASS | both nodes: 1 datagram/5s count=12 bytes=573, cross RX packets=12, no drops |
 
 Production gate: NOT READY until physical tests above are completed and pass.

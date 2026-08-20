@@ -117,7 +117,7 @@
 
 ## Platform Dependencies
 
-### ESP8266 (d1_mini / NodeMCU)
+### ESP8266 (generic ESP-12E / NodeMCU)
 - Core: `Arduino ESP8266 core`
 - WiFi: `WiFiUdp` for UDP
 - OTA: `ESP8266HTTPClient`, `ESP8266HTTPUpdateServer`
@@ -181,7 +181,7 @@
 
 ### PlatformIO Commands
 ```bash
-pio run -e esp8266_d1_mini    # Compile ESP8266
+pio run -e esp8266_generic   # Compile ESP8266
 pio run -e esp32_devkit      # Compile ESP32
 pio run                      # Compile all platforms
 pio test                     # Run unit tests (if available)

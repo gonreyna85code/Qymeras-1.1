@@ -17,9 +17,13 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
    - **Phase 1b (device registration, correct order):**
      1. `sensors::init()` — zero sensor/calibration tables
      2. `initSatellite()` (user) — register/discover local sensors and actuators
-     3. `storage::loadCalibration()` — load persistent config, **UID-matched** to already-registered devices (magic+version validated; missing/corrupt slots → defaults)
-     4. `sensors::applyPersistedStates()` — write GPIO exactly once before any report (persistent relays restore state, non-persistent → OFF)
-     5. `automations::init()` — rules
+     3. `automations::init()` — rules (index-based, resolved at eval time)
+     - **Config load deferred to first `report()`** (in `loop()`): entities are only
+       registered when the sketch calls `sensors::xxx()` inside `report()`, so
+       `loadCalibration()`/`applyPersistedStates()` run right after the first
+       `report()` instead of in `begin()`. `sensors::ensureTimeRegistered()` binds
+       the TIME entity before `loadCalibration()` so its persisted
+       correction/timezone restores. See *Persistence Fixes* below.
    - **Phase 2 (network startup):** `startWiFi()` (calls `esp_netif_init()` on ESP32 before WiFi ops, non-blocking STA connect or AP mode)
    - **Deferred services** (initialized once WiFi is operational, in `checkWiFiStatus()` for STA or `startAP()` for AP mode): web server, mesh/transport layer, OTA module — guarded by `web_initialized`/`mesh_initialized`/`ota_initialized` flags; ArduinoOTA only starts when `ota_enabled` is true
 3. **`loop()`** (user sketch) → calls `Qymera::loop()`
@@ -28,7 +32,7 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
    - Tick automation rules
    - Handle web server requests (only when web initialized)
    - Manage OTA if enabled (runtime flag, `ArduinoOTA.handle()` every loop)
-   - First iteration: initial `report()` (persisted relay states already applied in `begin()`)
+   - First iteration: initial `report()` → `ensureTimeRegistered()` → `loadCalibration()` → `applyPersistedStates()` (persisted relay states applied before any mesh announce)
    - Report sensor states
 
 ### Runtime States
@@ -109,6 +113,25 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - `ota_enabled`: Stored at `EEPROM_OTA_FLAG_ADDR`, **normalized** (only `1` = enabled; `0xFF`/unprovisioned → disabled), loaded once into a runtime flag
 - survives reboot, cleared on factory reset
 - `transport_mode`: UDP (STA) or ESP-NOW (AP)
+
+### Persistence Fixes
+- **Root cause**: `loadCalibration()` ran in `begin()`, but entities are registered by
+  the sketch inside `report()` (first `loop()` iteration) — and TIME only after NTP
+  sync. So persisted `min/max/correction/persist/pers_state/fade/pulse` never
+  matched any registered UID and were silently dropped on reboot.
+- **Fix 1 (config load after registration)**: `loadCalibration()` +
+  `applyPersistedStates()` moved from `begin()` into the first-iteration block of
+  `loop()`, immediately after the first `report()` (which registers all local
+  entities) and before any mesh announce.
+- **Fix 2 (TIME pre-registration)**: `sensors::ensureTimeRegistered()` binds the
+  TIME entity before `loadCalibration()`, so its persisted correction/timezone is
+  restored even though NTP sync happens later.
+- **Fix 3 (pers_state snapshot)**: enabling persist via `/calib/set` snapshots the
+  live relay state into `pers_state` before saving, so a reboot right after enabling
+  persistence restores the current state.
+- Stability note: entity UIDs derive from registration index (`chip_id + idx + 1`);
+  a stable registration order (same sketch + TIME binding at the first free slot) is
+  required for persisted UIDs to keep matching across boots.
 
 ## Web/API
 
@@ -222,6 +245,28 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - Architectural rule enforced: LOCAL entity → may announce; REMOTE entity → may
   be visualized/configured/used, never re-announced as this node's own. A remote
   entity's uid must be stable and owned by its originating node.
+
+### UDP Discovery Batching (fixed)
+
+- Root cause of partial discovery (remote entities missing on ESP32): the sender
+  transmitted **one UDP datagram per local sensor** while the receiver processed
+  **one datagram per socket per tick**. Under bursts the queue overflowed on
+  ESP32; ESP8266 only survived thanks to stack buffering/timing differences.
+- Fix (`mesh.cpp`):
+  - `sendBinaryReport()` now batches up to
+    `floor((DISCOVERY_MAX_UDP_PACKET-9)/47) = 29` `Packet`s per UDP datagram
+    (`DISCOVERY_MAX_UDP_PACKET = 1400`, below the Ethernet MTU → no IP
+    fragmentation). `hdr.size = sizeof(PacketHeaderV4) + N*sizeof(Packet)` is
+    exact; the existing parser already accepts N packets per datagram
+    (`remaining % packet_len == 0`).
+  - ESP-NOW keeps one entity per broadcast (RX buffer is 250 bytes); the
+    `[DISC TX]`/`[DISC RX]` batch logs are TEMP-DEBUG only.
+  - `parseUDPPacket()` drains up to `MAX_RX_PACKETS_PER_TICK` (8) datagrams per
+    socket per tick (both `mesh_udp` and `udp`), bounded so a UDP storm cannot
+    starve `loop()`; the RX buffer was raised from 512 to 1400 bytes.
+  - All validations are preserved (magic, version, kind, `hdr.size == len`,
+    packet alignment, valid types). Discovery remains idempotent
+    (`device_uid + sensor_id`) and only local entities are announced.
 
 ## ESP-NOW Transport
 
@@ -353,7 +398,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 
 ## Platform Differences
 
-### ESP8266 (d1_mini)
+### ESP8266 (generic ESP-12E / NodeMCU)
 - `WiFiUdp` for UDP transport
 - `ESP8266HTTPClient` for OTA
 - `ESP8266HTTPUpdateServer` for web OTA

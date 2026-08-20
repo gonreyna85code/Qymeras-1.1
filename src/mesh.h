@@ -188,4 +188,14 @@ bool isDeviceOnline(uint32_t uid);
 
 #define MESH_TIMEOUT 30000
 
+// Discovery UDP batching: one datagram carries multiple local entities instead
+// of one datagram per sensor. The limit keeps a batch below the Ethernet MTU to
+// avoid IP fragmentation: sizeof(PacketHeaderV4)=9 and sizeof(Packet)=47, so
+// up to floor((1400-9)/47)=29 sensors fit per datagram.
+#define DISCOVERY_MAX_UDP_PACKET 1400
+
+// UDP RX drain cap per socket per tick: a broadcast storm must never starve
+// loop(). Datagrams beyond this cap are handled on the next tick().
+#define MAX_RX_PACKETS_PER_TICK 8
+
 }  // namespace mesh

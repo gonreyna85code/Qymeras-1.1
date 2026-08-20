@@ -828,6 +828,10 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     bool enable = server.arg("ref") == "1";
     c.persist = enable;
     c.pulse = false;
+    // Snapshot the live state at enable time so a reboot right after enabling
+    // persistence still restores the current relay state (the state is only
+    // re-saved on subsequent toggles while persist is on).
+    if (enable) c.pers_state = c.state;
   } else if (type == "avail") {
     c.avail = ref ? 1 : 0;
   } else if (type == "res") {

@@ -470,6 +470,15 @@ void dimmer(const String &key, uint8_t pin, bool inverted) {
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
+void ensureTimeRegistered() {
+  int idx = findCalib("TIME");
+  if (idx >= 0) return;
+  idx = findFreeCalib();
+  if (idx < 0) return;
+  bindLocalSensor(idx, "TIME", SENSOR_TIME);
+  calibrations[idx].state = true;
+}
+
 static void updateTimeSensor() {
   time_t now = time(nullptr);
   if (now < 1704067200) return;
@@ -610,17 +619,6 @@ void onRemoteCommand(
 // MESH CALLBACKS - Procesadas por sensors.cpp
 // ========================================
 
-// TEMP-DEBUG discovery census: free slots, local and remote entities. Used by
-// the ESP8266 vs ESP32 comparison to detect slot exhaustion on receive.
-static void debugDiscoveryCensus(int &free_slots, int &local_count, int &remote_count) {
-  free_slots = local_count = remote_count = 0;
-  for (int i = 0; i < MAX_SENSORS; i++) {
-    if (calibrations[i].uid == 0) free_slots++;
-    else if (calibrations[i].local) local_count++;
-    else remote_count++;
-  }
-}
-
 void onRemoteSensorDiscovered(
   uint32_t remote_uid,
   const char *remote_ip,
@@ -668,12 +666,8 @@ void onRemoteSensorDiscovered(
     }
   }
   if (idx < 0) {
-    // TEMP-DEBUG discovery drop: no free slot. Diagnostic for the ESP8266 vs
-    // ESP32 asymmetry (remote entities missing on the ESP32).
-    int free_slots, local_count, remote_count;
-    debugDiscoveryCensus(free_slots, local_count, remote_count);
-    logger::sensorsf("[DISC DROP] uid=%08X device_uid=%08X type=%d name=%s reason=NO_FREE_SLOT free=%d locals=%d remotes=%d MAX=%d",
-      sensor_id, remote_uid, sensor_type, sensor_name.c_str(), free_slots, local_count, remote_count, MAX_SENSORS);
+    // No free slot for a new remote entity; it is dropped. Slots are reclaimed
+    // by reclaimStaleSlots() once the owning device stops announcing it.
     return;
   }
   auto &c = calibrations[idx];
@@ -703,15 +697,6 @@ void onRemoteSensorDiscovered(
   if (is_new) {
     logger::sensorsf("New remote sensor '%s' (type:%d, uid:%u)", c.name.c_str(), sensor_type, sensor_id);
   }
-  // TEMP-DEBUG discovery RX: entity uid, owner device_uid, type, name, assigned
-  // calibration index, local flag, and live census (remotes, locals, free slots,
-  // MAX_SENSORS). A remote entity must keep local=0 and its owner fields
-  // untouched (never rebound by name).
-  int free_slots, local_count, remote_count;
-  debugDiscoveryCensus(free_slots, local_count, remote_count);
-  logger::sensorsf("[DISC RX] uid=%08X device_uid=%08X type=%d name=%s idx=%d local=%d remotes=%d locals=%d free=%d MAX=%d is_new=%d",
-    sensor_id, remote_uid, (int)sensor_type, c.name.c_str(), idx, (int)c.local,
-    remote_count, local_count, free_slots, MAX_SENSORS, is_new ? 1 : 0);
   mesh::setReport(idx, c.uid, c.value, c.value, c.state);
 }
 
