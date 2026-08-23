@@ -300,10 +300,112 @@ static bool applyResult(uint8_t slot, const char *content) {
   }
 
   if (p.out_type == OUT_CONTROL) {
-    // CONTROL is interface-only: store + log, never drives actuators directly.
-    r.valid = true;
-    logger::eventf("AI control [%s]: %s", p.name, r.raw);
-    return true;
+    // CONTROL tool-calling: parse JSON and actuate via sensors.
+    // Find JSON object in content (LLM may add surrounding text)
+    const char *jsonStart = strchr(content, '{');
+    const char *jsonEnd = strrchr(content, '}');
+    String payload;
+    if (jsonStart && jsonEnd && jsonEnd > jsonStart) {
+      payload = String(jsonStart).substring(0, jsonEnd - jsonStart + 1);
+    } else {
+      payload = String(content);
+    }
+    payload.trim();
+    String payloadLow = payload;
+    payloadLow.toLowerCase();
+    // Extract tool (case-insensitive, keep original for name)
+    const char *tool = extractJsonString(payload.c_str(), "tool");
+    if (!tool) tool = extractJsonString(payloadLow.c_str(), "tool");
+    if (!tool) {
+      // Fallback: detect tool by keyword in lowercased
+      if (payloadLow.indexOf("set_relay") >= 0) tool = "set_relay";
+      else if (payloadLow.indexOf("set_dimmer") >= 0) tool = "set_dimmer";
+    }
+    bool executed = false;
+    if (tool && String(tool).equalsIgnoreCase("set_relay")) {
+      const char *name = extractJsonString(payload.c_str(), "name");
+      if (!name) name = extractJsonString(payloadLow.c_str(), "name");
+      String relayName = name ? String(name) : "";
+      relayName.toUpperCase();
+      // state can be true/false boolean or "on"/"off" string - tolerant of spaces
+      bool hasTrue = false, hasFalse = false;
+      int statePos = payloadLow.indexOf("\"state\"");
+      if (statePos >= 0) {
+        String sub = payloadLow.substring(statePos, statePos + 30);
+        if (sub.indexOf("true") >= 0 || sub.indexOf("\"on\"") >= 0) hasTrue = true;
+        if (sub.indexOf("false") >= 0 || sub.indexOf("\"off\"") >= 0) hasFalse = true;
+      } else {
+        if (payloadLow.indexOf("true") >= 0) hasTrue = true;
+        if (payloadLow.indexOf("false") >= 0) hasFalse = true;
+      }
+      bool target;
+      if (hasTrue && !hasFalse) target = true;
+      else if (hasFalse && !hasTrue) target = false;
+      else {
+        // try to extract state string
+        const char *stateStr = extractJsonString(payload.c_str(), "state");
+        if (stateStr) {
+          String s = String(stateStr); s.toLowerCase();
+          if (s == "true" || s == "on" || s == "1") { target = true; hasTrue = true; }
+          else if (s == "false" || s == "off" || s == "0") { target = false; hasFalse = true; }
+        }
+        if (!hasTrue && !hasFalse) {
+          setError("control missing state");
+          r.valid = false;
+          return false;
+        }
+      }
+      if (relayName.length() == 0) relayName = "RELAY0"; // default
+      sensors::setRelay(relayName, target);
+      logger::eventf("AI control [%s] set_relay %s -> %s", p.name, relayName.c_str(), target ? "ON" : "OFF");
+      executed = true;
+    } else if (tool && String(tool).equalsIgnoreCase("set_dimmer")) {
+      const char *name = extractJsonString(payload.c_str(), "name");
+      if (!name) name = extractJsonString(payloadLow.c_str(), "name");
+      String dimName = name ? String(name) : "DIMM0";
+      dimName.toUpperCase();
+      // level can be number
+      const char *levelStr = extractJsonString(payload.c_str(), "level");
+      int level = -1;
+      if (levelStr) level = atoi(levelStr);
+      else {
+        // try numeric without quotes: search "level":<num>
+        const char *lvlPos = strstr(payload.c_str(), "\"level\"");
+        if (lvlPos) {
+          const char *colon = strchr(lvlPos, ':');
+          if (colon) level = atoi(colon + 1);
+        }
+      }
+      if (level < 0 || level > 100) {
+        setError("control level out of range");
+        r.valid = false;
+        return false;
+      }
+      // Find uid for dimmer by name
+      int idx = sensors::findCalib(dimName);
+      if (idx >= 0) {
+        uint32_t uid = sensors::calibrations[idx].uid;
+        sensors::handleDimmer(uid, level);
+        logger::eventf("AI control [%s] set_dimmer %s -> %d", p.name, dimName.c_str(), level);
+        executed = true;
+      } else {
+        setError("control dimmer not found");
+        r.valid = false;
+        return false;
+      }
+    } else {
+      setError("control unknown tool");
+      r.valid = false;
+      return false;
+    }
+    if (executed) {
+      r.valid = true;
+      // keep raw as is (already copied), log already
+      return true;
+    }
+    setError("control not executed");
+    r.valid = false;
+    return false;
   }
 
   // OUT_ANALYTIC: any non-empty content is the deliverable. Stored in raw[]
@@ -385,6 +487,12 @@ static String buildBody(uint8_t slot) {
     if (sys.length() > 900) break; // cap to keep JSON under ~1.5KB
   }
   sys += "\nUse the sensor data to answer the user's prompt. For overtemperature risk, base your answer on the TEMP sensor.\n";
+  if (p.out_type == OUT_CONTROL) {
+    sys += "\nAvailable tools (call exactly one, flat JSON, no nesting):\n";
+    sys += "Tool set_relay needs name and state (true/false). Tool set_dimmer needs name and level (0-100).\n";
+    sys += "Format: {\"tool\":\"set_relay\",\"name\":\"RELAY0\",\"state\":true} or {\"tool\":\"set_dimmer\",\"name\":\"DIMM0\",\"level\":50}\n";
+    sys += "Use values from the user's prompt, do not copy the example verbatim. Respond with only the JSON.\n";
+  }
 
   String body;
   body.reserve(1536);
