@@ -243,15 +243,30 @@ static bool applyResult(uint8_t slot, const char *content) {
   const PromptCfg &p = prompts[slot];
 
   if (p.out_type == OUT_DIGITAL) {
-    // STRICT: only exact "true"/"false". No synonyms, no fuzzy matching.
-    if (val == "true") {
+    // Tolerant prefix: "true"/"false" optionally followed by punctuation/words
+    // (small models often append explanation like "False. The earth...").
+    auto isTruePrefix = [&]() -> bool {
+      if (val == "true") return true;
+      if (val.startsWith("true ") || val.startsWith("true.") ||
+          val.startsWith("true,") || val.startsWith("true;") ||
+          val.startsWith("true:")) return true;
+      return false;
+    };
+    auto isFalsePrefix = [&]() -> bool {
+      if (val == "false") return true;
+      if (val.startsWith("false ") || val.startsWith("false.") ||
+          val.startsWith("false,") || val.startsWith("false;") ||
+          val.startsWith("false:")) return true;
+      return false;
+    };
+    if (isTruePrefix()) {
       r.valid = true;
       r.digital = true;
       r.analog = 1.0f;
       sensors::aidig(String(p.name), true);
       return true;
     }
-    if (val == "false") {
+    if (isFalsePrefix()) {
       r.valid = true;
       r.digital = false;
       r.analog = 0.0f;
