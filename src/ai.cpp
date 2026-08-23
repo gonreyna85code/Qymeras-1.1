@@ -1,12 +1,15 @@
 #include "ai.h"
+#include <errno.h>
+#include <math.h>
+#include <stdlib.h>
 #include "sensors.h"
 #include "log.h"
 
 #if defined(ESP8266)
 #include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #define HTTP_CLIENT HTTPClient
-#define AI_BEGIN(client, url) http.begin(client, url)
 #elif defined(ESP32)
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
@@ -28,24 +31,32 @@ static Config config = {
   false
 };
 
+static PromptCfg prompts[AI_MAX_PROMPTS];
+static SlotResult results[AI_MAX_PROMPTS];
+static unsigned long slot_last_run[AI_MAX_PROMPTS];
+
+// Single staging buffer for the prompt text of the in-flight request.
+static char staged_prompt[113] = "";
+
 static State state = IDLE;
-static Response last_response = {false, false, 0.0f, ""};
+static int8_t active_slot = -1;
+static unsigned long last_request = 0;
 static char last_error[64] = "";
 
-static unsigned long last_request = 0;
-static char current_prompt[192] = "";
-
 // ================= FORWARD DECLARATIONS =================
-String performRequest();
-void parseResponse(const String &response);
+String performRequest(uint8_t slot);
 static const char* extractJsonString(const char *json, const char *key);
+static bool applyResult(uint8_t slot, const char *content);
+static void startRun(uint8_t slot, unsigned long now);
 
 // ================= INIT =================
 
 void init() {
   state = IDLE;
-  last_response.valid = false;
+  active_slot = -1;
   last_error[0] = '\0';
+  memset(results, 0, sizeof(results));
+  memset(slot_last_run, 0, sizeof(slot_last_run));
   logger::core("AI module initialized");
 }
 
@@ -58,77 +69,255 @@ const Config& getConfig() {
   return config;
 }
 
-// ================= REQUEST =================
+// ================= PROMPTS =================
 
-void requestDigital(const char *prompt) {
-  if (!config.enabled) return;
-  if (state == REQUESTING) return;
+bool setPrompt(uint8_t idx, const PromptCfg &cfg) {
+  if (idx >= AI_MAX_PROMPTS) return false;
+  if (cfg.out_type > OUT_CONTROL) return false;
+  if (!isfinite(cfg.analog_min) || !isfinite(cfg.analog_max)) return false;
+  if (cfg.analog_min > cfg.analog_max) return false;
 
-  unsigned long now = millis();
-  if (now - last_request < config.rate_limit_ms) return;
+  PromptCfg &p = prompts[idx];
+  memset(&p, 0, sizeof(PromptCfg));
+  p.enabled = cfg.enabled;
+  p.out_type = cfg.out_type;
+  p.analog_min = cfg.analog_min;
+  p.analog_max = cfg.analog_max;
+  p.interval_ms = (cfg.interval_ms > 86400000UL) ? 86400000UL : cfg.interval_ms;
 
-  strncpy(current_prompt, prompt, sizeof(current_prompt) - 1);
-  current_prompt[sizeof(current_prompt) - 1] = '\0';
-  last_request = now;
-  state = REQUESTING;
-  logger::sensorsf("AI request (digital): %s", prompt);
+  strncpy(p.name, cfg.name, sizeof(p.name) - 1);
+  p.name[sizeof(p.name) - 1] = '\0';
+  if (p.name[0] == '\0') {
+    snprintf(p.name, sizeof(p.name), "AI%u", (unsigned)idx);
+  }
+
+  strncpy(p.model, cfg.model, sizeof(p.model) - 1);
+  p.model[sizeof(p.model) - 1] = '\0';
+
+  return true;
 }
 
-void requestAnalog(const char *prompt) {
-  if (!config.enabled) return;
-  if (state == REQUESTING) return;
-
-  unsigned long now = millis();
-  if (now - last_request < config.rate_limit_ms) return;
-
-  strncpy(current_prompt, prompt, sizeof(current_prompt) - 1);
-  current_prompt[sizeof(current_prompt) - 1] = '\0';
-  last_request = now;
-  state = REQUESTING;
-  logger::sensorsf("AI request (analog): %s", prompt);
+void stagePromptText(const char *text) {
+  if (!text) text = "";
+  strncpy(staged_prompt, text, sizeof(staged_prompt) - 1);
+  staged_prompt[sizeof(staged_prompt) - 1] = '\0';
 }
 
-void requestRaw(const char *prompt) {
-  requestAnalog(prompt);
+const char* stagedPromptText() {
+  return staged_prompt;
+}
+
+const PromptCfg& getPrompt(uint8_t idx) {
+  return prompts[idx];
+}
+
+bool anyEnabled() {
+  if (!config.enabled) return false;
+  for (uint8_t i = 0; i < AI_MAX_PROMPTS; i++) {
+    if (prompts[i].enabled && prompts[i].out_type != OUT_CONTROL) return true;
+  }
+  return false;
+}
+
+// ================= RUN =================
+
+static void setError(const char *msg) {
+  strncpy(last_error, msg, sizeof(last_error) - 1);
+  last_error[sizeof(last_error) - 1] = '\0';
+}
+
+static void startRun(uint8_t slot, unsigned long now) {
+  active_slot = (int8_t)slot;
+  last_request = now;
+  state = REQUESTING;
+  logger::sensorsf("AI request (%s): %s",
+                   prompts[slot].out_type == OUT_DIGITAL ? "digital" :
+                   prompts[slot].out_type == OUT_ANALOG ? "analog" : "analytic",
+                   staged_prompt);
+}
+
+bool runPrompt(uint8_t idx) {
+  if (idx >= AI_MAX_PROMPTS) {
+    setError("bad slot");
+    return false;
+  }
+  if (!config.enabled) {
+    setError("AI globally disabled");
+    return false;
+  }
+  if (!prompts[idx].enabled) {
+    setError("prompt slot disabled");
+    return false;
+  }
+  if (prompts[idx].out_type == OUT_CONTROL) {
+    setError("CONTROL tool-calling not implemented yet");
+    return false;
+  }
+  if (state == REQUESTING) {
+    setError("request already in flight");
+    return false;
+  }
+  unsigned long now = millis();
+  if (last_request != 0 && now - last_request < config.rate_limit_ms) {
+    setError("rate limit");
+    return false;
+  }
+  last_error[0] = '\0';
+  startRun(idx, now);
+  return true;
+}
+
+// Interval scheduling + request pump. Fully opt-in: no-op unless the global
+// flag is on AND at least one non-CONTROL slot is enabled.
+void tick(unsigned long now) {
+  if (state == REQUESTING) {
+    process();
+    return;
+  }
+  if (!anyEnabled()) return;
+
+  for (uint8_t i = 0; i < AI_MAX_PROMPTS; i++) {
+    const PromptCfg &p = prompts[i];
+    if (!p.enabled || p.out_type == OUT_CONTROL || p.interval_ms == 0) continue;
+    if (now - slot_last_run[i] < p.interval_ms) continue;
+    if (now - last_request < config.rate_limit_ms) return;
+    last_error[0] = '\0';
+    startRun(i, now);
+    break;  // one request at a time
+  }
 }
 
 // ================= PROCESS =================
 
 void process() {
-  if (state != REQUESTING) return;
+  if (state != REQUESTING || active_slot < 0) return;
+  uint8_t slot = (uint8_t)active_slot;
 
-  String response = performRequest();
+  String response = performRequest(slot);
 
   if (response.length() == 0) {
     state = ERROR;
-    strncpy(last_error, "HTTP request failed", sizeof(last_error) - 1);
+    setError("HTTP request failed");
     logger::error("AI request failed");
+    slot_last_run[slot] = millis();
+    active_slot = -1;
     return;
   }
 
-  state = PARSING;
-  parseResponse(response);
+  const char *json = response.c_str();
+  const char *content = extractJsonString(json, "content");     // OpenAI format
+  if (!content || strlen(content) == 0) {
+    content = extractJsonString(json, "response");              // Ollama format
+  }
 
-  if (last_response.valid) {
+  if (!content || strlen(content) == 0) {
+    state = ERROR;
+    setError("empty response content");
+    logger::warn("AI response parse failed");
+  } else if (applyResult(slot, content)) {
     state = DONE;
-    logger::sensorsf("AI response: %s", last_response.raw);
+    logger::sensorsf("AI response: %s", results[slot].raw);
   } else {
     state = ERROR;
-    logger::warn("AI response parse failed");
+    logger::warnf("AI invalid response: %s", results[slot].raw);
   }
+
+  slot_last_run[slot] = millis();
+  active_slot = -1;
+}
+
+// Validate the model's free-form content against the slot's declared output
+// type. Invalid answers NEVER reach the virtual sensors.
+static bool applyResult(uint8_t slot, const char *content) {
+  SlotResult &r = results[slot];
+  r.valid = false;
+  r.digital = false;
+  r.analog = 0.0f;
+  r.ts = millis();
+  strncpy(r.raw, content, sizeof(r.raw) - 1);
+  r.raw[sizeof(r.raw) - 1] = '\0';
+
+  String val = String(content);
+  val.trim();
+  val.toLowerCase();
+  const PromptCfg &p = prompts[slot];
+
+  if (p.out_type == OUT_DIGITAL) {
+    // STRICT: only exact "true"/"false". No synonyms, no fuzzy matching.
+    if (val == "true") {
+      r.valid = true;
+      r.digital = true;
+      r.analog = 1.0f;
+      sensors::aidig(String(p.name), true);
+      return true;
+    }
+    if (val == "false") {
+      r.valid = true;
+      r.digital = false;
+      r.analog = 0.0f;
+      sensors::aidig(String(p.name), false);
+      return true;
+    }
+    setError("invalid digital response (true/false required)");
+    return false;
+  }
+
+  if (p.out_type == OUT_ANALOG) {
+    // STRICT numeric: full-consume strtof, finite, within configured range.
+    char *end = nullptr;
+    errno = 0;
+    float v = strtof(val.c_str(), &end);
+    while (end && *end == ' ') end++;  // tolerate trailing spaces only
+    if (end == val.c_str() || (end && *end != '\0')) {
+      setError("invalid analog response (number required)");
+      return false;
+    }
+    if (errno == ERANGE || !isfinite(v)) {
+      setError("analog overflow");
+      return false;
+    }
+    if (v < p.analog_min || v > p.analog_max) {
+      setError("analog out of range");
+      return false;
+    }
+    r.valid = true;
+    r.analog = v;
+    sensors::aiana(String(p.name), v);
+    return true;
+  }
+
+  // OUT_ANALYTIC: any non-empty content is the deliverable. Stored in raw[]
+  // and logged; future consumers (notifications/events) read from here.
+  r.valid = true;
+  logger::eventf("AI analytic [%s]: %s", p.name, r.raw);
+  return true;
 }
 
 // ================= HTTP =================
 
-String performRequest() {
-  String response = "";
+static String buildBody(uint8_t slot) {
+  const PromptCfg &p = prompts[slot];
 
-  WiFiClientSecure client;
-  client.setInsecure();
+  // Build JSON manually. A short format instruction is appended for typed
+  // outputs so strict validation has a fair chance; validation stays strict.
+  String body = "{\"model\":\"";
+  body += (p.model[0] != '\0') ? p.model : config.model;
+  body += "\",\"messages\":[{\"role\":\"user\",\"content\":\"";
+  for (const char *q = staged_prompt; *q; q++) {
+    if (*q == '"') body += "\\\"";
+    else if (*q == '\\') body += "\\\\";
+    else if (*q == '\n') body += "\\n";
+    else if (*q == '\r') body += "\\r";
+    else if (*q == '\t') body += "\\t";
+    else body += *q;
+  }
+  if (p.out_type == OUT_DIGITAL) body += "\\nAnswer with exactly true or false.";
+  else if (p.out_type == OUT_ANALOG) body += "\\nAnswer with only a number.";
+  body += "\"}],\"max_tokens\":50,\"temperature\":0.1}";
+  return body;
+}
 
-  HTTP_CLIENT http;
-  if (!AI_BEGIN(client, config.endpoint)) return "";
-
+static String aiPerform(HTTP_CLIENT &http, uint8_t slot) {
   http.addHeader("Content-Type", "application/json");
   if (strlen(config.api_key) > 0) {
     String auth = "Bearer ";
@@ -137,28 +326,38 @@ String performRequest() {
   }
   http.setTimeout(config.timeout_ms);
 
-  // Build JSON manually
-  String body = "{\"model\":\"";
-  body += config.model;
-  body += "\",\"messages\":[{\"role\":\"user\",\"content\":\"";
-  for (const char *p = current_prompt; *p; p++) {
-    if (*p == '"') body += "\\\"";
-    else if (*p == '\\') body += "\\\\";
-    else if (*p == '\n') body += "\\n";
-    else body += *p;
-  }
-  body += "\"}],\"max_tokens\":50,\"temperature\":0.1}";
-
-  int httpCode = http.POST(body);
-
+  int httpCode = http.POST(buildBody(slot));
+  String response = "";
   if (httpCode == 200) {
     response = http.getString();
   } else {
     logger::errorf("AI HTTP error: %d", httpCode);
   }
-
   http.end();
   return response;
+}
+
+String performRequest(uint8_t slot) {
+#if defined(ESP8266)
+  // Plain HTTP only on ESP8266: the BearSSL TLS buffers cannot fit this
+  // firmware's DRAM budget, and linking mbedtls would push statics over the
+  // stability line (observed /calib corruption at <16KB boot heap).
+  // LAN providers (Ollama etc.) work over plain HTTP; cloud TLS endpoints
+  // remain available on the ESP32 build.
+  if (strncmp(config.endpoint, "https://", 8) == 0) {
+    setError("TLS not supported on ESP8266 (use HTTP endpoint)");
+    logger::errorf("AI endpoint rejected: https:// unsupported here");
+    return "";
+  }
+  WiFiClient client;
+  HTTP_CLIENT http;
+  if (!http.begin(client, config.endpoint)) return "";
+  return aiPerform(http, slot);
+#else
+  HTTP_CLIENT http;
+  if (!http.begin(config.endpoint)) return "";
+  return aiPerform(http, slot);
+#endif
 }
 
 // ================= PARSE JSON (manual) =================
@@ -176,10 +375,10 @@ static const char* extractJsonString(const char *json, const char *key) {
   const char *quote = strchr(colon, '"');
   if (!quote) return nullptr;
 
-  static char buf[256];
+  static char buf[128];
   int i = 0;
   quote++;
-  while (*quote && *quote != '"' && i < 255) {
+  while (*quote && *quote != '"' && i < 127) {
     if (*quote == '\\' && *(quote + 1)) {
       quote++;
       if (*quote == 'n') buf[i++] = '\n';
@@ -196,63 +395,15 @@ static const char* extractJsonString(const char *json, const char *key) {
   return buf;
 }
 
-void parseResponse(const String &response) {
-  const char *json = response.c_str();
-
-  // Try OpenAI format: choices[0].message.content
-  const char *content = extractJsonString(json, "content");
-
-  // Try Ollama format: response
-  if (!content || strlen(content) == 0) {
-    content = extractJsonString(json, "response");
-  }
-
-  if (!content || strlen(content) == 0) {
-    last_response.valid = false;
-    return;
-  }
-
-  // Store raw
-  strncpy(last_response.raw, content, sizeof(last_response.raw) - 1);
-  last_response.raw[sizeof(last_response.raw) - 1] = '\0';
-  last_response.valid = true;
-
-  // Parse as digital
-  String val = String(content);
-  val.trim();
-  val.toLowerCase();
-
-  if (val == "true" || val == "on" || val == "yes" || val == "1" || val == "high") {
-    last_response.digital = true;
-    last_response.analog = 1.0f;
-    sensors::aidig("AI_STATE", true);
-    return;
-  }
-  if (val == "false" || val == "off" || val == "no" || val == "0" || val == "low") {
-    last_response.digital = true;
-    last_response.analog = 0.0f;
-    sensors::aidig("AI_STATE", false);
-    return;
-  }
-
-  // Parse as analog
-  if (val.length() > 0 && (isDigit(val[0]) || val[0] == '-' || val[0] == '.')) {
-    last_response.digital = false;
-    last_response.analog = val.toFloat();
-    sensors::aiana("AI_VALUE", last_response.analog);
-    return;
-  }
-
-  // Raw string only
-  last_response.digital = false;
-  last_response.analog = 0.0f;
-}
-
-// ================= STATE =================
+// ================= STATUS =================
 
 State getState() { return state; }
 
-const Response& getLastResponse() { return last_response; }
+int8_t getActiveSlot() { return active_slot; }
+
+const SlotResult& getSlotResult(uint8_t idx) {
+  return results[idx];
+}
 
 const char* getLastError() { return last_error; }
 

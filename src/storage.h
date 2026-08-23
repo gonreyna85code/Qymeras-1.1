@@ -28,6 +28,11 @@ void loadRules();
 void saveRules();
 void deleteRule(uint8_t idx);
 
+void loadAi();
+void saveAi();
+bool getAiPromptText(uint8_t idx, char *out, size_t cap);
+bool saveAiPromptText(uint8_t idx, const char *text);
+
 bool verifyOtaIntegrity();
 bool isOtaEnabled();
 bool isOtaIntegrityVerified();

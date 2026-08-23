@@ -26,7 +26,6 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <div class='tab' id='t_control' onclick="show('control')">Devices</div>
 <div class='tab' id='t_auto' onclick="show('auto')">Automations</div>
 <div class='tab' id='t_config' onclick="show('config')">Settings</div>
-<div class='tab' id='t_wifi' onclick="show('wifi')">Network</div>
 <div class='tab' id='t_logs' onclick="show('logs')">Logs</div>
 </div>
 <div id='control' class='content'><div id='devices_cards'></div></div>
@@ -50,14 +49,22 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <button style="float:left" onclick="newRule()">Add Rule</button>
 </div>
 </div>
-<div id='config' class='content' style='display:none'><div id='cards'></div></div>
-<div id='wifi' class='content' style='display:none'>
+<div id='config' class='content' style='display:none'>
+<div class='tabs' style='background:#333'>
+<div class='tab' id='t_cfg_general' onclick="showCfg('general')">General</div>
+<div class='tab' id='t_cfg_network' onclick="showCfg('network')">Network</div>
+<div class='tab' id='t_cfg_ai' onclick="showCfg('ai')">AI</div>
+</div>
+<div id='cfg_general'><div id='cards'></div></div>
+<div id='cfg_network' style='display:none'>
 <h2>WiFi Setup</h2>
 <form action='/save' method='post'>
 <input name='ssid' placeholder='SSID' style='margin:6px;border-radius:6px;padding:5px;'><br>
-<input name='pass' placeholder='Password' type='password' style='margin:6px;border-radius:6px;padding:5px;'><br>
+<input name='pass' placeholder='Password' type='password' autocomplete='current-password' style='margin:6px;border-radius:6px;padding:5px;'><br>
 <button type='submit' style='margin:10px;'>Save</button>
 </form>
+</div>
+<div id='cfg_ai' style='display:none'><div id='ai_cards'></div><div id='ai_status'></div></div>
 </div>
 <div id='logs' class='content' style='display:none'>
 <div class='log-header'>
@@ -78,9 +85,18 @@ document.getElementById(tab).style.display='block';
 document.getElementById('t_'+tab).classList.add('active');
 localStorage.setItem('tab',tab);
 if(tab==='auto') loadRules();
-  if (tab === 'config'){ await loadCalib(); await syncOtaCheckbox(); }
+  if (tab === 'config'){ await loadCalib(); await syncOtaCheckbox(); showCfg(localStorage.getItem('cfgTab')||'general'); }
   if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
 else { stopLogAutoRefresh(); }
+}
+function showCfg(sub){
+['general','network','ai'].forEach(s=>{
+document.getElementById('cfg_'+s).style.display=(s===sub)?'block':'none';
+const t=document.getElementById('t_cfg_'+s);
+if(t) t.classList.toggle('active',s===sub);
+});
+localStorage.setItem('cfgTab',sub);
+if(sub==='ai') loadAi();
 }
 )rawliteral";
 
@@ -138,6 +154,104 @@ function deleteRule(i){
 alert("delete rule "+i);
 }
 )rawliteral";
+
+
+const char AiPanel[] PROGMEM = R"rawliteral(<script>
+let aiCfg=null;
+async function loadAi(){
+try{
+const r=await fetch('/ai'); aiCfg=await r.json();
+renderAi(); refreshAiStatus();
+}catch(e){
+document.getElementById('ai_cards').innerHTML='<div class="card">AI config load failed</div>';
+}
+}
+function renderAi(){
+if(!aiCfg) return;
+const c=aiCfg;
+let html=`<div class='card'><h3>AI Provider</h3><form autocomplete='off' onsubmit='return false'>
+<label>Enabled <input type='checkbox' id='ai_enabled' ${c.enabled?'checked':''}></label><br>
+<label>Provider <select id='ai_provider'>
+<option value='0'>OpenAI</option><option value='1'>Ollama</option><option value='2'>Custom endpoint</option>
+</select></label><br>
+<label>Endpoint URL<br><input id='ai_endpoint' size='40' maxlength='63' value='${c.endpoint}'></label><br>
+<label>API Key ${c.api_key_set?'(configured, leave empty to keep)':'(not set)'}<br><input id='ai_apikey' type='password' size='36' placeholder='' autocomplete='new-password'></label><br>
+<label>Default model<br><input id='ai_model' maxlength='31' value='${c.model||''}'></label><br>
+<label>Timeout ms <input id='ai_timeout' type='number' style='width:90px' value='${c.timeout_ms||10000}'>
+Rate limit ms <input id='ai_rate' type='number' style='width:110px' value='${c.rate_limit_ms||5000}'></label><br>
+<button onclick='saveAiGlobal()'>Save Provider</button>
+</form></div>`;
+c.prompts.forEach(p=>{
+html+=`<div class='card'><h3>Prompt ${p.slot+1}</h3>
+<label>Enabled <input type='checkbox' id='p${p.slot}_enabled' ${p.enabled?'checked':''}></label>
+<label>Name <input id='p${p.slot}_name' maxlength='16' value='${p.name}'></label>
+<label>Output <select id='p${p.slot}_out'>
+<option value='0'>DIGITAL</option><option value='1'>ANALOG</option><option value='2'>ANALYTIC</option><option value='3'>CONTROL (reserved)</option>
+</select></label><br>
+<textarea id='p${p.slot}_prompt' rows='3' maxlength='112' style='width:95%'>${p.prompt}</textarea><br>
+<label>Model override <input id='p${p.slot}_model' maxlength='31' value='${p.model}' placeholder='use default'></label>
+<span>Min <input id='p${p.slot}_min' type='number' step='any' style='width:70px' value='${p.min??0}'>
+Max <input id='p${p.slot}_max' type='number' step='any' style='width:70px' value='${p.max??100}'></span><br>
+<label>Interval ms (0 = manual only) <input id='p${p.slot}_interval' type='number' style='width:100px' value='${p.interval_ms||0}'></label><br>
+<button onclick='saveAiPrompt(${p.slot})'>Save</button>
+<button onclick='runAiPrompt(${p.slot})'>Run now</button>
+</div>`;
+});
+document.getElementById('ai_cards').innerHTML=html;
+document.getElementById('ai_provider').value=String(c.provider);
+c.prompts.forEach(p=>{document.getElementById('p'+p.slot+'_out').value=String(p.out_type);});
+}
+async function saveAiGlobal(){
+const body=new URLSearchParams();
+body.set('target','global');
+body.set('enabled',document.getElementById('ai_enabled').checked?'1':'0');
+body.set('provider',document.getElementById('ai_provider').value);
+body.set('endpoint',document.getElementById('ai_endpoint').value.trim());
+const key=document.getElementById('ai_apikey').value;
+if(key.length) body.set('api_key',key);
+body.set('model',document.getElementById('ai_model').value);
+body.set('timeout_ms',document.getElementById('ai_timeout').value);
+body.set('rate_limit_ms',document.getElementById('ai_rate').value);
+const r=await fetch('/ai/set',{method:'POST',body});
+alert(r.ok?'AI provider saved':'Error '+r.status+': '+await r.text());
+}
+async function saveAiPrompt(slot){
+const body=new URLSearchParams();
+body.set('target','prompt'); body.set('slot',String(slot));
+body.set('enabled',document.getElementById('p'+slot+'_enabled').checked?'1':'0');
+body.set('out_type',document.getElementById('p'+slot+'_out').value);
+body.set('name',document.getElementById('p'+slot+'_name').value);
+body.set('prompt',document.getElementById('p'+slot+'_prompt').value);
+body.set('model',document.getElementById('p'+slot+'_model').value);
+body.set('min',document.getElementById('p'+slot+'_min').value);
+body.set('max',document.getElementById('p'+slot+'_max').value);
+body.set('interval_ms',document.getElementById('p'+slot+'_interval').value||'0');
+const r=await fetch('/ai/set',{method:'POST',body});
+if(r.ok){ alert('Saved'); loadAi(); } else { alert('Error '+r.status+': '+await r.text()); }
+}
+async function runAiPrompt(slot){
+const r=await fetch('/ai/run',{method:'POST',body:new URLSearchParams({slot:String(slot)})});
+if(!r.ok){ alert(await r.text()); return; }
+setTimeout(refreshAiStatus,1500); setTimeout(refreshAiStatus,4000);
+}
+async function refreshAiStatus(){
+try{
+const r=await fetch('/ai/status'); const s=await r.json();
+let html='<div class="card"><h3>AI Status</h3>';
+html+='state: '+['idle','requesting','parsing','done','error'][s.state]+'<br>';
+if(s.error) html+='last error: '+s.error+'<br>';
+s.results.forEach(res=>{
+if(res.age_ms>=0){
+html+='<b>'+(res.slot+1)+'</b> valid:'+res.valid+' digital:'+(res.digital?'true':'false')+' value:'+res.analog+' age:'+(res.age_ms/1000).toFixed(0)+'s<br>';
+if(res.raw) html+='<small>'+escHtml(res.raw)+'</small><br>';
+}
+});
+html+='</div>';
+document.getElementById('ai_status').innerHTML=html;
+}catch(e){}
+}
+function escHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+</script>)rawliteral";
 
 
 const char CardsSettings[] PROGMEM = R"rawliteral(

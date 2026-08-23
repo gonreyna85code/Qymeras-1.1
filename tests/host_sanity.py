@@ -7,6 +7,7 @@ can be validated on the host machine (no native C++ toolchain required):
                           toLocalEpoch()/getTime()/getMinutesOfDay()
 2. strict float parsing - mirrors web.cpp: parseStrictFloat()
 3. ESP-NOW RX FIFO      - mirrors espnow_p2p.cpp: rx_enqueue()/espnow_recv()
+4. ai validators        - mirrors ai.cpp applyResult(): strict DIGITAL/ANALOG
 
 Run:  python tests/host_sanity.py
 Exit code 0 = all pass.
@@ -211,6 +212,64 @@ check("wrap-around FIFO order",
 check("after wrap drain, count==0", f.count == 0)
 f.enqueue(b"z")
 check("reusable after full cycle", f.recv() == b"z" and f.count == 0)
+
+# ------------------------------------------------------------ ai validators
+# Mirrors ai.cpp applyResult(): strict per-out_type validation of LLM content.
+# DIGITAL accepts ONLY exactly "true"/"false" (case/whitespace tolerant).
+# ANALOG accepts ONLY a full-consume finite number within [min,max].
+def validate_digital(content):
+    val = content.strip().lower()
+    if val == "true":
+        return True, True
+    if val == "false":
+        return True, False
+    return False, None
+
+
+import re
+_NUM_RE = re.compile(r'[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?')
+
+
+def validate_analog(content, mn, mx):
+    val = content.strip()
+    m = _NUM_RE.fullmatch(val)
+    if not m:
+        return False, None
+    try:
+        v = float(val)
+    except ValueError:
+        return False, None
+    if not math.isfinite(v):
+        return False, None
+    if v < mn or v > mx:
+        return False, None
+    return True, v
+
+
+print("[ai-validators]")
+check("digital 'true'", validate_digital("true") == (True, True))
+check("digital 'TRUE' case-insensitive", validate_digital("TRUE") == (True, True))
+check("digital ' true ' trims", validate_digital("  true ") == (True, True))
+check("digital 'false'", validate_digital("false") == (True, False))
+check("digital 'yes' rejected", validate_digital("yes")[0] is False)
+check("digital '1' rejected (strict)", validate_digital("1")[0] is False)
+check("digital 'true.' punctuation rejected", validate_digital("true.")[0] is False)
+check("digital garbage rejected", validate_digital("The risk is low")[0] is False)
+check("digital empty rejected", validate_digital("")[0] is False)
+
+check("analog '42' in range", validate_analog("42", 0, 100) == (True, 42.0))
+check("analog ' 42.5 ' trims", validate_analog(" 42.5 ", 0, 100) == (True, 42.5))
+check("analog '-3' negative ok in range", validate_analog("-3", -10, 100)[0] is True)
+check("analog '150' out of range rejected",
+      validate_analog("150", 0, 100) == (False, None))
+check("analog 'abc' rejected", validate_analog("abc", 0, 100)[0] is False)
+check("analog '42abc' trailing junk rejected",
+      validate_analog("42abc", 0, 100)[0] is False)
+check("analog 'nan' rejected", validate_analog("nan", 0, 100)[0] is False)
+check("analog 'inf' rejected", validate_analog("inf", 0, 100)[0] is False)
+check("analog empty rejected", validate_analog("", 0, 100)[0] is False)
+check("analog boundary min accepted", validate_analog("0", 0, 100) == (True, 0.0))
+check("analog boundary max accepted", validate_analog("100", 0, 100) == (True, 100.0))
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))

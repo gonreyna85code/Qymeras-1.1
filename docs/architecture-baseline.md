@@ -441,6 +441,39 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - **ESP32**: espressif32@6.5.0 (avoids EEPROM bugs)
 - Pinning prevents breaking changes from framework updates
 
+## AI Subsystem (1.2, authorized scope extension)
+
+Optional external subsystem; fully opt-in. When `enabled=false` (factory default) the
+engine never runs, never allocates request resources, and the deterministic core is
+byte-for-byte unaffected in behavior.
+
+### Data flow
+LLM endpoint (provider-agnostic URL) -> HTTPClient POST (prompt + model) ->
+content extraction -> STRICT validation by out_type:
+- DIGITAL: exact `true`/`false` -> sensors::aidig(name, v)
+- ANALOG: full-consume float within [min,max] -> sensors::aiana(name, v)
+- ANALYTIC: raw text stored in SlotResult.raw[64] + logger event
+- CONTROL: interface-only, refused at run time
+Virtual entities are consumed exclusively by the existing rules engine — no AI code
+in the actuation path.
+
+### Storage
+EEPROM block 3087..3966 ("QMAI v1"): 8B header (magic/version/count), 168B global
+(provider/endpoint/model/timeout/rate_limit/api_key/enabled), 4x176B prompt slots.
+Prompt TEXT is persisted only; runtime keeps metadata (~64B/slot) plus a single
+113B staging buffer used while a request is in flight. api_key is write-only
+(never echoed back over the API).
+
+### Platform split
+ESP8266: plain HTTP endpoints only. TLS was dropped deliberately — BearSSL buffers
+exceed the DRAM budget (mbedtls link cost measured +122KB flash and collapsed boot
+heap from ~18KB to <15KB, corrupting other responses). ESP32: full https support.
+
+### Related fix
+/calib response is streamed (chunked transfer) instead of assembled into one large
+String; this removed a heap-exhaustion failure mode on ESP8266 that the AI statics
+had pushed over the edge.
+
 ## Known Bugs & Fragile Areas
 
 ### Framework Bugs (Pinned Versions Fix These)

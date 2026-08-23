@@ -23,7 +23,7 @@
 | `ota.h` | OTA management interface | OTA team | ⚠️ Minimal |
 | `ota.cpp` | OTA implementation | OTA team | ⚠️ Minimal |
 | `ai.h` | AI module (not implemented) | - | ❌ Out of scope |
-| `ai.cpp` | AI module implementation | - | ❌ Out of scope |
+| `ai.cpp` | AI subsystem (4 slots, validated outputs -> rules engine) | AI team | ✅ Working (1.2, authorized) |
 | `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Working |
 | `espnow_p2p.cpp` | ESP-NOW transport implementation | Transport team | ✅ Working |
 

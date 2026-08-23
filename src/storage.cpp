@@ -3,6 +3,7 @@
 #ifdef ESP32
 #include <Preferences.h>
 #endif
+#include "ai.h"
 #include "automations.h"
 #include "core.h"
 #include "log.h"
@@ -313,6 +314,181 @@ void saveRules() {
 
 void deleteRule(uint8_t idx) {
   automations::deleteRule(idx);
+}
+
+// ================= AI CONFIG =================
+// Persisted layout mirrors config.h EEPROM_AI_* sizes. magic/version gate the
+// whole block: missing/corrupt -> all defaults (AI disabled, empty slots), so
+// pre-AI installations boot unchanged and factory reset clears the block.
+
+static const uint32_t AI_MAGIC = 0x514D4149;  // "QMAI"
+static const uint16_t AI_VERSION = 1;
+
+struct __attribute__((packed)) AiHeader {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t count;
+};
+
+struct __attribute__((packed)) AiGlobalPersist {
+  uint8_t enabled;
+  uint8_t provider;
+  char endpoint[64];
+  char api_key[64];
+  char model[32];
+  uint16_t timeout_ms;
+  uint32_t rate_limit_ms;
+};
+
+struct __attribute__((packed)) AiPromptPersist {
+  uint8_t enabled;
+  uint8_t out_type;
+  char name[17];
+  char prompt[113];
+  char model[32];
+  float analog_min;
+  float analog_max;
+  uint32_t interval_ms;
+};
+
+static_assert(sizeof(AiGlobalPersist) == EEPROM_AI_GLOBAL_SIZE,
+              "AiGlobalPersist size must match EEPROM_AI_GLOBAL_SIZE in config.h");
+static_assert(sizeof(AiPromptPersist) == EEPROM_AI_SLOT_SIZE,
+              "AiPromptPersist size must match EEPROM_AI_SLOT_SIZE in config.h");
+
+void loadAi() {
+  begin();
+  int base = EEPROM_AI_START;
+  AiHeader h = {};
+  if (!get(base, h) || h.magic != AI_MAGIC || h.version != AI_VERSION ||
+      h.count != AI_MAX_PROMPTS) {
+    return;  // unprovisioned/corrupt: keep runtime defaults (AI disabled)
+  }
+  int addr = base + sizeof(AiHeader);
+
+  AiGlobalPersist g = {};
+  if (get(addr, g)) {
+    ai::Config cfg = {};
+    cfg.provider = (g.provider <= ai::PROVIDER_CUSTOM) ?
+                   (ai::Provider)g.provider : ai::PROVIDER_OPENAI;
+    strncpy(cfg.endpoint, g.endpoint, sizeof(cfg.endpoint) - 1);
+    strncpy(cfg.api_key, g.api_key, sizeof(cfg.api_key) - 1);
+    strncpy(cfg.model, g.model[0] ? g.model : "gpt-4o-mini", sizeof(cfg.model) - 1);
+    cfg.timeout_ms = g.timeout_ms ? g.timeout_ms : 10000;
+    cfg.rate_limit_ms = g.rate_limit_ms ? g.rate_limit_ms : 5000;
+    cfg.enabled = (g.enabled == 1);
+    ai::setConfig(cfg);
+  }
+  addr += sizeof(AiGlobalPersist);
+
+  for (int i = 0; i < AI_MAX_PROMPTS; i++) {
+    AiPromptPersist s = {};
+    if (!get(addr, s)) { addr += sizeof(AiPromptPersist); continue; }
+    ai::PromptCfg p = {};
+    p.enabled = (s.enabled == 1);
+    p.out_type = (ai::OutType)s.out_type;
+    strncpy(p.name, s.name, sizeof(p.name) - 1);
+    strncpy(p.model, s.model, sizeof(p.model) - 1);
+    p.analog_min = s.analog_min;
+    p.analog_max = s.analog_max;
+    p.interval_ms = s.interval_ms;
+    ai::setPrompt((uint8_t)i, p);  // re-validates + normalizes
+    addr += sizeof(AiPromptPersist);
+  }
+}
+
+// ---- prompt text accessors (text is NOT mirrored into runtime RAM) ----
+
+static int aiSlotAddr(uint8_t idx) {
+  return EEPROM_AI_START + sizeof(AiHeader) + sizeof(AiGlobalPersist) +
+         idx * sizeof(AiPromptPersist);
+}
+
+bool getAiPromptText(uint8_t idx, char *out, size_t cap) {
+  if (idx >= AI_MAX_PROMPTS || !out || cap == 0) return false;
+  out[0] = '\0';
+  begin();
+  AiPromptPersist s = {};
+  if (!get(aiSlotAddr(idx), s)) return false;
+  strncpy(out, s.prompt, cap - 1);
+  out[cap - 1] = '\0';
+  return true;
+}
+
+bool saveAiPromptText(uint8_t idx, const char *text) {
+  if (idx >= AI_MAX_PROMPTS || !text) return false;
+  begin();
+  int addr = aiSlotAddr(idx);
+  AiPromptPersist s = {};
+  get(addr, s);
+  strncpy(s.prompt, text, sizeof(s.prompt) - 1);
+  s.prompt[sizeof(s.prompt) - 1] = '\0';
+  put(addr, s);
+  commit();
+  return true;
+}
+
+void saveAi() {
+  begin();
+  int base = EEPROM_AI_START;
+
+  const ai::Config &cfg = ai::getConfig();
+  AiGlobalPersist g = {};
+  g.enabled = cfg.enabled ? 1 : 0;
+  g.provider = (uint8_t)cfg.provider;
+  strncpy(g.endpoint, cfg.endpoint, sizeof(g.endpoint) - 1);
+  strncpy(g.api_key, cfg.api_key, sizeof(g.api_key) - 1);
+  strncpy(g.model, cfg.model, sizeof(g.model) - 1);
+  g.timeout_ms = cfg.timeout_ms;
+  g.rate_limit_ms = cfg.rate_limit_ms;
+
+  bool dirty = false;
+  AiHeader h;
+  h.magic = AI_MAGIC;
+  h.version = AI_VERSION;
+  h.count = AI_MAX_PROMPTS;
+
+  int addr = base;
+  AiHeader stored_h;
+  get(addr, stored_h);
+  if (memcmp(&h, &stored_h, sizeof(AiHeader)) != 0) {
+    dirty = true;
+    put(addr, h);
+  }
+  addr += sizeof(AiHeader);
+
+  AiGlobalPersist stored_g;
+  get(addr, stored_g);
+  if (memcmp(&g, &stored_g, sizeof(AiGlobalPersist)) != 0) {
+    dirty = true;
+    put(addr, g);
+  }
+  addr += sizeof(AiGlobalPersist);
+
+  for (int i = 0; i < AI_MAX_PROMPTS; i++) {
+    const ai::PromptCfg &p = ai::getPrompt((uint8_t)i);
+    AiPromptPersist s = {};
+    s.enabled = p.enabled ? 1 : 0;
+    s.out_type = (uint8_t)p.out_type;
+    strncpy(s.name, p.name, sizeof(s.name) - 1);
+    strncpy(s.model, p.model, sizeof(s.model) - 1);
+    s.analog_min = p.analog_min;
+    s.analog_max = p.analog_max;
+    s.interval_ms = p.interval_ms;
+
+    AiPromptPersist stored_s;
+    get(addr, stored_s);
+    // Prompt text is managed via saveAiPromptText(); metadata saves must
+    // preserve whatever text is already persisted.
+    memcpy(s.prompt, stored_s.prompt, sizeof(s.prompt));
+    if (memcmp(&s, &stored_s, sizeof(AiPromptPersist)) != 0) {
+      dirty = true;
+      put(addr, s);
+    }
+    addr += sizeof(AiPromptPersist);
+  }
+
+  if (dirty) commit();
 }
 
 }  // namespace storage

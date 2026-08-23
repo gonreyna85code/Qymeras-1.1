@@ -127,6 +127,25 @@ typedef WebServer WebServerCompat;
 #error OTA integrity region overflow
 #endif
 
+/* AI configuration (optional subsystem, fully opt-in).
+   Layout must match AiHeader/AiGlobalPersist/AiPromptPersist in ai.cpp:
+   header magic(4)+version(2)+count(2) = 8 bytes,
+   global: enabled(1)+provider(1)+endpoint(64)+api_key(64)+model(32)+
+           timeout_u16(2)+rate_limit_u32(4) = 168 bytes,
+   slot:   enabled(1)+out_type(1)+name(17)+prompt(113)+model(32)+
+           min_f(4)+max_f(4)+interval_u32(4) = 176 bytes.
+   Total = 8 + 168 + 4*176 = 880 bytes. */
+#define AI_MAX_PROMPTS 4
+#define EEPROM_AI_START       (EEPROM_OTA_FLAG_ADDR + 1)
+#define EEPROM_AI_HEADER_SIZE 8
+#define EEPROM_AI_GLOBAL_SIZE 168
+#define EEPROM_AI_SLOT_SIZE   176
+#define EEPROM_AI_SIZE (EEPROM_AI_HEADER_SIZE + EEPROM_AI_GLOBAL_SIZE + \
+                        AI_MAX_PROMPTS * EEPROM_AI_SLOT_SIZE)
+#if (EEPROM_AI_START + EEPROM_AI_SIZE) > EEPROM_SIZE
+#error AI config region overflow
+#endif
+
 /* =========================
    RED
    ========================= */

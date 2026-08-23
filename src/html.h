@@ -10,4 +10,5 @@ extern const char CardsSettings[];
 extern const char DeviceCards[];
 extern const char JS[];
 extern const char AutoWizJS[];
+extern const char AiPanel[];
 }

@@ -9,6 +9,7 @@
 #include "mesh.h"
 #include "automations.h"
 #include "storage.h"
+#include "ai.h"
 #include "log.h"
 
 namespace core {
@@ -276,6 +277,10 @@ void loop() {
     sensors::ensureTimeRegistered();
     storage::loadCalibration();
     sensors::applyPersistedStates();
+    // AI is fully opt-in: load persisted config (defaults keep it disabled)
+    // and initialize the engine. tick() below is a no-op until enabled.
+    ai::init();
+    storage::loadAi();
     first_report = false;
     last_report = millis();
   }
@@ -285,6 +290,7 @@ void loop() {
   mesh::tick(millis());
   sensors::reclaimStaleSlots();
   automations::tick(millis());
+  ai::tick(millis());
   sensors::applyFades();
   sensors::checkPulses();
 

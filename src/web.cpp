@@ -8,6 +8,7 @@
 #include "sensors.h"
 #include "automations.h"
 #include "storage.h"
+#include "ai.h"
 #include "log.h"
 
 #ifndef ICACHE_FLASH_ATTR
@@ -127,9 +128,9 @@ void sendStartupJS() {
   if (WiFi.getMode() == WIFI_AP)
     server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
   else
-    server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
-  server.sendContent_P(
-    PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+    server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');if(savedTab==='wifi')savedTab='config';show(savedTab);"));
+    server.sendContent_P(
+      PSTR("['control','auto','config'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
   server.sendContent_P(
     PSTR("window.genset={broadcast_port:"));
   server.sendContent(String(core::genset.broadcast_port));
@@ -151,6 +152,7 @@ ICACHE_FLASH_ATTR void handleRoot() {
   server.sendContent_P(html_content::DeviceCards);
   server.sendContent_P(html_content::JS);
   server.sendContent_P(html_content::AutoWizJS);
+  server.sendContent_P(html_content::AiPanel);
   server.sendContent("");
 }
 
@@ -727,9 +729,13 @@ ICACHE_FLASH_ATTR void handleCalib() {
     server.send(405, "text/plain", "Method Not Allowed");
     return;
   }
-  String json;
-  json.reserve(8192);
-  json += '[';
+  // Streamed response: entries are emitted as small chunks instead of
+  // assembling a multi-KB String. This keeps peak heap usage flat regardless
+  // of device count — critical on ESP8266 where a large transient allocation
+  // can fragment the arena under concurrent mesh traffic.
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+  server.sendContent("[");
   bool firstObj = true;
   for (int i = 0; i < MAX_SENSORS; i++) {
     auto &c = sensors::calibrations[i];
@@ -738,7 +744,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
     // remote entries that are still within MESH_TIMEOUT. Stale remote sensors,
     // SENSOR_NONE and invalid/garbage types are never reported as devices.
     if (!sensors::isEntryVisible(i)) continue;
-    if (!firstObj) json += ',';
+    if (!firstObj) server.sendContent(",");
     firstObj = false;
 
     char buf[24];
@@ -748,52 +754,55 @@ ICACHE_FLASH_ATTR void handleCalib() {
       dtostrf(r.value, 0, 4, buf);
     }
 
-    json += "{\"id\":";
-    json += c.uid;
-    json += ",\"index\":";
-    json += i;
-    json += ",\"device_uid\":";
-    json += c.device_uid;
-    json += ",\"name\":\"";
-    json += c.name;
-    json += "\",\"value\":";
-    json += buf;
-    json += ",\"pers_state\":";
-    json += (c.pers_state ? "true" : "false");
-
     char fb[24];
-    dtostrf(isnan(c.min) || isinf(c.min) ? 0.0f : c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
-    dtostrf(isnan(c.max) || isinf(c.max) ? 0.0f : c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
-    dtostrf(isnan(c.correction) || isinf(c.correction) ? 0.0f : c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
+    String e;
+    e.reserve(384);
+    e += "{\"id\":";
+    e += c.uid;
+    e += ",\"index\":";
+    e += i;
+    e += ",\"device_uid\":";
+    e += c.device_uid;
+    e += ",\"name\":\"";
+    e += c.name;
+    e += "\",\"value\":";
+    e += buf;
+    e += ",\"pers_state\":";
+    e += (c.pers_state ? "true" : "false");
 
-    json += ",\"avail\":";           json += c.avail;
-    json += ",\"pulse\":";           json += (c.pulse ? "true" : "false");
-    json += ",\"state\":";           json += (r.state ? "true" : "false");
-    json += ",\"pulse_ms\":";        json += c.pulse_ms;
-    json += ",\"persist\":";         json += (c.persist ? "true" : "false");
-    json += ",\"fade\":";            json += c.fade;
-    json += ",\"type\":";            json += c.type;
-    json += ",\"pin\":";             json += c.pin;
-    json += ",\"local\":";           json += (c.local ? "true" : "false");
-    json += ",\"last_update\":";     json += c.local ? 0 : c.last_update;
+    dtostrf(isnan(c.min) || isinf(c.min) ? 0.0f : c.min, 0, 4, fb);   e += ",\"min\":";        e += fb;
+    dtostrf(isnan(c.max) || isinf(c.max) ? 0.0f : c.max, 0, 4, fb);   e += ",\"max\":";        e += fb;
+    dtostrf(isnan(c.correction) || isinf(c.correction) ? 0.0f : c.correction, 0, 4, fb); e += ",\"correction\":";  e += fb;
+
+    e += ",\"avail\":";           e += c.avail;
+    e += ",\"pulse\":";           e += (c.pulse ? "true" : "false");
+    e += ",\"state\":";           e += (r.state ? "true" : "false");
+    e += ",\"pulse_ms\":";        e += c.pulse_ms;
+    e += ",\"persist\":";         e += (c.persist ? "true" : "false");
+    e += ",\"fade\":";            e += c.fade;
+    e += ",\"type\":";            e += c.type;
+    e += ",\"pin\":";             e += c.pin;
+    e += ",\"local\":";           e += (c.local ? "true" : "false");
+    e += ",\"last_update\":";     e += c.local ? 0 : c.last_update;
     // Elapsed ms since the last remote packet, computed server-side from the
     // same millis() timebase as MESH_TIMEOUT (client Date.now() is epoch-based
     // and cannot be compared directly with the device uptime counter).
-    json += ",\"age_ms\":";          json += c.local ? 0 : (uint32_t)(millis() - c.last_update);
+    e += ",\"age_ms\":";          e += c.local ? 0 : (uint32_t)(millis() - c.last_update);
 
-    json += ",\"ip\":\"";
+    e += ",\"ip\":\"";
     if (c.local) {
       IPAddress ip = WiFi.localIP();
       char ipbuf[16];
       snprintf(ipbuf, sizeof(ipbuf), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-      json += ipbuf;
+      e += ipbuf;
     } else {
-      json += c.device_ip;
+      e += c.device_ip;
     }
-    json += "\"}";
+    e += "\"}";
+    server.sendContent(e);
   }
-  json += ']';
-  server.send(200, "application/json", json);
+  server.sendContent("]");
+  server.sendContent("");  // finalize chunked transfer (both cores)
 }
 
 ICACHE_FLASH_ATTR void handleCalibSet() {
@@ -971,8 +980,298 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     server.send(400, "text/plain", "Bad type");
     return;
   }
-  saveCalibrationSlot(calibIdx);
+    saveCalibrationSlot(calibIdx);
   server.send(200, "text/plain", "OK");
+}
+
+// ================= AI =================
+
+static String jsonEscape(const char *s) {
+  String out;
+  for (const char *p = s; *p; p++) {
+    char c = *p;
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += c;
+    } else if (c == '\n') {
+      out += "\\n";
+    } else if (c == '\r') {
+      out += "\\r";
+    } else if (c == '\t') {
+      out += "\\t";
+    } else if ((unsigned char)c >= 0x20) {
+      out += c;
+    }
+  }
+  return out;
+}
+
+ICACHE_FLASH_ATTR void handleAiGet() {
+  addCorsHeaders();
+  const ai::Config &cfg = ai::getConfig();
+  String json;
+  json.reserve(768);
+  json += "{\"enabled\":";
+  json += cfg.enabled ? "true" : "false";
+  json += ",\"provider\":";
+  json += String((int)cfg.provider);
+  json += ",\"endpoint\":\"";
+  json += jsonEscape(cfg.endpoint);
+  // The API key is never echoed back: only whether one is configured.
+  json += "\",\"api_key_set\":";
+  json += (strlen(cfg.api_key) > 0) ? "true" : "false";
+  json += ",\"model\":\"";
+  json += jsonEscape(cfg.model);
+  json += "\",\"timeout_ms\":";
+  json += String(cfg.timeout_ms);
+  json += ",\"rate_limit_ms\":";
+  json += String(cfg.rate_limit_ms);
+  json += ",\"prompts\":[";
+  char text[113];
+  for (int i = 0; i < AI_MAX_PROMPTS; i++) {
+    const ai::PromptCfg &p = ai::getPrompt((uint8_t)i);
+    if (i) json += ',';
+    text[0] = '\0';
+    storage::getAiPromptText((uint8_t)i, text, sizeof(text));
+    json += "{\"slot\":";
+    json += String(i);
+    json += ",\"enabled\":";
+    json += p.enabled ? "true" : "false";
+    json += ",\"name\":\"";
+    json += jsonEscape(p.name);
+    json += "\",\"prompt\":\"";
+    json += jsonEscape(text);
+    json += "\",\"model\":\"";
+    json += jsonEscape(p.model);
+    json += "\",\"out_type\":";
+    json += String((int)p.out_type);
+    json += ",\"min\":";
+    json += String(p.analog_min);
+    json += ",\"max\":";
+    json += String(p.analog_max);
+    json += ",\"interval_ms\":";
+    json += String(p.interval_ms);
+    json += '}';
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+
+ICACHE_FLASH_ATTR void handleAiStatus() {
+  addCorsHeaders();
+  String json;
+  json.reserve(512);
+  json += "{\"state\":";
+  json += String((int)ai::getState());
+  json += ",\"active\":";
+  json += String((int)ai::getActiveSlot());
+  json += ",\"error\":\"";
+  json += jsonEscape(ai::getLastError());
+  json += "\",\"results\":[";
+  for (int i = 0; i < AI_MAX_PROMPTS; i++) {
+    const ai::SlotResult &r = ai::getSlotResult((uint8_t)i);
+    if (i) json += ',';
+    json += "{\"slot\":";
+    json += String(i);
+    json += ",\"valid\":";
+    json += r.valid ? "true" : "false";
+    json += ",\"digital\":";
+    json += r.digital ? "true" : "false";
+    json += ",\"analog\":";
+    json += String(r.analog);
+    json += ",\"age_ms\":";
+    json += r.ts ? String(millis() - r.ts) : "-1";
+    json += ",\"raw\":\"";
+    json += jsonEscape(r.raw);
+    json += "\"}";
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+
+ICACHE_FLASH_ATTR void handleAiSet() {
+  addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
+
+  String target = server.arg("target");
+
+  if (target == "global") {
+    ai::Config cfg = ai::getConfig();  // start from current: omitted = unchanged
+    if (server.hasArg("enabled")) {
+      String en = server.arg("enabled");
+      if (en != "0" && en != "1") {
+        server.send(400, "text/plain", "invalid enabled (0/1)");
+        return;
+      }
+      cfg.enabled = (en == "1");
+    }
+    if (server.hasArg("provider")) {
+      long pv = 0;
+      if (!parseStrictLong(server.arg("provider"), pv) || pv < 0 || pv > 2) {
+        server.send(400, "text/plain", "invalid provider (0..2)");
+        return;
+      }
+      cfg.provider = (ai::Provider)pv;
+    }
+    if (server.hasArg("endpoint")) {
+      String ep = server.arg("endpoint");
+      if (ep.length() < 1 || ep.length() > 63) {
+        server.send(400, "text/plain", "endpoint must be 1-63 chars");
+        return;
+      }
+      memset(cfg.endpoint, 0, sizeof(cfg.endpoint));
+      strncpy(cfg.endpoint, ep.c_str(), sizeof(cfg.endpoint) - 1);
+    }
+    if (server.hasArg("api_key")) {
+      String key = server.arg("api_key");
+      if (key.length() > 63) {
+        server.send(400, "text/plain", "api_key must be 0-63 chars");
+        return;
+      }
+      memset(cfg.api_key, 0, sizeof(cfg.api_key));
+      strncpy(cfg.api_key, key.c_str(), sizeof(cfg.api_key) - 1);
+    }
+    if (server.hasArg("model")) {
+      String m = server.arg("model");
+      if (m.length() > 31) {
+        server.send(400, "text/plain", "model must be 0-31 chars");
+        return;
+      }
+      memset(cfg.model, 0, sizeof(cfg.model));
+      strncpy(cfg.model, m.c_str(), sizeof(cfg.model) - 1);
+    }
+    if (server.hasArg("timeout_ms")) {
+      long t = 0;
+      if (!parseStrictLong(server.arg("timeout_ms"), t) || t < 100 || t > 60000) {
+        server.send(400, "text/plain", "timeout_ms out of range (100..60000)");
+        return;
+      }
+      cfg.timeout_ms = (uint16_t)t;
+    }
+    if (server.hasArg("rate_limit_ms")) {
+      long rl = 0;
+      if (!parseStrictLong(server.arg("rate_limit_ms"), rl) || rl < 100 || rl > 3600000L) {
+        server.send(400, "text/plain", "rate_limit_ms out of range (100..3600000)");
+        return;
+      }
+      cfg.rate_limit_ms = (uint32_t)rl;
+    }
+    ai::setConfig(cfg);
+    storage::saveAi();
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  if (target == "prompt") {
+    unsigned long slot_ul = 0;
+    if (!server.hasArg("slot") || !parseStrictUnsigned(server.arg("slot"), slot_ul) ||
+        slot_ul >= AI_MAX_PROMPTS) {
+      server.send(400, "text/plain", "invalid slot");
+      return;
+    }
+    uint8_t slot = (uint8_t)slot_ul;
+
+    ai::PromptCfg p = {};
+    p.enabled = (server.arg("enabled") == "1");
+    p.interval_ms = 0;
+    p.analog_min = 0.0f;
+    p.analog_max = 100.0f;
+
+    long ot = -1;
+    if (!server.hasArg("out_type") || !parseStrictLong(server.arg("out_type"), ot) ||
+        ot < 0 || ot > 3) {
+      server.send(400, "text/plain", "invalid out_type (0..3)");
+      return;
+    }
+    p.out_type = (ai::OutType)ot;
+
+    String name = server.arg("name");
+    if (name.length() > 16) {
+      server.send(400, "text/plain", "name must be 0-16 chars");
+      return;
+    }
+    strncpy(p.name, name.c_str(), sizeof(p.name) - 1);
+
+    String prompt = server.arg("prompt");
+    if (prompt.length() < 1 || prompt.length() > 112) {
+      server.send(400, "text/plain", "prompt must be 1-112 chars");
+      return;
+    }
+
+    String model = server.arg("model");  // optional per-slot override
+    if (model.length() > 31) {
+      server.send(400, "text/plain", "model must be 0-31 chars");
+      return;
+    }
+    strncpy(p.model, model.c_str(), sizeof(p.model) - 1);
+
+    float mn = 0.0f, mx = 100.0f;
+    if (server.hasArg("min")) {
+      if (!parseStrictFloat(server.arg("min"), mn)) {
+        server.send(400, "text/plain", "invalid min");
+        return;
+      }
+    }
+    if (server.hasArg("max")) {
+      if (!parseStrictFloat(server.arg("max"), mx)) {
+        server.send(400, "text/plain", "invalid max");
+        return;
+      }
+    }
+    p.analog_min = mn;
+    p.analog_max = mx;
+
+    if (server.hasArg("interval_ms")) {
+      unsigned long iv = 0;
+      if (!parseStrictUnsigned(server.arg("interval_ms"), iv) || iv > 86400000UL) {
+        server.send(400, "text/plain", "interval_ms out of range (0..86400000)");
+        return;
+      }
+      p.interval_ms = (uint32_t)iv;
+    }
+
+    if (!ai::setPrompt(slot, p)) {
+      server.send(400, "text/plain", "invalid prompt config");
+      return;
+    }
+    storage::saveAiPromptText(slot, prompt.c_str());
+    storage::saveAi();
+    logger::eventf("AI prompt %d configured (%s)", slot, ai::getPrompt(slot).name);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  server.send(400, "text/plain", "target must be global|prompt");
+}
+
+ICACHE_FLASH_ATTR void handleAiRun() {
+  addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
+  unsigned long slot_ul = 0;
+  if (!server.hasArg("slot") || !parseStrictUnsigned(server.arg("slot"), slot_ul) ||
+      slot_ul >= AI_MAX_PROMPTS) {
+    server.send(400, "text/plain", "invalid slot");
+    return;
+  }
+  if (!ai::runPrompt((uint8_t)slot_ul)) {
+    server.send(400, "text/plain", ai::getLastError());
+    return;
+  }
+  server.send(200, "text/plain", "queued");
 }
 
 void init() {
@@ -994,6 +1293,12 @@ void init() {
   server.on("/logs", handleLogs);
   server.on("/ota/toggle", handleOtaToggle);
   server.on("/ota/status", handleOtaStatus);
+  server.on("/ai", handleAiGet);
+  server.on("/ai/status", handleAiStatus);
+  server.on("/ai/set", HTTP_POST, handleAiSet);
+  server.on("/ai/set", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/ai/run", HTTP_POST, handleAiRun);
+  server.on("/ai/run", HTTP_OPTIONS, handleCorsOptions);
   server.begin();
 }
 

@@ -21,6 +21,15 @@
 - [ ] Rate limiting on POST /save, /rules/set
 - [x] Calibration value persistence (UID-based, survives reboot; reconfig after storage-layout migration)
 
+### P1.2 - AI subsystem (authorized scope extension, 2026-08) DONE
+- [x] 4 prompt slots persisted in EEPROM block 3087..3966 (QMAI v1 layout)
+- [x] Output types DIGITAL/ANALOG (strict validated, feed rules engine) + ANALYTIC (raw+log); CONTROL interface-only
+- [x] Providers OPENAI/OLLAMA/CUSTOM via endpoint config; ESP8266 plain-HTTP only (TLS infeasible in DRAM budget), ESP32 full https
+- [x] GUI Settings sub-tabs General/Network/AI; Network main tab removed
+- [x] Fully opt-in; api_key never echoed back
+- [x] Streaming /calib response (chunked) -- fixes heap-exhaustion JSON corruption on ESP8266
+- [ ] AI per-slot rate limiting beyond global rate_limit_ms (future)
+
 ### P2 - Nice-to-Have (Improve after 1.1)
 - [ ] HTTPS for OTA transfers
 - [ ] CSRF tokens on web forms
