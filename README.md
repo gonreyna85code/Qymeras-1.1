@@ -170,7 +170,7 @@ curl -X POST http://<device-ip>/toggle -d "id=0&state=1"
 curl -X POST http://<device-ip>/dimmer -d "id=0&value=75"
 ```
 
-Full API reference: see `AGENTS.md` for endpoint documentation.
+Full API reference and architecture: see `docs/architecture-baseline.md`.
 
 ---
 
@@ -180,7 +180,7 @@ Full API reference: see `AGENTS.md` for endpoint documentation.
 |-------|--------|
 | ESP8266 (NodeMCU, Wemos D1 Mini, etc.) | Fully Tested |
 | ESP32 (DevKit, WROOM, etc.) | Fully Tested |
-| ESP32-S2, ESP32-S3, ESP32-C3 | Untested but likely compatible |
+| ESP32-S2, ESP32-S3, ESP32-C3 | Build-verified (`esp32c3_devkit` env); hardware validation pending |
 
 Platform auto-detection via preprocessor defines. Add new boards by adding a
 `#define` block in `config.h`.

@@ -565,16 +565,35 @@ async function updateSettingsValues() {
 async function isVirtual(id, path, body = null) {
   const sensor = sensors.find(s => s.id == id);
   if (!sensor || sensor.local || sensor.type === SensorType.SENSOR_TIME)
-    return false;
-  await fetch(`http://${sensor.ip}${path}`, {
-    method:'POST',
-    headers:{
-      'Content-Type':
-        'application/x-www-form-urlencoded'
-    },
-    body
-  });
-  return true;
+    return { handled:false, ok:false };
+  let res;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    res = await fetch(`http://${sensor.ip}${path}`, {
+      method:'POST',
+      headers:{
+        'Content-Type':
+          'application/x-www-form-urlencoded'
+      },
+      body,
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+  } catch (e) {
+    if (e && e.name === 'AbortError')
+      alert(`Tiempo de espera agotado: ${sensor.ip} no respondió`);
+    else
+      alert(`Error de red: no se pudo contactar a ${sensor.ip}`);
+    return { handled:true, ok:false };
+  }
+  if (!res.ok) {
+    let detail = '';
+    try { detail = await res.text(); } catch(_) {}
+    alert(`Error en ${sensor.ip} (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+    return { handled:true, ok:false };
+  }
+  return { handled:true, ok:true };
 }
 
 /* -------------------- ACTIONS -------------------- */
@@ -582,6 +601,8 @@ async function isVirtual(id, path, body = null) {
 async function toggleMatterSwitch(i, id, name) {
   const btn =
     document.getElementById(`matterBtn${i}`);
+  const wasOn =
+    btn.classList.contains('on');
   const on =
     btn.classList.toggle('on');
   btn.classList.toggle('off', !on);
@@ -591,8 +612,15 @@ async function toggleMatterSwitch(i, id, name) {
     `id=${encodeURIComponent(id)}` +
     `&type=avail` +
     `&ref=${encodeURIComponent(on ? 1 : 0)}`;
-  if (await isVirtual(id, '/calib/set', body))
+  const r = await isVirtual(id, '/calib/set', body);
+  if (r.handled) {
+    if (!r.ok) {
+      btn.classList.toggle('on', wasOn);
+      btn.classList.toggle('off', !wasOn);
+      btn.textContent = wasOn ? 'ENABLED' : 'DISABLED';
+    }
     return;
+  }
   await fetch('/calib/set', {
     method: 'POST',
     headers: {
@@ -618,7 +646,7 @@ async function setPort(i) {
 async function setCalib(i, type, name, refOverride = null) {
   const sensor = sensors[i];
   if (!sensor)
-    return;
+    return false;
   const ref = refOverride !== null
     ? refOverride
     : (document.getElementById(`ref${i}`)?.value ?? '');
@@ -626,46 +654,79 @@ async function setCalib(i, type, name, refOverride = null) {
     `id=${encodeURIComponent(sensor.id)}` +
     `&type=${encodeURIComponent(type)}` +
     `&ref=${encodeURIComponent(ref)}`;
-  if (await isVirtual(sensor.id, '/calib/set', body))
-    return;
-  await fetch('/calib/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
+  const r = await isVirtual(sensor.id, '/calib/set', body);
+  if (r.handled)
+    return r.ok;
+  try {
+    const res = await fetch('/calib/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch(_) {}
+      alert(`Error local (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    alert('Error de red al contactar este dispositivo');
+    return false;
+  }
 }
 
 function togglePersist(i, name) {
   const persist = document.getElementById(`persistChk${i}`);
   const pulse   = document.getElementById(`pulseChk${i}`);
   const input   = document.getElementById(`ref${i}`);
+  const wasPersist = persist.checked;
   if (persist.checked) {
     pulse.checked = false;
     input.style.display = 'none';
     setCalib(i, 'pulse', name, 0);
   }
-  setCalib(i, 'persist', name, persist.checked ? 1 : 0);
+  setCalib(i, 'persist', name, persist.checked ? 1 : 0).then(ok => {
+    if (!ok) {
+      persist.checked = wasPersist;
+      pulse.checked = !wasPersist;
+      if (input) input.style.display = wasPersist ? 'none' : 'inline-block';
+    }
+  });
 }
 
 function togglePulse(i, name) {
   const pulse   = document.getElementById(`pulseChk${i}`);
   const persist = document.getElementById(`persistChk${i}`);
   const input   = document.getElementById(`ref${i}`);
+  const wasPulse = pulse.checked;
   if (pulse.checked) {
     persist.checked = false;
-    setCalib(i, 'persist', name, 0);
+    setCalib(i, 'persist', name, 0).then(ok => {
+      if (!ok) {
+        pulse.checked = wasPulse;
+        if (persist) persist.checked = !wasPulse;
+        if (input) input.style.display = 'none';
+      }
+    });
     input.style.display = 'inline-block';
   } else {
     input.style.display = 'none';
-    setCalib(i, 'pulse',  name, 0);
+    setCalib(i, 'pulse',  name, 0).then(ok => {
+      if (!ok) {
+        pulse.checked = wasPulse;
+        if (input) input.style.display = 'inline-block';
+      }
+    });
   }
 }
 
 async function toggleDevice(id) {
   const body =
     'id=' + encodeURIComponent(id);
-  if (await isVirtual(id, '/toggle', body)) {
-    setTimeout(loadDevices, 100);
+  const r = await isVirtual(id, '/toggle', body);
+  if (r.handled) {
+    if (r.ok) setTimeout(loadDevices, 100);
     return;
   }
   await fetch('/toggle', {
@@ -699,11 +760,12 @@ async function sendDimmer(id, value) {
   const body =
     `id=${id}&value=${value}`;
   try {
-    if (await isVirtual(id, '/dimmer', body)) {
-      setTimeout(loadDevices, 100);
+    const r = await isVirtual(id, '/dimmer', body);
+    if (r.handled) {
+      if (r.ok) setTimeout(loadDevices, 100);
       return;
     }
-    await fetch('/dimmer', {
+    const res = await fetch('/dimmer', {
       method: 'POST',
       headers: {
         'Content-Type':
@@ -711,6 +773,12 @@ async function sendDimmer(id, value) {
       },
       body
     });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch(_) {}
+      alert(`Error local (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+      return;
+    }
     setTimeout(loadDevices, 100);
   } catch (e) {
     console.log('sendDimmer err', e);

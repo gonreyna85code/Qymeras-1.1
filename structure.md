@@ -88,6 +88,7 @@
 ### Mesh/Transport Module (`mesh.cpp` / `mesh.h` / `espnow_p2p.cpp`)
 - UDP broadcast transport
 - ESP-NOW peer management
+- Bounded RX FIFO (8x250B ring; callback never blocks, overflow counter logged from loop())
 - Packet encoding/decoding
 - Peer discovery and cleanup
 - Transport mode auto-detection (STA=UDP, AP=ESP-NOW)
@@ -183,9 +184,11 @@
 ```bash
 pio run -e esp8266_generic   # Compile ESP8266
 pio run -e esp32_devkit      # Compile ESP32
+pio run -e esp32c3_devkit    # Compile ESP32-C3 (build-verified)
 pio run                      # Compile all platforms
 pio test                     # Run unit tests (if available)
 pio unitTest                 # Custom test runner
+python tests/host_sanity.py  # Host sanity tests (timezone/strict-float/FIFO)
 ```
 
 ### Expected Build Output

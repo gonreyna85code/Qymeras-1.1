@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <errno.h>
+#include <math.h>
 #include "web.h"
 #include "html.h"
 #include "core.h"
@@ -64,6 +66,18 @@ static bool parseStrictLong(const String &s, long &out) {
   const char *begin = s.c_str();
   long value = strtol(begin, &end, 10);
   if (end == begin || *end != '\0') return false;
+  out = value;
+  return true;
+}
+
+static bool parseStrictFloat(const String &s, float &out) {
+  if (s.length() == 0) return false;
+  char *end = nullptr;
+  const char *begin = s.c_str();
+  errno = 0;
+  float value = strtof(begin, &end);
+  if (end == begin || *end != '\0') return false;
+  if (errno == ERANGE || isinf(value) || isnan(value)) return false;
   out = value;
   return true;
 }
@@ -815,13 +829,133 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
   auto &c = sensors::calibrations[calibIdx];
   auto &r = mesh::reports[calibIdx];
   float raw = r.raw;
-  float ref = server.hasArg("ref") ? server.arg("ref").toFloat() : raw;
-  if (type == "TIME") {
-    c.correction = server.arg("ref").toInt();
+
+  // TIME / timezone: strict integer minutes from UTC, range -720..840.
+  if (type == "TIME" || type == "timezone") {
+    if (!server.hasArg("ref")) {
+      server.send(400, "text/plain", "ref required");
+      return;
+    }
+    long tz_min = 0;
+    if (!parseStrictLong(server.arg("ref"), tz_min)) {
+      server.send(400, "text/plain", "invalid timezone (integer minutes required)");
+      return;
+    }
+    if (tz_min < -720 || tz_min > 840) {
+      server.send(400, "text/plain", "timezone out of range (-720..840)");
+      return;
+    }
+    c.correction = (float)tz_min;
     saveCalibrationSlot(calibIdx);
     server.send(200, "text/plain", "OK");
     return;
   }
+
+  // persist: strict boolean ref.
+  if (type == "persist") {
+    if (!server.hasArg("ref")) {
+      server.send(400, "text/plain", "ref required");
+      return;
+    }
+    String pv = server.arg("ref");
+    if (pv != "1" && pv != "0") {
+      server.send(400, "text/plain", "invalid persist value (0/1)");
+      return;
+    }
+    bool enable = (pv == "1");
+    c.persist = enable;
+    c.pulse = false;
+    // Snapshot the live state at enable time so a reboot right after enabling
+    // persistence still restores the current relay state (the state is only
+    // re-saved on subsequent toggles while persist is on).
+    if (enable) c.pers_state = c.state;
+    saveCalibrationSlot(calibIdx);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // avail: strict boolean ref.
+  if (type == "avail") {
+    if (!server.hasArg("ref")) {
+      server.send(400, "text/plain", "ref required");
+      return;
+    }
+    String av = server.arg("ref");
+    if (av != "1" && av != "0") {
+      server.send(400, "text/plain", "invalid avail value (0/1)");
+      return;
+    }
+    c.avail = (av == "1") ? 1 : 0;
+    saveCalibrationSlot(calibIdx);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // res: no payload needed.
+  if (type == "res") {
+    c.min = 0;
+    c.max = 100;
+    c.correction = 0;
+    saveCalibrationSlot(calibIdx);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // fad: fade ms, strict float, 0..3600000 (storage caps fades at 1h).
+  if (type == "fad") {
+    if (!server.hasArg("ref")) {
+      server.send(400, "text/plain", "ref required");
+      return;
+    }
+    float fad = 0;
+    if (!parseStrictFloat(server.arg("ref"), fad)) {
+      server.send(400, "text/plain", "invalid fade value");
+      return;
+    }
+    if (fad < 0 || fad > 3600000.0f) {
+      server.send(400, "text/plain", "fade out of range (0..3600000 ms)");
+      return;
+    }
+    c.fade = (uint32_t)fad;
+    saveCalibrationSlot(calibIdx);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // pulse: pulse_ms, strict float, 0..3600000 (sane 1h cap, mirrors fade).
+  if (type == "pulse") {
+    if (!server.hasArg("ref")) {
+      server.send(400, "text/plain", "ref required");
+      return;
+    }
+    float pms = 0;
+    if (!parseStrictFloat(server.arg("ref"), pms)) {
+      server.send(400, "text/plain", "invalid pulse value");
+      return;
+    }
+    if (pms < 0 || pms > 3600000.0f) {
+      server.send(400, "text/plain", "pulse out of range (0..3600000 ms)");
+      return;
+    }
+    c.pulse_ms = (uint32_t)pms;
+    c.pulse = (pms > 0);
+    c.persist = false;
+    saveCalibrationSlot(calibIdx);
+    server.send(200, "text/plain", "OK");
+    return;
+  }
+
+  // ref/min/max: strict float; ref defaults to the live raw value.
+  float ref;
+  if (server.hasArg("ref")) {
+    if (!parseStrictFloat(server.arg("ref"), ref)) {
+      server.send(400, "text/plain", "invalid ref value");
+      return;
+    }
+  } else {
+    ref = raw;
+  }
+
   if (type == "ref") {
     if (ref == 0) c.correction = 0;
     else {
@@ -833,28 +967,6 @@ ICACHE_FLASH_ATTR void handleCalibSet() {
     c.min = raw + c.correction;
   } else if (type == "max") {
     c.max = raw + c.correction;
-  } else if (type == "fad") {
-    c.fade = ref;
-  } else if (type == "pulse") {
-    c.pulse_ms = ref;
-    c.pulse = (ref > 0);
-    c.persist = false;
-  } else if (type == "persist") {
-    bool enable = server.arg("ref") == "1";
-    c.persist = enable;
-    c.pulse = false;
-    // Snapshot the live state at enable time so a reboot right after enabling
-    // persistence still restores the current relay state (the state is only
-    // re-saved on subsequent toggles while persist is on).
-    if (enable) c.pers_state = c.state;
-  } else if (type == "avail") {
-    c.avail = ref ? 1 : 0;
-  } else if (type == "res") {
-    c.min = 0;
-    c.max = 100;
-    c.correction = 0;
-  } else if (type == "timezone") {
-    c.correction = ref;
   } else {
     server.send(400, "text/plain", "Bad type");
     return;

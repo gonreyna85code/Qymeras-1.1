@@ -168,6 +168,11 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - **Settings tab**: renders cards for ANY valid/configurable entity — local or
   remote — since `local` indicates provenance, not configurability. Remote
   configuration is routed to the owning device over HTTP via `isVirtual()`.
+  `isVirtual()` now: (1) verifies the owner's HTTP `response.ok` before
+  reporting success — a 4xx/5xx shows an alert with the owner IP and never
+  falls back to the local node; (2) enforces a 5s `AbortController` timeout;
+  (3) detects network errors with a clear alert. Optimistic UI toggles
+  (relay button, persist/pulse checkboxes) roll back on failure.
   Renderers are resolved by sensor type via `TYPE_RENDERERS` (all 14 valid
   types incl. AIDIG/AIANA); unknown types are skipped with a `console.warn` —
   GENERAL SETTINGS (node-level config: WiFi/ports/interval/OTA/factory reset)
@@ -260,7 +265,10 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
     exact; the existing parser already accepts N packets per datagram
     (`remaining % packet_len == 0`).
   - ESP-NOW keeps one entity per broadcast (RX buffer is 250 bytes); the
-    `[DISC TX]`/`[DISC RX]` batch logs are TEMP-DEBUG only.
+    `[DISC TX]`/`[DISC RX]` batch logs are TEMP-DEBUG only. RX is a bounded FIFO
+    (8 slots x 250 bytes) — the callback never blocks and only bumps an
+    overflow counter; dropped messages are logged from `loop()` (see
+    *ESP-NOW Transport*).
   - `parseUDPPacket()` drains up to `MAX_RX_PACKETS_PER_TICK` (8) datagrams per
     socket per tick (both `mesh_udp` and `udp`), bounded so a UDP storm cannot
     starve `loop()`; the RX buffer was raised from 512 to 1400 bytes.
@@ -303,6 +311,13 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 ### Reliability
 - Send callback: `espnow_send_cb`
 - Receive callback: `espnow_recv_cb`
+- **Bounded RX FIFO** (8 entries x 250 bytes): the interrupt/IRAM callback
+  copies payload+len+src MAC into the ring via `rx_enqueue()` under an ESP32
+  portMUX critical section and never blocks, allocates, or logs. When full the
+  new message is dropped and a `rx_overflow` counter is bumped; `mesh::tick()`
+  logs a warning with the delta. `espnow_recv()` consumes the FIFO from
+  `loop()`. This removes the old single-slot buffer that could drop traffic
+  under bursts.
 - No automatic retransmission (application level)
 
 ## Logging
@@ -381,9 +396,16 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - Invalid credentials: retry loop
 
 ### Timezone
-- Stored as offset in minutes from UTC
-- POST /calib/set with `tz` parameter
-- Used for TIME rule triggers
+- The runtime clock always stays **UTC** (NTP syncs UTC; `time()` is never
+  shifted). The SENSOR_TIME calibration `correction` field IS the timezone
+  offset in **minutes from UTC** (persisted).
+- UTC→local is an explicit portable conversion
+  (`local = utc + offset_minutes*60` decomposed with `gmtime()`), avoiding
+  libc timezone globals whose semantics differ between ESP8266 and ESP32.
+- POST `/calib/set` with `type=TIME` (or `timezone`) and `ref` = integer
+  minutes, range **-720..840** (UTC-12..UTC+14).
+- Used for TIME rule triggers (`getMinutesOfDay()`) and displayed time
+  (`getTime()`).
 
 ### Broadcast/Command Intervals
 - Default: 2s broadcast, 1s command
@@ -391,10 +413,12 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - Interval < 5000ms or > 600000ms: reset to default
 
 ### Security Limitations
-- **No authentication** on any web endpoint
+- **HTTP Basic Auth available** but **dormant by default** (`auth_enabled=false`);
+  hardcoded credentials remain in the binary as a placeholder (deferred to Phase 3+)
 - **Recommended**: Local network only
 - **Known**: Credentials transmitted in plain text
-- **No rate limiting** on API endpoints
+- **Rate limiting active**: burst-tolerant 6 requests / 2s window on all
+  state-changing endpoints (400 on malformed input, 429 on burst overflow)
 
 ## Platform Differences
 
@@ -444,13 +468,16 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - **HTTP Basic Auth available** (disabled by default, can be enabled via `AUTH_USERNAME`/`AUTH_PASSWORD` constants in `web.cpp`)
 - **OTA device identity check** (chip token, not a firmware hash; verified on boot and toggle)
 - **No encryption** on web UI or API (HTTP only)
-- **No rate limiting** on POST endpoints
-- **No input validation** beyond basic bounds checking
+- **Rate limiting active** on state-changing POST endpoints (6 req/2s burst-tolerant)
+- **Strict input validation** on `/calib/set` (and ID parsing): rejects empty
+  strings, trailing junk, overflow, NaN/Inf; type-specific ranges
+  (timezone -720..840 integer minutes, fade/pulse 0..3600000 ms, persist/avail
+  strict 0/1). No silent coercion of garbage to 0.
 
 ### Recommended Hardening
 1. Enable HTTP basic auth by setting `AUTH_USERNAME` and `AUTH_PASSWORD` in `web.cpp`
 2. Use HTTPS for OTA transfers
-3. Implement rate limiting on `/save`, `/rules/set`
+3. ~~Implement rate limiting on `/save`, `/rules/set`~~ ✅ done (6 req/2s burst)
 4. Validate all JSON payloads sizes
 5. Add CSRF tokens on web forms
 4. Validate all JSON payloads sizes
@@ -507,10 +534,10 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - [ ] OTA security hardening recommended
 
 ### ✅ Acceptable Limitations (for 1.1)
-- No authentication (local network only)
+- No authentication (local network only; auth infra dormant)
 - No HTTPS for OTA (HTTP only)
-- No rate limiting on API
-- No input sanitization beyond bounds
+- ~~No rate limiting on API~~ ✅ rate limiting active (6 req/2s burst)
+- ~~No input sanitization beyond bounds~~ ✅ strict `/calib/set` validation added
 - Framework-level bugs pinned/fixed
 
 ## Recommended Implementation Order (Phase 2)

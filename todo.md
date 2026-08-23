@@ -105,7 +105,7 @@
 - [x] Strict full-string parsing on all ID/value fields (rejects malformed/overflow)
 - [x] Bounds checks on sensor/actuator/rule indices, thresholds, levels, dates, ports
 - [x] Reject oversized/invalid rule payloads
-- [ ] Document valid input ranges (docs pending)
+- [x] Strict `/calib/set` validation (STEP 1): `parseStrictFloat` rejects empty/trailing-junk/overflow/NaN/Inf; timezone integer -720..840; fade/pulse 0..3600000 ms; persist/avail strict 0/1 (documented in architecture-baseline.md)
 
 ### T012: Long-term Endurance ⏳ PENDING
 - [ ] Run 1000+ boot cycles
@@ -113,7 +113,8 @@
 - [ ] Verify calibration persistence
 - [ ] Test factory reset multiple times
 
-### T013: Test Suite Development ⏳ PENDING
+### T013: Test Suite Development 🔄 PARTIAL (host sanity tests added)
+- [x] Host tests: `tests/host_sanity.py` — timezone conversion, strict float parsing + ranges, ESP-NOW RX FIFO (45 checks, 45/45 pass)
 - [ ] Unit tests for rule logic
 - [ ] Unit tests for calibration math
 - [ ] Integration tests (mock hardware)
@@ -136,14 +137,23 @@
 - [ ] Test critical paths
 - [ ] Sign off for production
 
+### T016: Production Hardening STEP 1 🔄 CODE COMPLETE, HARDWARE VERIFY PENDING
+- [x] Timezone semantics: runtime stays UTC; SENSOR_TIME `correction` = offset minutes from UTC; portable UTC→local via epoch+offset+gmtime()
+- [x] ESP-NOW bounded RX FIFO (8x250B ring, portMUX, overflow counter + warn log)
+- [x] Strict `/calib/set` validation (parseStrictFloat + type ranges)
+- [x] `isVirtual()` error handling (timeout, response.ok, alerts, UI rollback)
+- [x] platformio.ini: espressif32 pinned @6.5.0 + new `esp32c3_devkit` env
+- [x] Host tests `tests/host_sanity.py` (45/45) + builds green on 3 envs
+- [ ] Flash ESP32 (COM3) + ESP8266 (COM9) and verify: timezone persists & shifts TIME rules, malformed `/calib/set` rejected, discovery complete
+
 ## Status Summary
 
 | Category | Count | Percentage |
 |----------|-------|------------|
-| Total tasks | 15 | 100% |
-| Completed (code + docs) | 11 | 73% |
-| Code applied, hardware test pending | 2 | 13% |
-| Pending (requires hardware) | 2 | 13% |
+| Total tasks | 16 | 100% |
+| Completed (code + docs) | 9 | 56% |
+| Code applied, hardware test pending | 3 | 19% |
+| Pending (requires hardware) | 4 | 25% |
 
 ## Final validation state
 See `progress.md` "FINAL VALIDATION STATUS TABLE". No area is marked PASS without

@@ -215,13 +215,31 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
   // Drain up to MAX_RX_PACKETS_PER_TICK datagrams per socket per tick. A UDP
   // storm must not monopolize loop(); leftovers are handled on the next tick().
   while (processed < MAX_RX_PACKETS_PER_TICK && (packet_size = socket.parsePacket()) > 0) {
-    int len = socket.read(buf, sizeof(buf));
-    if (len > 0) {
-      char remote_ip[16];
-      IPAddress rip = socket.remoteIP();
-      snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
-      parseBuffer(buf, len, remote_ip, now_ms);
+    // Reject oversized/malformed datagrams: a payload larger than our buffer
+    // cannot be fully drained and would otherwise leave stale bytes that
+    // parsePacket() re-yields every tick -> an infinite spin. Drop-and-drain.
+    if (packet_size > (int)sizeof(buf)) {
+      while (socket.available()) socket.read();
+      break;
     }
+    int len = socket.read(buf, sizeof(buf));
+    if (len <= 0) {
+      // parsePacket() reported a datagram but read() could not retrieve it
+      // (e.g. WiFi reconnecting, socket in a transitional state). Drain the
+      // pending bytes and stop this tick; retry on the next tick. This prevents
+      // the loop from re-yielding the same unreadable datagram forever.
+      while (socket.available()) socket.read();
+      break;
+    }
+    char remote_ip[16];
+    IPAddress rip = socket.remoteIP();
+    snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
+    parseBuffer(buf, len, remote_ip, now_ms);
+    // Guarantee the datagram is fully dequeued. On ESP32 a socket can re-yield
+    // the same datagram across ticks if the leading read() does not consume it
+    // entirely, which would spin loop() at full speed (log flood + stale mesh).
+    // available()==0 here in the normal case (no-op); this just closes the gap.
+    while (socket.available()) socket.read();
     processed++;
   }
 }

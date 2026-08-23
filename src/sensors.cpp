@@ -15,7 +15,6 @@ Calibration calibrations[MAX_SENSORS];
 Fade activeFades[MAX_SENSORS];
 PulseState activePulses[MAX_SENSORS];
 
-static time_t time_offset = 0;
 static TimeSource time_source = TIME_NONE;
 
 static uint32_t makeSensorUid(uint8_t index) {
@@ -516,9 +515,28 @@ Calibration *getCalib(const String &key) {
   return (idx >= 0) ? &calibrations[idx] : nullptr;
 }
 
+// ========================================
+// TIMEZONE
+// ========================================
+// The SENSOR_TIME calibration's `correction` field IS the timezone offset in
+// minutes from UTC (persisted). The runtime clock itself always stays UTC:
+// NTP syncs UTC and time() is never shifted. UTC -> local is an explicit,
+// portable conversion (epoch + offset_minutes*60 decomposed with gmtime()),
+// avoiding libc timezone globals (configTime TZ / setenv TZ) whose semantics
+// differ between ESP8266 (newlib) and ESP32 (lwip) and would break parity.
+static int32_t timezoneOffsetMinutes() {
+  int idx = findCalib("TIME");
+  if (idx < 0) return 0;
+  return (int32_t)calibrations[idx].correction;
+}
+
+static time_t toLocalEpoch(time_t utc) {
+  return utc + (time_t)timezoneOffsetMinutes() * 60;
+}
+
 RTCTime getTime() {
-  time_t now = time(nullptr);
-  struct tm *timeinfo = localtime(&now);
+  time_t local = toLocalEpoch(time(nullptr));
+  struct tm *timeinfo = gmtime(&local);
   RTCTime rt = {
     (uint16_t)(timeinfo->tm_year + 1900),
     (uint8_t)(timeinfo->tm_mon + 1),
@@ -531,8 +549,8 @@ RTCTime getTime() {
 }
 
 uint16_t getMinutesOfDay() {
-  time_t now = time(nullptr);
-  struct tm *timeinfo = localtime(&now);
+  time_t local = toLocalEpoch(time(nullptr));
+  struct tm *timeinfo = gmtime(&local);
   return timeinfo->tm_hour * 60 + timeinfo->tm_min;
 }
 
@@ -569,7 +587,8 @@ void updateNTPTime() {
   time_t now = time(nullptr);
   if (now < 1704067200)
     return;
-  struct tm *timeinfo = localtime(&now);
+  time_t local = toLocalEpoch(now);
+  struct tm *timeinfo = gmtime(&local);
   if (!timeinfo)
     return;
   RTCTime ntpTime = {

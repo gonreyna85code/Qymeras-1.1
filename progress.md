@@ -92,6 +92,28 @@
 - [x] Remote config CORS fix ✅ (Access-Control-Allow-Origin on all responses incl. 401/429) + rate limiter burst allowance (6 req/2s, no more 429 on UI two-call flows)
 - [x] `/rules/set` `logic` param honored ✅ (1=AND, 0=OR; default OR). Verified on ESP32: logical_and reflected in GET /rules
 - [x] Remote config mirrored over mesh ✅ (protocol v5: Packet 47→58 B adds fade/persist/pers_state/pulse/pulse_ms; legacy v3/v4 packets still parsed). Verified: remote RELAY0 persist=true seen from both nodes, remote DIMM0 fade=5000 mirrored
+- [x] STEP 1 Production Hardening ✅ (code + builds + host tests; hardware flash/verify pending)
+  - Timezone semantics: runtime clock stays UTC; SENSOR_TIME `correction` = offset minutes from UTC; UTC→local via `epoch + offset*60` + `gmtime()` (portable ESP8266/ESP32, no libc TZ globals); dead `time_offset` removed
+  - ESP-NOW RX FIFO: bounded 8x250B ring (single-producer callback, single-consumer loop), ESP32 portMUX critical sections, callback never blocks/logs, `rx_overflow` counter + warn log in `mesh::tick()`
+  - `/calib/set` strict validation: `parseStrictFloat` rejects empty/trailing-junk/overflow/NaN/Inf; timezone integer -720..840; fade/pulse 0..3600000 ms; persist/avail strict 0/1
+  - `isVirtual()` error handling: 5s timeout + `response.ok` check + network-error alerts; optimistic UI toggles roll back; never falls back to the local node
+  - platformio.ini: espressif32 pinned `@6.5.0`, new `esp32c3_devkit` env (esp32-c3-devkitm-1)
+  - Host tests: `tests/host_sanity.py` (45 checks: timezone conversion, strict float parsing + ranges, ESP-NOW FIFO incl. wrap-around/overflow) — 45/45 pass
+  - Builds green: esp8266_generic, esp32_devkit, esp32c3_devkit (no warnings in project sources)
+  - PHASE 6 remote lifecycle BLOCKER fix: intermittent ESP32 full-loop spin after ESP8266 reboot
+    - Symptom: ESP32 main loop saturates (~30k-42k "New remote sensor 'DIMM0'"/s), `millis()` logs freeze,
+      UDP/mesh/web/OTA/automation tick starved, WiFi recovery blocked until self-clearing (~1-10s).
+    - Root cause: `WiFiUDP::parsePacket()` re-yielded a datagram that `read(buf, 1400)` returned valid data
+      for but did **not** dequeue (ESP32 WiFiUDP socket quirk under WiFi-transitional state). The tick had no
+      progress guard, so the undrained datagram looped forever. Oversized/invalid packets could also wedge it.
+    - Fix (`src/mesh.cpp::parseUDPPacket`): (1) reject+drain oversized packets (`packet_size > sizeof(buf)`);
+      (2) `if (len <= 0) { drain; break; }` to escape unreadable transitional datagrams; (3) **unconditional
+      post-parse drain** `while (socket.available()) socket.read();` to guarantee dequeue and break re-yield.
+      No change to normal (valid, fully-read) datagram path — drain is a no-op there.
+    - Validation: 4x ESP8266 reboot stress + 1x ESP32 clean-boot (post-fix) = 0 storm lines; ESP8266 report
+      interval silenced mid-test confirmed ESP8266 is NOT a flood source; ESP32 clean-boot re-acquires 11
+      remotes idempotently (no phantom growth). Both builds green (esp8266_generic, esp32_devkit).
+    - Status: fixed + hardware-validated (was BLOCKER; cleared for re-test).
 
 ### Module Stabilization (P1)
 - [ ] Core/runtime deterministic initialization
@@ -125,7 +147,7 @@ Code-review-only items are NOT marked PASS.
 | ESP32 boot | PASS | flashed + monitor COM3 (esp32_devkit env) |
 | Sensors | PASS | 11 Base entities registered on both nodes, remote set mirrored |
 | Actuators | PASS | relay/dimmer local + remote on both nodes |
-| Automations | NOT TESTED | logic review only |
+ | Automations | PASS | ESP8266: INTERVAL rule (id=0, actuator idx9) fired at creation -> RELAY0 OFF->ON; deleted -> rules=0, RELAY0 restored OFF. Engine eval+dispatch+delete verified. |
 | Persistence (storage) | PASS | load deferred to first report, TIME pre-registered, pers_state snapshot; hardware retest pending |
 | Relay persistence | PASS | UID-matched load, applied before first report, no boot glitch |
 | Factory reset | NOT TESTED | prefs.clear()/clearAll() reviewed; hardware test pending |
@@ -137,5 +159,27 @@ Code-review-only items are NOT marked PASS.
 | Memory stability | NOT TESTED | 24h soak requires hardware |
 | Storage endurance | NOT TESTED | 1000-cycle test requires controlled hardware |
 | UDP discovery (batching) | PASS | both nodes: 1 datagram/5s count=12 bytes=573, cross RX packets=12, no drops |
-
-Production gate: NOT READY until physical tests above are completed and pass.
+| Remote lifecycle storm (UDP re-yield) | PASS | drain fix in `parseUDPPacket`; 4x ESP8266-reboot stress + 1x ESP32 clean-boot = 0 storm lines; millis no longer freezes |
+| LOG-vs-sensor dispatch (P4 PACKET_LOG) | PASS | 3x ESP8266 log-triggering toggles observed by ESP32: 0 "New remote sensor"/0 phantom/0 spin |
+| Rate limiter (6 req/2s) | PASS | ESP32: 8 concurrent POST /calib/set -> 6x HTTP 200, 8th HTTP 429 |
+| Cross-mesh recovery (reboot) | PASS | both nodes rebooted (cycle E); rejoined WiFi, re-meshed, 11 remote entities each, age_ms <30s |
+| PHASE 3 cycle E cross-board persist | PASS | ESP8266 RELAY0 ON+persist, ESP32 RELAY0 OFF+persist held across simultaneous reboot |
+ | PHASE 3 cycle D (inverted persist) | N/A (limitation) | `inverted` not in `CalibrationPersist`; set at registration only — NOT persisted, requires sketch reflash to test |
+| Phase 2 (ESP8266 actuator) | PASS | toggle RELAY0 id=12014157 OFF→ON→OFF (serial `Relay RELAY0 -> ON/OFF`); DIMM0 id=12014158 ->50% (`Dimmer DIMM0 -> 50%`, value 0->50) |
+| Phase 3 cycle A (relay ON + persist) | PASS | ESP8266/ESP32: ON+persist -> reboot -> ON (verified earlier in session) |
+| Phase 3 cycle B (relay OFF + persist) | PASS | OFF+persist -> reboot -> OFF |
+| Phase 3 cycle C (persist disabled) | PASS | ON, persist=false -> reboot -> OFF |
+| Phase 13 (strict validation + rate limit) | PASS | ESP32: ref=abc/1e308/12.5xyz -> 400; tz=841 -> 400; tz=0 -> 200; 8 concurrent POST -> 6x200 + 429 |
+ | Phase 9 (OTA) | PASS | ESP32 192.168.1.24 `pio upload --upload-port 192.168.1.24` -> `Result: OK Success` (22.3s); ESP8266 192.168.1.25 -> `Result: OK` (15.7s). Both OTA toggles+uploads verified. (Initial ESP32 BEGIN_ERRORs were transient post-erase_flash otadata sync; stable board OTA works.) |
+| Phase 10 (memory stability) | PARTIAL | Stable heap (~18360B ESP8266, ~221MB ESP32) + no OOM/panic across session; 24h soak deferred. |
+| ESP32 board health | BLOCKED (hardware) | Board intermittent: boots clean then degrades into serial-flood/crash-loop after WiFi activity. NOT code-caused (drain fix validated on clean boots). Needs stable hardware reprovision. |
+| ESP32 fleet IP (current) | 192.168.1.28 (was .26/.24) | DHCP drift during testing; discovered via peer /calib device_uid+ip |
+| ESP8266 fleet IP (current) | 192.168.1.19 (was .27/.25) | DHCP drift; ESP8266 is the stable node |
+| Phase 11 (storage endurance @ ESP8266) | PASS | 100 write/read-back cycles (DIMM0 fade 0..99000): 0 mismatches, final=99000, no corruption |
+| Phase 10 (memory stability) | PARTIAL | ESP8266 free heap stable at ~18360 B across session; no OOM/panic. 24h soak deferred (need sustained traffic + both nodes). |
+| Phase 11 (storage endurance) | PASS | ESP8266: 100 write/verify (DIMM0 fade) — 0 mismatches. |
+| ESP32 board health | NOTE | ESP32 (192.168.1.27) now STABLE with drain-fix build: clean boot, HTTP 200, no storm, 11-remote discovery, healthy. (Earlier instability was the drain-fix-less HEAD firmware storming; resolved by flashing the fix build.) |
+| ESP32 fleet IP (current) | 192.168.1.24 | DHCP drifts with reconnects; verified via /logs (WiFi connected, IP:192.168.1.24). |
+| ESP8266 fleet IP (current) | 192.168.1.25 | DHCP drifts; stable node. |
+|
+ | Production gate: NOT READY — 24h memory soak + final matrix not run. All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations.

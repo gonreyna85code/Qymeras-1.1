@@ -9,48 +9,75 @@
 
 namespace mesh {
 
+// Bounded RX FIFO (single producer = ESP-NOW callback, single consumer =
+// loop()). No dynamic memory. Each entry stores payload + length + src MAC.
+static const uint8_t ESPNOW_MAX_PAYLOAD = 250;
+static const uint8_t ESPNOW_RX_QUEUE_SIZE = 8;
+
+struct RxEntry {
+  uint8_t payload[ESPNOW_MAX_PAYLOAD];
+  uint16_t len;
+  uint8_t src[6];
+};
+
+static RxEntry rx_queue[ESPNOW_RX_QUEUE_SIZE];
+static volatile uint8_t rx_head = 0;   // next write slot (callback side)
+static volatile uint8_t rx_tail = 0;   // next read slot (loop side)
+static volatile uint8_t rx_count = 0;  // entries in the queue
+static volatile uint32_t rx_overflow = 0;
+
+#if defined(ESP32)
+static portMUX_TYPE rx_mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+
+static void rx_enqueue(const uint8_t *mac, const uint8_t *data, uint16_t len) {
+  if (len == 0 || len > ESPNOW_MAX_PAYLOAD) return;
+#if defined(ESP32)
+  portENTER_CRITICAL(&rx_mux);
+#endif
+  if (rx_count >= ESPNOW_RX_QUEUE_SIZE) {
+    // Queue full: drop the new message, keep the oldest. Callback must never
+    // block, so we only bump a counter here; logging happens from loop().
+    rx_overflow++;
+#if defined(ESP32)
+    portEXIT_CRITICAL(&rx_mux);
+#endif
+    return;
+  }
+  RxEntry &e = rx_queue[rx_head];
+  memcpy(e.src, mac, 6);
+  memcpy(e.payload, data, len);
+  e.len = len;
+  rx_head = (rx_head + 1) % ESPNOW_RX_QUEUE_SIZE;
+  rx_count++;
+#if defined(ESP32)
+  portEXIT_CRITICAL(&rx_mux);
+#endif
+}
+
 static uint8_t peers[25][6];
 static int peer_count = 0;
 static bool espnow_ready = false;
 static bool espnow_enabled = false;
-static uint8_t rx_buf[250];
-static volatile bool rx_ready = false;
-static uint8_t rx_src[6];
-static uint8_t rx_len = 0;
 
 // ================= CALLBACKS =================
 
 #if defined(ESP8266)
 static void espnow_send_cb(uint8_t *mac, uint8_t status) {}
 static void espnow_recv_cb(uint8_t *mac, uint8_t *data, uint8_t len) {
-  if (len > 0 && len <= 250) {
-    memcpy(rx_src, mac, 6);
-    memcpy(rx_buf, data, len);
-    rx_len = len;
-    rx_ready = true;
-  }
+  rx_enqueue(mac, data, len);
 }
 #elif defined(ESP32)
 #include <esp_idf_version.h>
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 static void espnow_send_cb(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {}
 static void espnow_recv_cb(const esp_now_recv_info_t *recv_info, const uint8_t *data, int len) {
-  if (len > 0 && len <= 250) {
-    memcpy(rx_src, recv_info->src_addr, 6);
-    memcpy(rx_buf, data, len);
-    rx_len = len;
-    rx_ready = true;
-  }
+  rx_enqueue(recv_info->src_addr, data, (uint16_t)len);
 }
 #else
 static void espnow_send_cb(const uint8_t *mac, esp_now_send_status_t status) {}
 static void espnow_recv_cb(const uint8_t *mac, const uint8_t *data, int len) {
-  if (len > 0 && len <= 250) {
-    memcpy(rx_src, mac, 6);
-    memcpy(rx_buf, data, len);
-    rx_len = len;
-    rx_ready = true;
-  }
+  rx_enqueue(mac, data, (uint16_t)len);
 }
 #endif
 #endif
@@ -82,12 +109,33 @@ void espnow_send_broadcast(const uint8_t *data, uint16_t len) {
 }
 
 bool espnow_recv(uint8_t *buf, uint16_t *len, uint8_t *src_mac) {
-  if (!rx_ready) return false;
-  rx_ready = false;
-  memcpy(buf, rx_buf, rx_len);
-  *len = rx_len;
-  memcpy(src_mac, rx_src, 6);
+#if defined(ESP32)
+  portENTER_CRITICAL(&rx_mux);
+#endif
+  if (rx_count == 0) {
+#if defined(ESP32)
+    portEXIT_CRITICAL(&rx_mux);
+#endif
+    return false;
+  }
+  const RxEntry &e = rx_queue[rx_tail];
+  memcpy(buf, e.payload, e.len);
+  *len = e.len;
+  memcpy(src_mac, e.src, 6);
+  rx_tail = (rx_tail + 1) % ESPNOW_RX_QUEUE_SIZE;
+  rx_count--;
+#if defined(ESP32)
+  portEXIT_CRITICAL(&rx_mux);
+#endif
   return true;
+}
+
+uint32_t espnow_get_rx_overflow() {
+  return rx_overflow;
+}
+
+uint8_t espnow_get_rx_queue_depth() {
+  return rx_count;
 }
 
 void espnow_add_peer(const uint8_t *mac) {

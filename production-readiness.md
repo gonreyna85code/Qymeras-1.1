@@ -59,3 +59,40 @@ endurance, and real OTA upload tests are NOT TESTED.
 Code review and dual-platform builds are green. Physical validation (boot, relay
 persistence, factory reset, OTA upload, network reconnect, 24h soak, storage
 endurance) is required before declaring production-ready.
+
+## STEP 1 Production Hardening (code + builds + host tests done, hardware verify pending)
+
+### Timezone semantics
+- Runtime clock always stays UTC (NTP syncs UTC; `time()` never shifted).
+- SENSOR_TIME `correction` IS the timezone offset in minutes from UTC (persisted).
+- UTC→local = `epoch + offset_min*60` decomposed with `gmtime()` (portable
+  ESP8266/ESP32; avoids libc TZ globals). Dead `time_offset` removed.
+- Affected: `getTime()`, `getMinutesOfDay()`, `updateNTPTime()`; TIME rules fire
+  on local minutes-of-day.
+
+### ESP-NOW RX FIFO (removes single-slot RX buffer)
+- Bounded 8x250B ring, single-producer (callback) / single-consumer (loop).
+- Callback never blocks/allocates/logs; ESP32 guarded by portMUX critical sections.
+- Full queue → drop new message + `rx_overflow` counter; `mesh::tick()` logs the
+  delta. `espnow_get_rx_overflow()`/`espnow_get_rx_queue_depth()` exposed.
+
+### `/calib/set` strict validation
+- `parseStrictFloat` rejects empty, trailing junk, overflow (ERANGE), NaN, Inf.
+- Ranges: timezone integer -720..840; fade/pulse 0..3600000 ms; persist/avail
+  strict "1"/"0". No silent coercion (e.g. `abc -> 0` is rejected).
+
+### `isVirtual()` remote-config error handling
+- 5s timeout (AbortController), `response.ok` verification, network-error alerts.
+- No false success: a 4xx/5xx from the owner shows an alert; never falls back to
+  the local node. Optimistic UI toggles (relay button, persist/pulse checkboxes)
+  roll back on failure.
+
+### Build/tooling
+- `platformio.ini`: espressif32 pinned `@6.5.0`; new `esp32c3_devkit` env
+  (esp32-c3-devkitm-1). Builds green on esp8266_generic / esp32_devkit /
+  esp32c3_devkit with no warnings in project sources.
+- Host tests: `tests/host_sanity.py` (45 checks, 45/45 pass).
+
+### Remaining before production gate (unchanged)
+- Physical validation on ESP8266 + ESP32 (boot, persistence, OTA, soak, endurance).
+- ESP32-C3: flashed-hardware validation pending (build-verified only).
