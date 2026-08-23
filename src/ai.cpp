@@ -2,6 +2,8 @@
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
+#include "config.h"
+#include "mesh.h"
 #include "sensors.h"
 #include "log.h"
 
@@ -278,12 +280,12 @@ static bool applyResult(uint8_t slot, const char *content) {
   }
 
   if (p.out_type == OUT_ANALOG) {
-    // STRICT numeric: full-consume strtof, finite, within configured range.
+    // Tolerant numeric: extract leading number, ignore trailing unit/text
+    // (e.g. "35.20C" from TEMP context). Must have at least one numeric char.
     char *end = nullptr;
     errno = 0;
     float v = strtof(val.c_str(), &end);
-    while (end && *end == ' ') end++;  // tolerate trailing spaces only
-    if (end == val.c_str() || (end && *end != '\0')) {
+    if (end == val.c_str()) {
       setError("invalid analog response (number required)");
       return false;
     }
@@ -310,25 +312,88 @@ static bool applyResult(uint8_t slot, const char *content) {
 
 // ================= HTTP =================
 
+static const char* sensorTypeName(uint8_t t) {
+  switch (t) {
+    case sensors::SENSOR_LUMI: return "LUMI";
+    case sensors::SENSOR_HUMI: return "HUMI";
+    case sensors::SENSOR_TEMP: return "TEMP";
+    case sensors::SENSOR_PRESS: return "PRESS";
+    case sensors::SENSOR_LEVEL: return "LEVEL";
+    case sensors::SENSOR_AIRQ: return "AIRQ";
+    case sensors::SENSOR_RAIN: return "RAIN";
+    case sensors::TYPE_DIMMER: return "DIMMER";
+    case sensors::TYPE_RELAY: return "RELAY";
+    case sensors::SENSOR_TIME: return "TIME";
+    case sensors::SENSOR_GENERIC: return "GENERIC";
+    case sensors::SENSOR_CONTACT: return "CONTACT";
+    case sensors::SENSOR_AIDIG: return "AIDIG";
+    case sensors::SENSOR_AIANA: return "AIANA";
+    default: return "UNKNOWN";
+  }
+}
+
+static void appendJsonEscaped(String &out, const char *s) {
+  for (const char *q = s; *q; q++) {
+    if (*q == '"') out += "\\\"";
+    else if (*q == '\\') out += "\\\\";
+    else if (*q == '\n') out += "\\n";
+    else if (*q == '\r') out += "\\r";
+    else if (*q == '\t') out += "\\t";
+    else out += *q;
+  }
+}
+
 static String buildBody(uint8_t slot) {
   const PromptCfg &p = prompts[slot];
 
-  // Build JSON manually. A short format instruction is appended for typed
-  // outputs so strict validation has a fair chance; validation stays strict.
-  String body = "{\"model\":\"";
-  body += (p.model[0] != '\0') ? p.model : config.model;
-  body += "\",\"messages\":[{\"role\":\"user\",\"content\":\"";
-  for (const char *q = staged_prompt; *q; q++) {
-    if (*q == '"') body += "\\\"";
-    else if (*q == '\\') body += "\\\\";
-    else if (*q == '\n') body += "\\n";
-    else if (*q == '\r') body += "\\r";
-    else if (*q == '\t') body += "\\t";
-    else body += *q;
+  // System context: explain why sensor data is sent + full visible snapshot.
+  String sys;
+  sys.reserve(1024);
+  sys += "You are the AI assistant for Qymeras IoT device. You receive real-time sensor data because the user's prompt refers to device state and you must use it to answer. Sensors are sent as NAME(TYPE)=value/state. Use them to evaluate the prompt.\nSensors:\n";
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    if (!sensors::isEntryVisible(i)) continue;
+    auto &c = sensors::calibrations[i];
+    if (c.type == sensors::SENSOR_TIME) continue; // exclude Unix time, confuses LLM
+    auto &r = mesh::reports[i];
+    char vbuf[24];
+    if (c.type == sensors::TYPE_RELAY || c.type == sensors::SENSOR_AIDIG ||
+        c.type == sensors::SENSOR_CONTACT || c.type == sensors::SENSOR_RAIN) {
+      // digital: show ON/OFF from state
+      sys += c.name;
+      sys += "(";
+      sys += sensorTypeName(c.type);
+      sys += ")=";
+      sys += (r.state ? "ON" : "OFF");
+    } else {
+      float v = r.value;
+      if (isnan(v) || isinf(v)) v = 0;
+      dtostrf(v, 0, 2, vbuf);
+      sys += c.name;
+      sys += "(";
+      sys += sensorTypeName(c.type);
+      sys += ")=";
+      sys += vbuf;
+      if (c.type == sensors::SENSOR_TEMP) sys += "C";
+      else if (c.type == sensors::SENSOR_HUMI) sys += "%";
+      else if (c.type == sensors::SENSOR_PRESS) sys += "kPa";
+    }
+    sys += c.local ? " local" : " remote";
+    sys += "\n";
+    if (sys.length() > 900) break; // cap to keep JSON under ~1.5KB
   }
+  sys += "\nUse the sensor data to answer the user's prompt. For overtemperature risk, base your answer on the TEMP sensor.\n";
+
+  String body;
+  body.reserve(1536);
+  body += "{\"model\":\"";
+  body += (p.model[0] != '\0') ? p.model : config.model;
+  body += "\",\"messages\":[{\"role\":\"system\",\"content\":\"";
+  appendJsonEscaped(body, sys.c_str());
+  body += "\"},{\"role\":\"user\",\"content\":\"";
+  appendJsonEscaped(body, staged_prompt);
   if (p.out_type == OUT_DIGITAL) body += "\\nAnswer with exactly true or false.";
   else if (p.out_type == OUT_ANALOG) body += "\\nAnswer with only a number.";
-  body += "\"}],\"max_tokens\":50,\"temperature\":0.1}";
+  body += "\"}],\"max_tokens\":100,\"temperature\":0.1}";
   return body;
 }
 
