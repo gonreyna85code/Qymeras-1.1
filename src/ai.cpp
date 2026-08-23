@@ -391,9 +391,19 @@ static String buildBody(uint8_t slot) {
   appendJsonEscaped(body, sys.c_str());
   body += "\"},{\"role\":\"user\",\"content\":\"";
   appendJsonEscaped(body, staged_prompt);
-  if (p.out_type == OUT_DIGITAL) body += "\\nAnswer with exactly true or false.";
-  else if (p.out_type == OUT_ANALOG) body += "\\nAnswer with only a number.";
-  body += "\"}],\"max_tokens\":100,\"temperature\":0.1}";
+  const char* suffix = "";
+  int maxTokens = 100;
+  if (p.out_type == OUT_DIGITAL) {
+    suffix = "\\nRespond with only the word true or false. No other text, no explanation, no punctuation.";
+    maxTokens = 3;
+  } else if (p.out_type == OUT_ANALOG) {
+    suffix = "\\nAnswer with only a number. No unit, no text.";
+    maxTokens = 8;
+  }
+  if (*suffix) body += suffix;
+  body += "\"}],\"max_tokens\":";
+  body += String(maxTokens);
+  body += ",\"temperature\":0.1}";
   return body;
 }
 
