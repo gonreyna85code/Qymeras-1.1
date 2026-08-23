@@ -151,10 +151,6 @@ bool runPrompt(uint8_t idx) {
     setError("prompt slot disabled");
     return false;
   }
-  if (prompts[idx].out_type == OUT_CONTROL) {
-    setError("CONTROL tool-calling not implemented yet");
-    return false;
-  }
   if (state == REQUESTING) {
     setError("request already in flight");
     return false;
@@ -300,6 +296,13 @@ static bool applyResult(uint8_t slot, const char *content) {
     r.valid = true;
     r.analog = v;
     sensors::aiana(String(p.name), v);
+    return true;
+  }
+
+  if (p.out_type == OUT_CONTROL) {
+    // CONTROL is interface-only: store + log, never drives actuators directly.
+    r.valid = true;
+    logger::eventf("AI control [%s]: %s", p.name, r.raw);
     return true;
   }
 

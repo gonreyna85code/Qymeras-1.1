@@ -63,7 +63,7 @@ struct SlotResult {
   bool digital;
   float analog;
   unsigned long ts;    // millis() of last valid result
-  char raw[64];        // raw content (ANALYTIC payload / diagnostics)
+  char raw[96];        // raw content (ANALYTIC/CONTROL payload / diagnostics)
 };
 
 // ================= INIT =================
