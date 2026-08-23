@@ -5,6 +5,7 @@
 #include "config.h"
 #include "mesh.h"
 #include "sensors.h"
+#include "storage.h"
 #include "log.h"
 
 #if defined(ESP8266)
@@ -129,6 +130,12 @@ static void setError(const char *msg) {
 }
 
 static void startRun(uint8_t slot, unsigned long now) {
+  // Load persisted prompt text into the staging buffer. Covers both manual
+  // /ai/run and interval auto-runs; without this the request ships empty
+  // user content (prompt text is EEPROM-only since the RAM reclaim).
+  char pbuf[113];
+  storage::getAiPromptText(slot, pbuf, sizeof(pbuf));
+  stagePromptText(pbuf);
   active_slot = (int8_t)slot;
   last_request = now;
   state = REQUESTING;
@@ -459,6 +466,16 @@ static String buildBody(uint8_t slot) {
     if (!sensors::isEntryVisible(i)) continue;
     auto &c = sensors::calibrations[i];
     if (c.type == sensors::SENSOR_TIME) continue; // exclude Unix time, confuses LLM
+    // Skip remote mirrors of local entity names (both nodes share names).
+    if (!c.local) {
+      bool dup = false;
+      for (int j = 0; j < MAX_SENSORS && !dup; j++) {
+        if (j == i) continue;
+        auto &o = sensors::calibrations[j];
+        if (o.local && o.name == c.name && sensors::isEntryVisible(j)) dup = true;
+      }
+      if (dup) continue;
+    }
     auto &r = mesh::reports[i];
     char vbuf[24];
     if (c.type == sensors::TYPE_RELAY || c.type == sensors::SENSOR_AIDIG ||
