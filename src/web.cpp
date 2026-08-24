@@ -1352,7 +1352,7 @@ ICACHE_FLASH_ATTR void handleAiChat() {
     return;
   }
   if (resp.length() == 0) {
-    resp = "{\"error\":{\"message\":\"empty upstream response\",\"code\":code}}";
+    resp = "{\"error\":{\"message\":\"empty upstream response\",\"code\":" + String(code) + "}}";
   }
   server.send(code, "application/json", resp);
 }
