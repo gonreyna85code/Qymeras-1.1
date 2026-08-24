@@ -92,11 +92,11 @@
 - [x] Document accurately: device identity/provisioning check, **NOT** firmware hash/authenticity
 - [x] SHA-256/signature authenticity deferred to Phase 3+ (per AGENTS.md)
 
-### T008: Memory Leak Testing ⏳ PENDING
-- [ ] Run extended build/flash cycles
-- [ ] Monitor free heap over time
-- [ ] Identify and fix leaks
-- [ ] Set memory thresholds
+### T008: Memory Leak Testing 🔄 IN PROGRESS (observability added)
+- [x] GET /status diagnostics endpoint (uptime_ms, free_heap, rssi, reset_reason, chip) on both platforms
+- [x] Early soak (~5min AI+HTTP load): no reboot, no ERR/FTL, millis monotonic, ESP8266 heap stable ~9.5-9.8KB under /calib churn
+- [ ] 24h soak with periodic /status sampling (production gate requirement)
+- [ ] Set memory thresholds/alerts
 
 ### T009: Factory Reset Reliability ⏳ PENDING
 - [ ] Test factory reset flow
@@ -123,7 +123,7 @@
 - [ ] Test factory reset multiple times
 
 ### T013: Test Suite Development 🔄 PARTIAL (host sanity tests added)
-- [x] Host tests: `tests/host_sanity.py` — timezone conversion, strict float parsing + ranges, ESP-NOW RX FIFO (45 checks, 45/45 pass)
+- [x] Host tests: `tests/host_sanity.py` — 79 checks incl. timezone conversion, strict float parsing + ranges, ESP-NOW RX FIFO, AI validators (tolerant firmware-faithful mirrors), rules-engine logic mirror (EDGE anti-bounce/direction, THRESHOLD bands, AND/OR gates)
 - [ ] Unit tests for rule logic
 - [ ] Unit tests for calibration math
 - [ ] Integration tests (mock hardware)

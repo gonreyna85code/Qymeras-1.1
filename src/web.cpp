@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <math.h>
+#if !defined(ESP8266)
+#include <esp_system.h>
+#endif
 #include "web.h"
 #include "html.h"
 #include "core.h"
@@ -321,6 +324,45 @@ void handleDimmerApi() {
 void handleLogs() {
   addCorsHeaders();
   server.send(200, "application/json", logger::getRecentLogsJson());
+}
+
+// Read-only diagnostics for production monitoring / memory-leak evidence
+// (T008): uptime, free heap, WiFi RSSI, last reset reason. GET like /logs.
+void handleStatus() {
+  addCorsHeaders();
+  String s = "{\"uptime_ms\":";
+  s += millis();
+  s += ",\"free_heap\":";
+  s += ESP.getFreeHeap();
+  s += ",\"rssi\":";
+  s += WiFi.RSSI();
+  s += ",\"reset_reason\":\"";
+#if defined(ESP8266)
+  s += ESP.getResetReason();
+#else
+  {
+    // arduino-esp32 6.x removed Esp.getResetReason(); use esp_system API.
+    switch (esp_reset_reason()) {
+      case ESP_RST_POWERON: s += "Power on"; break;
+      case ESP_RST_SW: s += "Software"; break;
+      case ESP_RST_PANIC: s += "Panic"; break;
+      case ESP_RST_INT_WDT: s += "Interrupt watchdog"; break;
+      case ESP_RST_TASK_WDT: s += "Task watchdog"; break;
+      case ESP_RST_WDT: s += "Other watchdog"; break;
+      case ESP_RST_DEEPSLEEP: s += "Deep sleep wake"; break;
+      case ESP_RST_BROWNOUT: s += "Brownout"; break;
+      default: s += "Unknown"; break;
+    }
+  }
+#endif
+  s += "\",\"chip\":\"";
+#if defined(ESP8266)
+  s += "esp8266";
+#else
+  s += "esp32";
+#endif
+  s += "\"}";
+  server.send(200, "application/json", s);
 }
 
 void handleOtaToggle() {
@@ -1307,6 +1349,7 @@ void init() {
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.on("/logs", handleLogs);
+  server.on("/status", handleStatus);
   server.on("/ota/toggle", handleOtaToggle);
   server.on("/ota/status", handleOtaStatus);
   server.on("/ai", handleAiGet);

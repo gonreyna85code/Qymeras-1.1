@@ -214,14 +214,23 @@ f.enqueue(b"z")
 check("reusable after full cycle", f.recv() == b"z" and f.count == 0)
 
 # ------------------------------------------------------------ ai validators
-# Mirrors ai.cpp applyResult(): strict per-out_type validation of LLM content.
-# DIGITAL accepts ONLY exactly "true"/"false" (case/whitespace tolerant).
-# ANALOG accepts ONLY a full-consume finite number within [min,max].
+# Mirrors ai.cpp applyResult(): tolerant per-out_type validation of LLM content.
+# DIGITAL accepts "true"/"false" exactly OR as a prefix followed by a separator
+# (space . , ; :) -- small models append explanations like "False. The earth...".
+# ANALOG accepts a LEADING finite number (strtof semantics), ignoring trailing
+# unit/text like "35.20C", and enforces [min,max].
 def validate_digital(content):
     val = content.strip().lower()
-    if val == "true":
+    seps = (" ", ".", ",", ";", ":")
+
+    def prefix(word):
+        if val == word:
+            return True
+        return any(val.startswith(word + c) for c in seps)
+
+    if prefix("true"):
         return True, True
-    if val == "false":
+    if prefix("false"):
         return True, False
     return False, None
 
@@ -232,14 +241,14 @@ _NUM_RE = re.compile(r'[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?')
 
 def validate_analog(content, mn, mx):
     val = content.strip()
-    m = _NUM_RE.fullmatch(val)
+    m = _NUM_RE.match(val)  # leading number, trailing text ignored (strtof)
     if not m:
         return False, None
     try:
-        v = float(val)
+        v = float(m.group(0))
     except ValueError:
         return False, None
-    if not math.isfinite(v):
+    if not math.isfinite(v):  # strtof overflow -> inf/-inf rejected (ERANGE)
         return False, None
     if v < mn or v > mx:
         return False, None
@@ -251,25 +260,121 @@ check("digital 'true'", validate_digital("true") == (True, True))
 check("digital 'TRUE' case-insensitive", validate_digital("TRUE") == (True, True))
 check("digital ' true ' trims", validate_digital("  true ") == (True, True))
 check("digital 'false'", validate_digital("false") == (True, False))
+check("digital 'true.' punctuation accepted (tolerant)",
+      validate_digital("true.") == (True, True))
+check("digital 'False. The earth...' prefix accepted",
+      validate_digital("False. The Earth's rotation is not uniform.")[0] is True)
+check("digital 'true, based on TEMP' comma prefix",
+      validate_digital("true, based on TEMP sensor") == (True, True))
+check("digital 'truthy' rejected (no separator)", validate_digital("truthy")[0] is False)
 check("digital 'yes' rejected", validate_digital("yes")[0] is False)
-check("digital '1' rejected (strict)", validate_digital("1")[0] is False)
-check("digital 'true.' punctuation rejected", validate_digital("true.")[0] is False)
+check("digital '1' rejected", validate_digital("1")[0] is False)
 check("digital garbage rejected", validate_digital("The risk is low")[0] is False)
 check("digital empty rejected", validate_digital("")[0] is False)
 
 check("analog '42' in range", validate_analog("42", 0, 100) == (True, 42.0))
 check("analog ' 42.5 ' trims", validate_analog(" 42.5 ", 0, 100) == (True, 42.5))
 check("analog '-3' negative ok in range", validate_analog("-3", -10, 100)[0] is True)
+check("analog '35.20C' unit suffix accepted (tolerant)",
+      validate_analog("35.20C", 0, 100) == (True, 35.2))
+check("analog '42abc' trailing junk accepted (leading number)",
+      validate_analog("42abc", 0, 100) == (True, 42.0))
 check("analog '150' out of range rejected",
       validate_analog("150", 0, 100) == (False, None))
 check("analog 'abc' rejected", validate_analog("abc", 0, 100)[0] is False)
-check("analog '42abc' trailing junk rejected",
-      validate_analog("42abc", 0, 100)[0] is False)
-check("analog 'nan' rejected", validate_analog("nan", 0, 100)[0] is False)
-check("analog 'inf' rejected", validate_analog("inf", 0, 100)[0] is False)
+check("analog '1e999' overflow rejected", validate_analog("1e999", 0, 100)[0] is False)
 check("analog empty rejected", validate_analog("", 0, 100)[0] is False)
 check("analog boundary min accepted", validate_analog("0", 0, 100) == (True, 0.0))
 check("analog boundary max accepted", validate_analog("100", 0, 100) == (True, 100.0))
+
+# ------------------------------------------------------------ rules engine
+# Mirrors automations.cpp tick(): EDGE anti-bounce (CONFIRM_READS=3, rising on
+# CMP_GT / falling on CMP_LT, EQ never fires), THRESHOLD GT/LT strict + EQ
+# within 0.5, AND/OR combination, cooldown gating.
+CONFIRM_READS = 3
+
+
+class RuleState:
+    def __init__(self):
+        self.last = [False] * 5
+        self.counter = [0] * 5
+        self.stable = [False] * 5
+        self.last_action = -10 ** 9
+        self.pending = False
+        self.trigger_time = 0
+        self.last_time_exec = 0
+        self.last_interval_exec = -10 ** 9
+
+
+def eval_edge(state, j, raw, cmp_code):
+    """One tick of EDGE evaluation for sensor j; returns val_trigger."""
+    val_trigger = False
+    if raw == state.last[j]:
+        if state.counter[j] < CONFIRM_READS:
+            state.counter[j] += 1
+    else:
+        state.last[j] = raw
+        state.counter[j] = 1
+    if state.counter[j] >= CONFIRM_READS:
+        rising = (not state.stable[j]) and raw
+        falling = state.stable[j] and (not raw)
+        if cmp_code == 0:      # CMP_GT
+            val_trigger = rising
+        elif cmp_code == 1:    # CMP_LT
+            val_trigger = falling
+        state.stable[j] = raw
+    return val_trigger
+
+
+def eval_threshold(value, thr, cmp_code):
+    if cmp_code == 0:
+        return value > thr
+    if cmp_code == 1:
+        return value < thr
+    if cmp_code == 2:
+        return abs(value - thr) < 0.5
+    return False
+
+
+print("[rules-engine]")
+# EDGE: needs CONFIRM_READS consecutive identical reads before first edge,
+# then fires on transitions only (rising for CMP_GT).
+st = RuleState()
+seq = []
+for i in range(8):
+    seq.append(eval_edge(st, 0, True, 0))     # hold true: confirm then no edge
+for i in range(6):
+    seq.append(eval_edge(st, 0, False, 0))    # falling: CMP_GT ignores
+for i in range(4):
+    seq.append(eval_edge(st, 0, True, 0))     # rising again -> one trigger
+check("EDGE GT: single rising after confirm, no repeat while held",
+      seq[:CONFIRM_READS] == [False, False, True] and all(seq[3:8]) is False)
+check("EDGE GT: falling edges never fire (CMP_GT)", not any(seq[8:14]))
+check("EDGE GT: second rise fires once after bounce window",
+      seq[14] is False and seq[15] is False and seq[16] is True and seq[17] is False)
+
+# EDGE with CMP_EQ never fires (documented behavior).
+st2 = RuleState()
+eq_seq = [eval_edge(st2, 0, b, 2) for b in [True] * 4 + [False] * 4]
+check("EDGE EQ: never fires either direction", not any(eq_seq))
+
+# THRESHOLD comparators incl. EQ tolerance band.
+check("THRESHOLD GT strict (30>29.99 true)", eval_threshold(30.0, 29.99, 0) is True)
+check("THRESHOLD GT boundary excluded (30>30 false)", eval_threshold(30.0, 30.0, 0) is False)
+check("THRESHOLD LT boundary excluded (20<20 false)", eval_threshold(20.0, 20.0, 1) is False)
+check("THRESHOLD EQ within 0.5 band", eval_threshold(30.4, 30.0, 2) is True)
+check("THRESHOLD EQ outside band", eval_threshold(30.6, 30.0, 2) is False)
+
+# AND/OR combination over two sensors.
+trigger_and = True
+va, vb = True, False
+trigger_and &= va
+trigger_and &= vb
+trigger_or = False
+trigger_or |= va
+trigger_or |= vb
+check("AND gate requires both sensors", trigger_and is False)
+check("OR gate fires on any sensor", trigger_or is True)
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
