@@ -327,7 +327,11 @@ async function callLlm(msgs){
 const c=chatCfg();
 const h={'Content-Type':'application/json'};
 const r=await fetch(c.url,{method:'POST',headers:h,body:JSON.stringify({model:c.model,messages:msgs,tools:CHAT_TOOLS,tool_choice:'auto'})});
-if(!r.ok) throw new Error('LLM HTTP '+r.status);
+if(!r.ok){
+let msg='LLM HTTP '+r.status;
+try{const e=await r.json();if(e&&e.error&&e.error.message)msg='LLM: '+e.error.message;}catch(_){}
+throw new Error(msg);
+}
 return await r.json();
 }
 const pace=()=>new Promise(res=>setTimeout(res,250));

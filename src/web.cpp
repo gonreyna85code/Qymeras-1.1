@@ -1347,9 +1347,12 @@ ICACHE_FLASH_ATTR void handleAiChat() {
   }
   int code = 0;
   String resp = ai::chatProxy(payload, code);
-  if (code == 0) {
-    server.send(502, "text/plain", "upstream connection failed");
+  if (code <= 0) {
+    server.send(504, "text/plain", "upstream timeout or unreachable (ESP8266 HTTP cap 20s)");
     return;
+  }
+  if (resp.length() == 0) {
+    resp = "{\"error\":{\"message\":\"empty upstream response\",\"code\":code}}";
   }
   server.send(code, "application/json", resp);
 }
