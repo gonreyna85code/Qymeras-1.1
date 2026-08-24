@@ -558,7 +558,17 @@ static String aiPerform(HTTP_CLIENT &http, uint8_t slot) {
     auth += config.api_key;
     http.addHeader("Authorization", auth);
   }
-  http.setTimeout(config.timeout_ms);
+  // The AI HTTP call runs in loop() context: the web server is unresponsive
+  // for the whole request. ESP8266 has no TLS and typically talks to fast
+  // local endpoints; cap the effective timeout so a hung LLM cannot freeze
+  // the UI for minutes (ESP32 keeps the configured value).
+  {
+    unsigned long tmo = config.timeout_ms;
+#if defined(ESP8266)
+    if (tmo > 20000) tmo = 20000;
+#endif
+    http.setTimeout(tmo);
+  }
 
   int httpCode = http.POST(buildBody(slot));
   String response = "";
