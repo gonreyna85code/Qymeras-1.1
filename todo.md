@@ -95,7 +95,7 @@
 ### T008: Memory Leak Testing 🔄 IN PROGRESS (observability added)
 - [x] GET /status diagnostics endpoint (uptime_ms, free_heap, rssi, reset_reason, chip) on both platforms
 - [x] Early soak (~5min AI+HTTP load): no reboot, no ERR/FTL, millis monotonic, ESP8266 heap stable ~9.5-9.8KB under /calib churn
-- [ ] 24h soak with periodic /status sampling (production gate requirement)
+- [ ] 24h soak with periodic /status sampling (production gate requirement) — sampler running (soak.csv, 5-min cadence) with 60s AI interval load on both boards
 - [ ] Set memory thresholds/alerts
 
 ### T009: Factory Reset Reliability ⏳ PENDING
