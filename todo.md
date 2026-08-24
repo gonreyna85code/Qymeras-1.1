@@ -18,7 +18,7 @@
 - [ ] Long-term EEPROM write endurance testing
 - [x] Network partition recovery (disconnect/GOT_IP events + auto-reconnect; hardware test pending)
 - [x] Input validation on all API endpoints ✅
-- [ ] Rate limiting on POST /save, /rules/set
+- [x] Rate limiting on POST endpoints (burst 6/2s shared window: /save,/genset/save,/rules/set,/rules/delete,/factory,/toggle,/dimmer,/calib/set,/ai/set,/ai/run) ✅
 - [x] Calibration value persistence (UID-based, survives reboot; reconfig after storage-layout migration)
 
 ### P1.2 - AI subsystem (authorized scope extension, 2026-08) DONE
@@ -153,7 +153,7 @@
 - [x] `isVirtual()` error handling (timeout, response.ok, alerts, UI rollback)
 - [x] platformio.ini: espressif32 pinned @6.5.0 + new `esp32c3_devkit` env
 - [x] Host tests `tests/host_sanity.py` (45/45) + builds green on 3 envs
-- [ ] Flash ESP32 (COM3) + ESP8266 (COM9) and verify: timezone persists & shifts TIME rules, malformed `/calib/set` rejected, discovery complete
+- [x] Flash ESP32 + ESP8266 and verify: timezone persists (corr=180 survives OTA reboot) & shifts TIME rules (RULE_TIME fires at shifted local minute on BOTH boards), malformed `/calib/set` rejected (7 cases x2 boards, zero state change), discovery complete (11 remote entries bidirectional) ✅
 
 ## Status Summary
 

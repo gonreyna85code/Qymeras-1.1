@@ -242,6 +242,10 @@ ICACHE_FLASH_ATTR void handleFactoryReset() {
     server.send(401, "text/plain", "Authentication required");
     return;
   }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
   server.send(200, "text/plain", "RESET");
   factoryReset();
 }
@@ -250,6 +254,10 @@ void handleToggleApi() {
   addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
     return;
   }
   if (!server.hasArg("id")) {
@@ -280,6 +288,10 @@ void handleDimmerApi() {
   addCorsHeaders();
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
     return;
   }
   if (!server.hasArg("value") || !server.hasArg("id")) {
@@ -348,6 +360,10 @@ ICACHE_FLASH_ATTR void saveCalibrationSlot(int index) {
 void handleDeleteRule() {
   if (!checkAuth()) {
     server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
     return;
   }
   if (!server.hasArg("id")) {
