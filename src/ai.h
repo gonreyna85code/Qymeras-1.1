@@ -110,5 +110,8 @@ const char* getLastError();
 // to the configured endpoint (adds stored API key) and returns the upstream
 // response. Holds no conversation state (the browser drives the tool loop).
 String chatProxy(const String &payload, int &httpCode);
+// Streaming variant: body is read from `body` (len bytes) without buffering
+// it in RAM (used to inject the PROGMEM tool schema on constrained devices).
+String chatProxyStream(Stream &body, size_t len, int &httpCode);
 
 }  // namespace ai

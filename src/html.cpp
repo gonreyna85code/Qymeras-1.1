@@ -306,16 +306,6 @@ model:(aiCfg&&aiCfg.model)||'',
 key:''
 };
 }
-const CHAT_TOOLS=[
-{type:'function',function:{name:'list_entities',description:'List all device entities (sensors+actuators). Fields: id (use for actuator commands), index (slot 0..19, use for rules), name, type, value, state, local, ip.',parameters:{type:'object',properties:{}}}},
-{type:'function',function:{name:'device_status',description:'Device health: uptime, free heap, wifi rssi, reset reason.',parameters:{type:'object',properties:{}}}},
-{type:'function',function:{name:'list_rules',description:'List automation rules with id,type,sensors[],cmp[],threshold[],actuators[],actions[],levels[],delay_ms,cooldown_ms.',parameters:{type:'object',properties:{}}}},
-{type:'function',function:{name:'read_logs',description:'Read recent system log entries.',parameters:{type:'object',properties:{}}}},
-{type:'function',function:{name:'save_rule',description:'Create or update an automation rule. Types: 0=EDGE(state transitions,digital) 1=THRESHOLD(value vs threshold,no hysteresis->set cooldown_ms) 2=TIME(fires once/day at time_s seconds of day) 3=INTERVAL(every interval_ms>=1000). cmp: 0=GT 1=LT 2=EQ. actions: 0=ON 1=OFF 2=TOGGLE 3=LEVEL(dimers need levels[]). sensors/actuators are slot indices from list_entities().index. id omitted/-1 = first free slot (0..19).',parameters:{type:'object',properties:{id:{type:'integer'},type:{type:'integer'},sensors:{type:'array',items:{type:'integer'}},cmp:{type:'array',items:{type:'integer'}},threshold:{type:'array',items:{type:'number'}},actuators:{type:'array',items:{type:'integer'}},actions:{type:'array',items:{type:'integer'}},levels:{type:'array',items:{type:'integer'}},logic_and:{type:'boolean'},delay_ms:{type:'integer'},cooldown_ms:{type:'integer'},interval_ms:{type:'integer'},time_s:{type:'integer'}}}}},
-{type:'function',function:{name:'delete_rule',description:'Delete rule by id.',parameters:{type:'object',properties:{id:{type:'integer'}},required:['id']}}},
-{type:'function',function:{name:'toggle_actuator',description:'Toggle a RELAY or DIMMER by entity id.',parameters:{type:'object',properties:{id:{type:'integer'}},required:['id']}}},
-{type:'function',function:{name:'set_dimmer',description:'Set DIMMER level 0-100 by entity id.',parameters:{type:'object',properties:{id:{type:'integer'},value:{type:'integer'}},required:['id','value']}}}
-];
 function chatSysPrompt(){
 return 'You control a Qymeras IoT device via tools. Device API base: '+location.origin+'. '
 +'Actuators are addressed by id; rules address slots by index. '
@@ -326,13 +316,18 @@ return 'You control a Qymeras IoT device via tools. Device API base: '+location.
 async function callLlm(msgs){
 const c=chatCfg();
 const h={'Content-Type':'application/json'};
-const r=await fetch(c.url,{method:'POST',headers:h,body:JSON.stringify({model:c.model,messages:msgs,tools:CHAT_TOOLS,tool_choice:'auto'})});
-if(!r.ok){
-let msg='LLM HTTP '+r.status;
-try{const e=await r.json();if(e&&e.error&&e.error.message)msg='LLM: '+e.error.message;}catch(_){}
-throw new Error(msg);
+const body=JSON.stringify({model:c.model,messages:msgs});
+let err;
+for(let attempt=0;attempt<3;attempt++){
+try{
+const r=await fetch(c.url,{method:'POST',headers:h,body});
+if(r.ok)return await r.json();
+const t=await r.text();
+err=new Error('LLM HTTP '+r.status+(t?' ('+t.slice(0,160)+')':''));
+}catch(e){err=e;}
+if(attempt<2)await new Promise(res=>setTimeout(res,400));
 }
-return await r.json();
+throw err;
 }
 const pace=()=>new Promise(res=>setTimeout(res,250));
 async function postForm(path,params){
@@ -361,7 +356,7 @@ default:return 'unknown tool';
 }
 }
 function trimHistory(){
-const MAX=30;
+const MAX=12;
 if(chatHistory.length<=MAX)return;
 for(let k=Math.max(1,chatHistory.length-MAX);k<chatHistory.length;k++){
 if(chatHistory[k].role==='user'){chatHistory=chatHistory.slice(k);return;}
@@ -396,7 +391,7 @@ addChip('> '+c.function.name+'('+JSON.stringify(a)+')');
 let out;
 try{out=await execTool(c.function.name,a);}catch(e){out='ERROR: '+e.message;}
 addChip('< '+c.function.name);
-chatHistory.push({role:'tool',tool_call_id:c.id,name:c.function.name,content:String(out).slice(0,4000)});
+chatHistory.push({role:'tool',tool_call_id:c.id,name:c.function.name,content:String(out).slice(0,1200)});
 }
 }
 }catch(e){

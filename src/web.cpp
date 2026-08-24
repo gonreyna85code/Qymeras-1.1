@@ -1330,6 +1330,43 @@ ICACHE_FLASH_ATTR void handleAiSet() {
   server.send(400, "text/plain", "target must be global|prompt");
 }
 
+static const char AI_CHAT_TOOLS_JSON[] PROGMEM = R"JSON([{"type":"function","function":{"name":"list_entities","description":"List all device entities (sensors+actuators). Fields: id (use for actuator commands), index (slot 0..19, use for rules), name, type, value, state, local, ip.","parameters":{"type":"object","properties":{}}}},{"type":"function","function":{"name":"device_status","description":"Device health: uptime, free heap, wifi rssi, reset reason.","parameters":{"type":"object","properties":{}}}},{"type":"function","function":{"name":"list_rules","description":"List automation rules with id,type,sensors[],cmp[],threshold[],actuators[],actions[],levels[],delay_ms,cooldown_ms.","parameters":{"type":"object","properties":{}}}},{"type":"function","function":{"name":"read_logs","description":"Read recent system log entries.","parameters":{"type":"object","properties":{}}}},{"type":"function","function":{"name":"save_rule","description":"Create or update an automation rule. Types: 0=EDGE 1=THRESHOLD 2=TIME 3=INTERVAL. cmp: 0=GT 1=LT 2=EQ. actions: 0=ON 1=OFF 2=TOGGLE 3=LEVEL.","parameters":{"type":"object","properties":{"id":{"type":"integer"},"type":{"type":"integer"},"sensors":{"type":"array","items":{"type":"integer"}},"cmp":{"type":"array","items":{"type":"integer"}},"threshold":{"type":"array","items":{"type":"number"}},"actuators":{"type":"array","items":{"type":"integer"}},"actions":{"type":"array","items":{"type":"integer"}},"levels":{"type":"array","items":{"type":"integer"}},"logic_and":{"type":"boolean"},"delay_ms":{"type":"integer"},"cooldown_ms":{"type":"integer"},"interval_ms":{"type":"integer"},"time_s":{"type":"integer"}}}}},{"type":"function","function":{"name":"delete_rule","description":"Delete rule by id.","parameters":{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}}},{"type":"function","function":{"name":"toggle_actuator","description":"Toggle a RELAY or DIMMER by entity id.","parameters":{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}}},{"type":"function","function":{"name":"set_dimmer","description":"Set DIMMER level 0-100 by entity id.","parameters":{"type":"object","properties":{"id":{"type":"integer"},"value":{"type":"integer"}},"required":["id","value"]}}}])JSON";
+
+class ConcatStream : public Stream {
+  const char* _ram[2];
+  size_t _len[2];
+  const char* _flash;
+  size_t _flen;
+  uint8_t _seg;
+  size_t _pos;
+  bool _done;
+public:
+  ConcatStream(const char* a, size_t al, const char* flash, size_t fl, const char* b, size_t bl)
+    : _flash(flash), _flen(fl) {
+    _ram[0] = a; _len[0] = al; _ram[1] = b; _len[1] = bl;
+    _seg = 0; _pos = 0; _done = false;
+  }
+  int available() override { return _done ? 0 : 1; }
+  int read() override {
+    if (_done) return -1;
+    if (_seg == 0) {
+      if (_pos < _len[0]) return (unsigned char)_ram[0][_pos++];
+      _seg = 1; _pos = 0;
+    }
+    if (_seg == 1) {
+      if (_pos < _flen) return pgm_read_byte(_flash + _pos++);
+      _seg = 2; _pos = 0;
+    }
+    if (_seg == 2) {
+      if (_pos < _len[1]) return (unsigned char)_ram[1][_pos++];
+      _done = true; return -1;
+    }
+    _done = true; return -1;
+  }
+  int peek() override { return -1; }
+  size_t write(uint8_t) override { return 0; }
+};
+
 ICACHE_FLASH_ATTR void handleAiChat() {
   addCorsHeaders();
   if (!checkAuth()) {
@@ -1345,8 +1382,21 @@ ICACHE_FLASH_ATTR void handleAiChat() {
     server.send(400, "text/plain", "empty body");
     return;
   }
+  payload.trim();
+  int n = payload.length();
+  String prefix, suffix;
+  if (n > 1 && payload.charAt(n - 1) == '}' && payload.indexOf("\"tools\"") < 0) {
+    prefix = payload.substring(0, n - 1) + ",\"tools\":";
+    suffix = ",\"tool_choice\":\"auto\"}";
+  } else {
+    prefix = payload;
+  }
+  ConcatStream cs(prefix.c_str(), prefix.length(),
+                 AI_CHAT_TOOLS_JSON, strlen_P(AI_CHAT_TOOLS_JSON),
+                 suffix.c_str(), suffix.length());
+  size_t total = prefix.length() + strlen_P(AI_CHAT_TOOLS_JSON) + suffix.length();
   int code = 0;
-  String resp = ai::chatProxy(payload, code);
+  String resp = ai::chatProxyStream(cs, total, code);
   if (code <= 0) {
     server.send(504, "text/plain", "upstream timeout or unreachable (ESP8266 HTTP cap 20s)");
     return;
