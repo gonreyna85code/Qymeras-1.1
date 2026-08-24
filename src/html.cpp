@@ -7,7 +7,7 @@ const char Styles[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head><meta char
 body{font-family:sans-serif;text-align:center;margin:0}.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}.tab{flex:1;padding:12px;cursor:pointer}.active{background:#444}.content{padding:15px}.card{background:var(--card);color:var(--text);margin:10px;padding:10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);text-align:left;border-left:3px solid rgba(255,255,255,.75)}.card:hover{filter:brightness(1.08)}.card h3{margin-top:0;text-align:center}.devices-section-title{display:none}button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}.matter-btn.on{background:#2ecc71;color:#000}.matter-btn.off{background:#444;color:#bbb}.matterLbl{margin-left:20px;font-weight:600}.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1000}.modal-content{background:var(--card);color:var(--text);padding:20px;border-radius:10px;width:320px;text-align:left}.modal input,.modal select{margin-bottom:10px;padding:6px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text)}#themePicker{position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:6px}.themeDot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid #333}.themeDot:hover{transform:scale(1.2)}:root{--bg:#111315;--panel:#2e3238;--card:#3c4149;--text:#ffffff}body{background:var(--bg);color:var(--text)}.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.settings-general{grid-column:1/-1}@media(max-width:900px){.settings-grid{grid-template-columns:1fr}.settings-general{grid-column:auto}}
 .themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#cdfcff"]{background:#cdfcff}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}.themeDot[data-bg="#61b956"]{background:#61b956}input[type=range]{width:100%}@media (min-width:1100px){#control{padding:10px 10px}.devices-mobile-list{display:none}.devices-desktop-layout{display:grid;grid-template-columns:minmax(260px,38%) minmax(420px,1fr);gap:18px;align-items:start;min-height:calc(100vh - 130px)}.devices-column{min-height:calc(100vh - 150px);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;background:var(--panel);color:var(--text)}.devices-section-title{display:block;margin:2px 10px 12px;text-align:left;color:var(--text);font-size:13px;font-weight:700;letter-spacing:0;text-transform:uppercase}.devices-actuator-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}.devices-sensor-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.devices-dashboard .card{margin:0;min-height:96px;box-sizing:border-box}.devices-dashboard .time-card{grid-column:span 1;min-height:96px}}
 @media (max-width:899px){.devices-desktop-layout{display:none}.devices-mobile-list{display:block}.devices-column,.devices-actuator-grid,.devices-sensor-grid{display:block}}
-.log-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:900px){.log-grid{grid-template-columns:1fr}}.log-panel{background:var(--panel);color:var(--text);border-radius:10px;padding:12px;min-height:300px;max-height:60vh;overflow-y:auto;text-align:left;font-family:monospace;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12)}.log-panel h3{margin:0 0 10px 0;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:1px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}.log-entry{margin-bottom:4px;padding:3px 6px;border-radius:4px;background:rgba(0,0,0,.2);word-break:break-all}.log-entry .t{color:#888;font-size:10px}.log-entry .l{font-weight:700;margin:0 4px}.log-entry .l.inf{color:#2ecc71}.log-entry .l.wrn{color:#f39c12}.log-entry .l.err{color:#e74c3c}.log-entry.core{border-left:3px solid #3498db}.log-entry.evnt{border-left:3px solid #9b59b6}.log-entry.sens{border-left:3px solid #2ecc71}.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.log-header button{margin:0;padding:4px 10px;font-size:11px}
+.ai-split{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:901px){.ai-split{grid-template-columns:1fr 1fr;align-items:start}}.ai-chat-card{display:flex;flex-direction:column}@media(min-width:901px){.ai-chat-card{position:sticky;top:10px}}.ai-chat-log{background:var(--panel);color:var(--text);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px;height:55vh;overflow-y:auto;text-align:left;display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.chat-msg{max-width:85%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;background:rgba(0,0,0,.22);white-space:pre-wrap}.chat-msg.user{align-self:flex-end;border-bottom-right-radius:4px;background:#2e6da4;color:#fff}.chat-msg.bot{align-self:flex-start;border-bottom-left-radius:4px}.chat-msg.err{align-self:center;background:rgba(231,76,60,.18);font-size:12px}.ai-chat-row{display:flex;gap:8px}.ai-chat-row input{flex:1;padding:8px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text);min-width:0}.ai-add-card{text-align:center}.ai-add-card button{width:100%;padding:10px;font-size:14px}.log-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:900px){.log-grid{grid-template-columns:1fr}}.log-panel{background:var(--panel);color:var(--text);border-radius:10px;padding:12px;min-height:300px;max-height:60vh;overflow-y:auto;text-align:left;font-family:monospace;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12)}.log-panel h3{margin:0 0 10px 0;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:1px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}.log-entry{margin-bottom:4px;padding:3px 6px;border-radius:4px;background:rgba(0,0,0,.2);word-break:break-all}.log-entry .t{color:#888;font-size:10px}.log-entry .l{font-weight:700;margin:0 4px}.log-entry .l.inf{color:#2ecc71}.log-entry .l.wrn{color:#f39c12}.log-entry .l.err{color:#e74c3c}.log-entry.core{border-left:3px solid #3498db}.log-entry.evnt{border-left:3px solid #9b59b6}.log-entry.sens{border-left:3px solid #2ecc71}.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.log-header button{margin:0;padding:4px 10px;font-size:11px}
 </style></head><body>
 )rawliteral";
 
@@ -64,7 +64,20 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <button type='submit' style='margin:10px;'>Save</button>
 </form>
 </div>
-<div id='cfg_ai' style='display:none'><div id='ai_cards'></div><div id='ai_status'></div></div>
+<div id='cfg_ai' style='display:none'>
+<div class='ai-split'>
+<div class='ai-col'>
+<div class='card ai-chat-card'><h3>AI Chat</h3>
+<div class='ai-chat-log' id='chat_log'></div>
+<div class='ai-chat-row'>
+<input id='chat_input' placeholder='Ask the assistant...' autocomplete='off' onkeydown="if(event.key==='Enter')sendChat()">
+<button onclick='sendChat()'>Send</button>
+</div>
+</div>
+</div>
+<div class='ai-col'><div id='ai_cards'></div><div id='ai_status'></div></div>
+</div>
+</div>
 </div>
 <div id='logs' class='content' style='display:none'>
 <div class='log-header'>
@@ -158,9 +171,13 @@ alert("delete rule "+i);
 
 const char AiPanel[] PROGMEM = R"rawliteral(<script>
 let aiCfg=null;
+let aiVisible=0;
+function countConfigured(c){let n=0;for(const p of c.prompts){if(p.enabled)n++;}return n;}
+function addPromptSlot(){if(!aiCfg)return;if(aiVisible<aiCfg.prompts.length){aiVisible++;renderAi();}}
 async function loadAi(){
 try{
 const r=await fetch('/ai'); aiCfg=await r.json();
+aiVisible=countConfigured(aiCfg);
 renderAi(); refreshAiStatus();
 }catch(e){
 document.getElementById('ai_cards').innerHTML='<div class="card">AI config load failed</div>';
@@ -181,7 +198,8 @@ let html=`<div class='card'><h3>AI Provider</h3><form autocomplete='off' onsubmi
 Rate limit ms <input id='ai_rate' type='number' style='width:110px' value='${c.rate_limit_ms||5000}'></label><br>
 <button onclick='saveAiGlobal()'>Save Provider</button>
 </form></div>`;
-c.prompts.forEach(p=>{
+for(let i=0;i<c.prompts.length&&i<aiVisible;i++){
+const p=c.prompts[i];
 html+=`<div class='card'><h3>Prompt ${p.slot+1}</h3>
 <label>Enabled <input type='checkbox' id='p${p.slot}_enabled' ${p.enabled?'checked':''}></label>
 <label>Name <input id='p${p.slot}_name' maxlength='16' value='${p.name}'></label>
@@ -196,10 +214,18 @@ Max <input id='p${p.slot}_max' type='number' step='any' style='width:70px' value
 <button onclick='saveAiPrompt(${p.slot})'>Save</button>
 <button onclick='runAiPrompt(${p.slot})'>Run now</button>
 </div>`;
-});
+}
+if(c.prompts.length>aiVisible){
+html+=`<div class='card ai-add-card'><button onclick='addPromptSlot()'>+ Add prompt (${aiVisible}/${c.prompts.length})</button></div>`;
+}else if(c.prompts.length){
+html+=`<div class='card ai-add-card'><small>All ${c.prompts.length} prompt slots in use</small></div>`;
+}
 document.getElementById('ai_cards').innerHTML=html;
 document.getElementById('ai_provider').value=String(c.provider);
-c.prompts.forEach(p=>{document.getElementById('p'+p.slot+'_out').value=String(p.out_type);});
+for(let i=0;i<c.prompts.length&&i<aiVisible;i++){
+const p=c.prompts[i];
+document.getElementById('p'+p.slot+'_out').value=String(p.out_type);
+}
 }
 async function saveAiGlobal(){
 const body=new URLSearchParams();
@@ -251,6 +277,22 @@ document.getElementById('ai_status').innerHTML=html;
 }catch(e){}
 }
 function escHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function addChatMsg(role,text){
+const log=document.getElementById('chat_log');
+if(!log)return;
+const d=document.createElement('div');
+d.className='chat-msg '+role;
+d.textContent=text;
+log.appendChild(d);
+log.scrollTop=log.scrollHeight;
+}
+function sendChat(){
+const inp=document.getElementById('chat_input');
+const t=(inp.value||'').trim();
+if(!t)return;
+addChatMsg('user',t);
+inp.value='';
+}
 </script>)rawliteral";
 
 
