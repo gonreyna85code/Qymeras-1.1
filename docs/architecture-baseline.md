@@ -151,8 +151,13 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 | GET | `/toggle` | API toggle for actuators (id + logic) |
 | GET | `/dimmer` | Value control dimmer (id + value) |
 | GET | `/logs` | Recent logs JSON |
+| GET | `/status` | Diagnostics: uptime_ms, free_heap, rssi, reset_reason, chip |
 | GET | `/ota/status` | OTA state `{"ota":1}` or `{"ota":0}` |
 | GET | `/ota/toggle` | Enable/disable OTA |
+| GET | `/ai` | AI config (global + 4 prompt slots; api_key never echoed) |
+| POST | `/ai/set` | Configure global (`target=global`) or one slot (`target=prompt&slot=N`) — rate limited |
+| POST | `/ai/run` | Trigger a run for `slot=N` (rejected if disabled / in flight / rate-limited) |
+| GET | `/ai/status` | Per-slot last result: valid, digital, analog, raw, age_ms |
 
 ### Web Interface
 - **Tabs**: WiFi, Calibration, Rules, Actuators, Factory, Logs
@@ -448,14 +453,27 @@ engine never runs, never allocates request resources, and the deterministic core
 byte-for-byte unaffected in behavior.
 
 ### Data flow
-LLM endpoint (provider-agnostic URL) -> HTTPClient POST (prompt + model) ->
-content extraction -> STRICT validation by out_type:
-- DIGITAL: exact `true`/`false` -> sensors::aidig(name, v)
-- ANALOG: full-consume float within [min,max] -> sensors::aiana(name, v)
-- ANALYTIC: raw text stored in SlotResult.raw[64] + logger event
-- CONTROL: interface-only, refused at run time
+LLM endpoint (provider-agnostic URL) -> HTTPClient POST (system message with sensor
+context + tool spec, user message = staged prompt text) -> content extraction ->
+validation by out_type:
+- DIGITAL: boolean-first tolerance (`true`/`false` optionally followed by punctuation
+  or prose, e.g. "False. The earth..."); anything else rejected -> sensors::aidig(name, v)
+- ANALOG: leading-number float (strtof semantics, "35.20C" -> 35.2) within [min,max]
+  -> sensors::aiana(name, v)
+- ANALYTIC: raw text stored in SlotResult.raw + logger event
+- CONTROL: real tool-calling. Model returns one flat JSON object
+  `{"tool":"set_relay"|"set_dimmer","name":...,"state":bool|"level":int}`; the parser
+  enforces a flat-object guard (exactly one `{`), validates the tool name, target
+  existence and bounds (level 0-100), then actuates through the SAME primitives the
+  web API uses (sensors::setRelay / handleDimmer). No direct hardware writes.
 Virtual entities are consumed exclusively by the existing rules engine — no AI code
-in the actuation path.
+in the automation path; CONTROL reuses the audited web-API actuation functions.
+
+Prompt text is staged from EEPROM into RAM at run start (startRun); a failed run
+invalidates that slot's previous result (results[slot].valid=false) so stale outputs
+can never masquerade as fresh ones. On ESP8266 the effective HTTP timeout is clamped
+to 20s regardless of config: the blocking AI call runs in loop() context and freezes
+the single-loop web server for its duration.
 
 ### Storage
 EEPROM block 3087..3966 ("QMAI v1"): 8B header (magic/version/count), 168B global

@@ -95,8 +95,18 @@
 ### T008: Memory Leak Testing 🔄 IN PROGRESS (observability added)
 - [x] GET /status diagnostics endpoint (uptime_ms, free_heap, rssi, reset_reason, chip) on both platforms
 - [x] Early soak (~5min AI+HTTP load): no reboot, no ERR/FTL, millis monotonic, ESP8266 heap stable ~9.5-9.8KB under /calib churn
-- [ ] 24h soak with periodic /status sampling (production gate requirement) — sampler running (soak.csv, 5-min cadence) with 60s AI interval load on both boards
+- [ ] 24h soak with periodic /status sampling (production gate requirement) — sampler RUNNING (soak.py -> soak.csv, 5-min cadence). Scope: ESP32 (.24) only — ESP8266 owned by parallel feature effort. Load: RISK DIGITAL slot via Ollama qwen2:0.5b interval 60s. Early trend: heap 191-200KB, 0 errors, only Software resets (deploys)
 - [ ] Set memory thresholds/alerts
+
+### T008b: AI Subsystem Hardening ✅ CODE COMPLETE + HARDWARE VERIFIED (ESP32)
+- [x] CONTROL real tool-calling (set_relay/set_dimmer) through web-API actuation primitives; conditional both directions verified with ornith-local:9b
+- [x] Flat-object guard: nested/double JSON rejected (brace count != 2)
+- [x] Empty-prompt staging fix: prompt text staged in startRun (manual + interval runs)
+- [x] Failed run invalidates previous slot result (no stale-valid masking)
+- [x] ESP8266 AI HTTP timeout clamp 20s (web-server stall mitigation); builds clean
+- [x] Rate limiting extended to destructive POSTs (/rules/delete,/factory,/toggle,/dimmer); 429 verified
+- [x] Negative batteries: /ai/set (provider/out_type/slot/prompt-len/min>max), CONTROL parser (unknown tool/missing state/level range/dimmer missing/nested), /ai/run guard (disabled slot, already-in-flight)
+- [x] Model guidance documented: qwen2:0.5b OK for DIGITAL/ANALOG/ANALYTIC + spelled-out conditionals; ornith-local:9b for natural-language conditionals (cold load may exceed 30s -> -11, retry succeeds)
 
 ### T009: Factory Reset Reliability ⏳ PENDING
 - [ ] Test factory reset flow
@@ -146,7 +156,7 @@
 - [ ] Test critical paths
 - [ ] Sign off for production
 
-### T016: Production Hardening STEP 1 🔄 CODE COMPLETE, HARDWARE VERIFY PENDING
+### T016: Production Hardening STEP 1 ✅ DONE (hardware verified 2026-08-23)
 - [x] Timezone semantics: runtime stays UTC; SENSOR_TIME `correction` = offset minutes from UTC; portable UTC→local via epoch+offset+gmtime()
 - [x] ESP-NOW bounded RX FIFO (8x250B ring, portMUX, overflow counter + warn log)
 - [x] Strict `/calib/set` validation (parseStrictFloat + type ranges)

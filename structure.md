@@ -22,8 +22,8 @@
 | `log.cpp` | Logging implementation, buffers | Logging team | ✅ Working |
 | `ota.h` | OTA management interface | OTA team | ⚠️ Minimal |
 | `ota.cpp` | OTA implementation | OTA team | ⚠️ Minimal |
-| `ai.h` | AI module (not implemented) | - | ❌ Out of scope |
-| `ai.cpp` | AI subsystem (4 slots, validated outputs -> rules engine) | AI team | ✅ Working (1.2, authorized) |
+| `ai.h` | AI module types (OutType, PromptCfg, SlotResult) | AI team | ✅ Working (1.2, authorized) |
+| `ai.cpp` | AI subsystem: 4 slots, Ollama/OpenAI-compatible client, validated outputs -> rules engine; CONTROL = real tool-calling actuation via sensors::setRelay/handleDimmer; ESP8266 timeout clamp 20s | AI team | ✅ Working (1.2, authorized) |
 | `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Working |
 | `espnow_p2p.cpp` | ESP-NOW transport implementation | Transport team | ✅ Working |
 
@@ -83,6 +83,8 @@
 - Rule management API
 - OTA toggle and status
 - Log reporting
+- AI panel API (`/ai`, `/ai/set`, `/ai/run`, `/ai/status`) with rate limiting on all mutating POSTs
+- Diagnostics endpoint `GET /status` (uptime, free_heap, rssi, reset_reason, chip)
 - **Responsibility**: Web-based configuration and status
 
 ### Mesh/Transport Module (`mesh.cpp` / `mesh.h` / `espnow_p2p.cpp`)
