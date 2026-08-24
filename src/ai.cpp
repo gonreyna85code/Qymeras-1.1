@@ -139,6 +139,9 @@ static void startRun(uint8_t slot, unsigned long now) {
   active_slot = (int8_t)slot;
   last_request = now;
   state = REQUESTING;
+  // Invalidate the previous result so /ai/status reflects the LAST run's
+  // outcome instead of a frozen valid=true when requests start failing.
+  results[slot].valid = false;
   logger::sensorsf("AI request (%s): %s",
                    prompts[slot].out_type == OUT_DIGITAL ? "digital" :
                    prompts[slot].out_type == OUT_ANALOG ? "analog" : "analytic",
@@ -318,6 +321,19 @@ static bool applyResult(uint8_t slot, const char *content) {
       payload = String(content);
     }
     payload.trim();
+    // Flat-object guard: a legitimate tool call is exactly ONE flat JSON
+    // object (one '{' + one '}'). Nested objects ({\"a\":{\"tool\":..},..})
+    // or concatenated objects previously leaked keys from inner objects and
+    // executed unintended actions (observed with small reasoning models).
+    int braceCount = 0;
+    for (unsigned int i = 0; i < payload.length(); i++) {
+      if (payload[i] == '{' || payload[i] == '}') braceCount++;
+    }
+    if (braceCount != 2) {
+      setError("control malformed json");
+      r.valid = false;
+      return false;
+    }
     String payloadLow = payload;
     payloadLow.toLowerCase();
     // Extract tool (case-insensitive, keep original for name)
