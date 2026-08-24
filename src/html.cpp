@@ -7,7 +7,7 @@ const char Styles[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head><meta char
 body{font-family:sans-serif;text-align:center;margin:0}.tabs{display:flex;justify-content:space-around;background:#222;color:#fff}.tab{flex:1;padding:12px;cursor:pointer}.active{background:#444}.content{padding:15px}.card{background:var(--card);color:var(--text);margin:10px;padding:10px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.25);text-align:left;border-left:3px solid rgba(255,255,255,.75)}.card:hover{filter:brightness(1.08)}.card h3{margin-top:0;text-align:center}.devices-section-title{display:none}button{padding:6px 12px;border:none;border-radius:6px;background:#333;color:#fff;margin:5px;cursor:pointer}.matter-btn{padding:6px 12px;border-radius:6px;border:none;font-weight:600;cursor:pointer}.matter-btn.on{background:#2ecc71;color:#000}.matter-btn.off{background:#444;color:#bbb}.matterLbl{margin-left:20px;font-weight:600}.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1000}.modal-content{background:var(--card);color:var(--text);padding:20px;border-radius:10px;width:320px;text-align:left}.modal input,.modal select{margin-bottom:10px;padding:6px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text)}#themePicker{position:fixed;top:10px;right:10px;z-index:9999;display:flex;gap:6px}.themeDot{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid #333}.themeDot:hover{transform:scale(1.2)}:root{--bg:#111315;--panel:#2e3238;--card:#3c4149;--text:#ffffff}body{background:var(--bg);color:var(--text)}.settings-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.settings-general{grid-column:1/-1}@media(max-width:900px){.settings-grid{grid-template-columns:1fr}.settings-general{grid-column:auto}}
 .themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#cdfcff"]{background:#cdfcff}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}.themeDot[data-bg="#61b956"]{background:#61b956}input[type=range]{width:100%}@media (min-width:1100px){#control{padding:10px 10px}.devices-mobile-list{display:none}.devices-desktop-layout{display:grid;grid-template-columns:minmax(260px,38%) minmax(420px,1fr);gap:18px;align-items:start;min-height:calc(100vh - 130px)}.devices-column{min-height:calc(100vh - 150px);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px;background:var(--panel);color:var(--text)}.devices-section-title{display:block;margin:2px 10px 12px;text-align:left;color:var(--text);font-size:13px;font-weight:700;letter-spacing:0;text-transform:uppercase}.devices-actuator-grid{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px}.devices-sensor-grid{display:grid;grid-template-columns:repeat(3,minmax(180px,1fr));gap:12px}.devices-dashboard .card{margin:0;min-height:96px;box-sizing:border-box}.devices-dashboard .time-card{grid-column:span 1;min-height:96px}}
 @media (max-width:899px){.devices-desktop-layout{display:none}.devices-mobile-list{display:block}.devices-column,.devices-actuator-grid,.devices-sensor-grid{display:block}}
-.ai-split{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:901px){.ai-split{grid-template-columns:1fr 1fr;align-items:start}}.ai-chat-card{display:flex;flex-direction:column}@media(min-width:901px){.ai-chat-card{position:sticky;top:10px}}.ai-chat-log{background:var(--panel);color:var(--text);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px;height:55vh;overflow-y:auto;text-align:left;display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.chat-msg{max-width:85%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;background:rgba(0,0,0,.22);white-space:pre-wrap}.chat-msg.user{align-self:flex-end;border-bottom-right-radius:4px;background:#2e6da4;color:#fff}.chat-msg.bot{align-self:flex-start;border-bottom-left-radius:4px}.chat-msg.err{align-self:center;background:rgba(231,76,60,.18);font-size:12px}.ai-chat-row{display:flex;gap:8px}.ai-chat-row input{flex:1;padding:8px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text);min-width:0}.ai-add-card{text-align:center}.ai-add-card button{width:100%;padding:10px;font-size:14px}#cfg_ai .card{padding:14px;line-height:1.55}#cfg_ai .card h3{margin-bottom:12px}#cfg_ai label{display:block;margin:10px 0 4px;font-size:13px}#cfg_ai input:not([type=checkbox]),#cfg_ai select,#cfg_ai textarea{box-sizing:border-box;max-width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px}#cfg_ai input[type=checkbox]{width:auto;margin:0 6px 0 2px;vertical-align:middle;accent-color:#2ecc71}#cfg_ai textarea{width:100%;resize:vertical;line-height:1.45}#cfg_ai .card>button,#cfg_ai form button{margin:12px 5px 2px 0}.log-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:900px){.log-grid{grid-template-columns:1fr}}.log-panel{background:var(--panel);color:var(--text);border-radius:10px;padding:12px;min-height:300px;max-height:60vh;overflow-y:auto;text-align:left;font-family:monospace;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12)}.log-panel h3{margin:0 0 10px 0;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:1px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}.log-entry{margin-bottom:4px;padding:3px 6px;border-radius:4px;background:rgba(0,0,0,.2);word-break:break-all}.log-entry .t{color:#888;font-size:10px}.log-entry .l{font-weight:700;margin:0 4px}.log-entry .l.inf{color:#2ecc71}.log-entry .l.wrn{color:#f39c12}.log-entry .l.err{color:#e74c3c}.log-entry.core{border-left:3px solid #3498db}.log-entry.evnt{border-left:3px solid #9b59b6}.log-entry.sens{border-left:3px solid #2ecc71}.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.log-header button{margin:0;padding:4px 10px;font-size:11px}
+.ai-split{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:901px){.ai-split{grid-template-columns:1fr 1fr;align-items:start}}.ai-chat-card{display:flex;flex-direction:column}@media(min-width:901px){.ai-chat-card{position:sticky;top:10px}}.ai-chat-log{background:var(--panel);color:var(--text);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px;height:55vh;overflow-y:auto;text-align:left;display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.chat-msg{max-width:85%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;background:rgba(0,0,0,.22);white-space:pre-wrap}.chat-msg.user{align-self:flex-end;border-bottom-right-radius:4px;background:#2e6da4;color:#fff}.chat-msg.bot{align-self:flex-start;border-bottom-left-radius:4px}.chat-msg.err{align-self:center;background:rgba(231,76,60,.18);font-size:12px}.chat-chip{align-self:center;background:rgba(255,255,255,.09);color:#9fb3c8;font-size:11px;padding:3px 9px;border-radius:9px;font-family:monospace}.ai-chat-row{display:flex;gap:8px}.ai-chat-row input{flex:1;padding:8px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text);min-width:0}.ai-add-card{text-align:center}.ai-add-card button{width:100%;padding:10px;font-size:14px}#cfg_ai .card{padding:14px;line-height:1.55}#cfg_ai .card h3{margin-bottom:12px}#cfg_ai label{display:block;margin:10px 0 4px;font-size:13px}#cfg_ai input:not([type=checkbox]),#cfg_ai select,#cfg_ai textarea{box-sizing:border-box;max-width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--text);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px}#cfg_ai input[type=checkbox]{width:auto;margin:0 6px 0 2px;vertical-align:middle;accent-color:#2ecc71}#cfg_ai textarea{width:100%;resize:vertical;line-height:1.45}#cfg_ai .card>button,#cfg_ai form button{margin:12px 5px 2px 0}.log-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}@media(max-width:900px){.log-grid{grid-template-columns:1fr}}.log-panel{background:var(--panel);color:var(--text);border-radius:10px;padding:12px;min-height:300px;max-height:60vh;overflow-y:auto;text-align:left;font-family:monospace;font-size:12px;line-height:1.4;border:1px solid rgba(255,255,255,.12)}.log-panel h3{margin:0 0 10px 0;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:1px;color:var(--text);border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}.log-entry{margin-bottom:4px;padding:3px 6px;border-radius:4px;background:rgba(0,0,0,.2);word-break:break-all}.log-entry .t{color:#888;font-size:10px}.log-entry .l{font-weight:700;margin:0 4px}.log-entry .l.inf{color:#2ecc71}.log-entry .l.wrn{color:#f39c12}.log-entry .l.err{color:#e74c3c}.log-entry.core{border-left:3px solid #3498db}.log-entry.evnt{border-left:3px solid #9b59b6}.log-entry.sens{border-left:3px solid #2ecc71}.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.log-header button{margin:0;padding:4px 10px;font-size:11px}
 </style></head><body>
 )rawliteral";
 
@@ -71,7 +71,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <div class='ai-chat-log' id='chat_log'></div>
 <div class='ai-chat-row'>
 <input id='chat_input' placeholder='Ask the assistant...' autocomplete='off' onkeydown="if(event.key==='Enter')sendChat()">
-<button onclick='sendChat()'>Send</button>
+<button id='chat_send' onclick='sendChat()'>Send</button>
 </div>
 </div>
 </div>
@@ -288,12 +288,121 @@ d.textContent=text;
 log.appendChild(d);
 log.scrollTop=log.scrollHeight;
 }
+function addChip(t){
+const log=document.getElementById('chat_log');
+if(!log)return;
+const d=document.createElement('div');
+d.className='chat-chip';
+d.textContent=t;
+log.appendChild(d);
+log.scrollTop=log.scrollHeight;
+}
+let chatHistory=[];
+let chatBusy=false;
+function chatCfg(){
+return{
+url:location.origin+'/ai/chat',
+model:(aiCfg&&aiCfg.model)||'',
+key:''
+};
+}
+const CHAT_TOOLS=[
+{type:'function',function:{name:'list_entities',description:'List all device entities (sensors+actuators). Fields: id (use for actuator commands), index (slot 0..19, use for rules), name, type, value, state, local, ip.',parameters:{type:'object',properties:{}}}},
+{type:'function',function:{name:'device_status',description:'Device health: uptime, free heap, wifi rssi, reset reason.',parameters:{type:'object',properties:{}}}},
+{type:'function',function:{name:'list_rules',description:'List automation rules with id,type,sensors[],cmp[],threshold[],actuators[],actions[],levels[],delay_ms,cooldown_ms.',parameters:{type:'object',properties:{}}}},
+{type:'function',function:{name:'read_logs',description:'Read recent system log entries.',parameters:{type:'object',properties:{}}}},
+{type:'function',function:{name:'save_rule',description:'Create or update an automation rule. Types: 0=EDGE(state transitions,digital) 1=THRESHOLD(value vs threshold,no hysteresis->set cooldown_ms) 2=TIME(fires once/day at time_s seconds of day) 3=INTERVAL(every interval_ms>=1000). cmp: 0=GT 1=LT 2=EQ. actions: 0=ON 1=OFF 2=TOGGLE 3=LEVEL(dimers need levels[]). sensors/actuators are slot indices from list_entities().index. id omitted/-1 = first free slot (0..19).',parameters:{type:'object',properties:{id:{type:'integer'},type:{type:'integer'},sensors:{type:'array',items:{type:'integer'}},cmp:{type:'array',items:{type:'integer'}},threshold:{type:'array',items:{type:'number'}},actuators:{type:'array',items:{type:'integer'}},actions:{type:'array',items:{type:'integer'}},levels:{type:'array',items:{type:'integer'}},logic_and:{type:'boolean'},delay_ms:{type:'integer'},cooldown_ms:{type:'integer'},interval_ms:{type:'integer'},time_s:{type:'integer'}}}}},
+{type:'function',function:{name:'delete_rule',description:'Delete rule by id.',parameters:{type:'object',properties:{id:{type:'integer'}},required:['id']}}},
+{type:'function',function:{name:'toggle_actuator',description:'Toggle a RELAY or DIMMER by entity id.',parameters:{type:'object',properties:{id:{type:'integer'}},required:['id']}}},
+{type:'function',function:{name:'set_dimmer',description:'Set DIMMER level 0-100 by entity id.',parameters:{type:'object',properties:{id:{type:'integer'},value:{type:'integer'}},required:['id','value']}}}
+];
+function chatSysPrompt(){
+return 'You control a Qymeras IoT device via tools. Device API base: '+location.origin+'. '
++'Actuators are addressed by id; rules address slots by index. '
++'THRESHOLD has no hysteresis so always set a sensible cooldown_ms. '
++'Confirm with the user before toggling actuators, saving rules or deleting rules unless they explicitly asked for it. '
++'After any tool call that changes state, verify the effect before reporting success.';
+}
+async function callLlm(msgs){
+const c=chatCfg();
+const h={'Content-Type':'application/json'};
+const r=await fetch(c.url,{method:'POST',headers:h,body:JSON.stringify({model:c.model,messages:msgs,tools:CHAT_TOOLS,tool_choice:'auto'})});
+if(!r.ok) throw new Error('LLM HTTP '+r.status);
+return await r.json();
+}
+const pace=()=>new Promise(res=>setTimeout(res,250));
+async function postForm(path,params){
+await pace();
+const body=new URLSearchParams();
+for(const k in params){if(params[k]!==undefined&&params[k]!==null&&params[k]!=='')body.set(k,String(params[k]));}
+const r=await fetch(location.origin+path,{method:'POST',body});
+const t=await r.text();
+return 'HTTP '+r.status+' '+(r.ok?t:'ERROR: '+t);
+}
+async function execTool(name,a){
+switch(name){
+case 'list_entities':return await (await fetch(location.origin+'/calib')).text();
+case 'device_status':return await (await fetch(location.origin+'/status')).text();
+case 'list_rules':return await (await fetch(location.origin+'/rules')).text();
+case 'read_logs':return (await (await fetch(location.origin+'/logs')).text()).slice(0,6000);
+case 'save_rule':return await postForm('/rules/set',{
+id:a.id,type:a.type,
+sensors:(a.sensors||[]).join(','),cmp:(a.cmp||[]).join(','),threshold:(a.threshold||[]).join(','),
+actuators:(a.actuators||[]).join(','),actions:(a.actions||[]).join(','),levels:(a.levels||[]).join(','),
+logic:(a.logic_and?'1':'0'),delay:a.delay_ms??0,cooldown:a.cooldown_ms??0,interval:a.interval_ms??0,time_s:a.time_s??0});
+case 'delete_rule':return await postForm('/rules/delete',{id:a.id});
+case 'toggle_actuator':return await postForm('/toggle',{id:a.id});
+case 'set_dimmer':return await postForm('/dimmer',{id:a.id,value:a.value});
+default:return 'unknown tool';
+}
+}
+function trimHistory(){
+const MAX=30;
+if(chatHistory.length<=MAX)return;
+for(let k=Math.max(1,chatHistory.length-MAX);k<chatHistory.length;k++){
+if(chatHistory[k].role==='user'){chatHistory=chatHistory.slice(k);return;}
+}
+}
 function sendChat(){
+if(chatBusy)return;
 const inp=document.getElementById('chat_input');
 const t=(inp.value||'').trim();
 if(!t)return;
-addChatMsg('user',t);
 inp.value='';
+addChatMsg('user',t);
+chatHistory.push({role:'user',content:t});
+runAgent();
+}
+async function runAgent(){
+chatBusy=true;
+document.getElementById('chat_send').disabled=true;
+try{
+trimHistory();
+for(let hop=0;hop<6;hop++){
+const data=await callLlm([{role:'system',content:chatSysPrompt()},...chatHistory]);
+const m=data.choices&&data.choices[0]&&data.choices[0].message;
+if(!m)throw new Error('unexpected LLM response');
+const tc=m.tool_calls||[];
+if(m.content)addChatMsg('bot',m.content);
+chatHistory.push(tc.length?{role:'assistant',content:m.content||'',tool_calls:tc}:{role:'assistant',content:m.content||''});
+if(!tc.length)break;
+for(const c of tc){
+let a={};try{a=JSON.parse(c.function.arguments||'{}')}catch(e){}
+addChip('> '+c.function.name+'('+JSON.stringify(a)+')');
+let out;
+try{out=await execTool(c.function.name,a);}catch(e){out='ERROR: '+e.message;}
+addChip('< '+c.function.name);
+chatHistory.push({role:'tool',tool_call_id:c.id,name:c.function.name,content:String(out).slice(0,4000)});
+}
+}
+}catch(e){
+let msg='LLM error: '+e.message;
+if(String(e.message).indexOf('Failed to fetch')>-1)msg+=' - check endpoint/CORS (Ollama needs OLLAMA_ORIGINS=*)';
+addChatMsg('err',msg);
+}finally{
+chatBusy=false;
+document.getElementById('chat_send').disabled=false;
+}
 }
 </script>)rawliteral";
 

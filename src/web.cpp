@@ -223,12 +223,33 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
     server.send(405, "text/plain", "POST required");
     return;
   }
-  if (server.hasArg("broadcast"))
-    core::genset.broadcast_port = server.arg("broadcast").toInt();
-  if (server.hasArg("command"))
-    core::genset.command_port = server.arg("command").toInt();
-  if (server.hasArg("interval"))
-    core::genset.report_interval = server.arg("interval").toInt();
+  // Strict validation (T011 class): toInt() silently coerces ("abc"->0) and
+  // wraps out-of-range values (ports >65535 wrap uint16; negative interval
+  // wraps uint32; interval 0 floods the mesh with a report every loop tick).
+  if (server.hasArg("broadcast")) {
+    unsigned long v = 0;
+    if (!parseStrictUnsigned(server.arg("broadcast"), v) || v > 65535) {
+      server.send(400, "text/plain", "invalid broadcast port");
+      return;
+    }
+    core::genset.broadcast_port = (uint16_t)v;
+  }
+  if (server.hasArg("command")) {
+    unsigned long v = 0;
+    if (!parseStrictUnsigned(server.arg("command"), v) || v > 65535) {
+      server.send(400, "text/plain", "invalid command port");
+      return;
+    }
+    core::genset.command_port = (uint16_t)v;
+  }
+  if (server.hasArg("interval")) {
+    unsigned long v = 0;
+    if (!parseStrictUnsigned(server.arg("interval"), v) || v < 1000 || v > 3600000UL) {
+      server.send(400, "text/plain", "invalid interval");
+      return;
+    }
+    core::genset.report_interval = (uint32_t)v;
+  }
   saveGeneralSettings();
   logger::coref("Genset saved (bc:%u,cmd:%u,int:%u)",
     core::genset.broadcast_port,
@@ -1309,6 +1330,30 @@ ICACHE_FLASH_ATTR void handleAiSet() {
   server.send(400, "text/plain", "target must be global|prompt");
 }
 
+ICACHE_FLASH_ATTR void handleAiChat() {
+  addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (!checkRateLimit()) {
+    server.send(429, "text/plain", "Rate limit exceeded. Try again in 2s.");
+    return;
+  }
+  String payload = server.arg("plain");
+  if (payload.length() == 0) {
+    server.send(400, "text/plain", "empty body");
+    return;
+  }
+  int code = 0;
+  String resp = ai::chatProxy(payload, code);
+  if (code == 0) {
+    server.send(502, "text/plain", "upstream connection failed");
+    return;
+  }
+  server.send(code, "application/json", resp);
+}
+
 ICACHE_FLASH_ATTR void handleAiRun() {
   addCorsHeaders();
   if (!checkAuth()) {
@@ -1358,6 +1403,8 @@ void init() {
   server.on("/ai/set", HTTP_OPTIONS, handleCorsOptions);
   server.on("/ai/run", HTTP_POST, handleAiRun);
   server.on("/ai/run", HTTP_OPTIONS, handleCorsOptions);
+  server.on("/ai/chat", HTTP_POST, handleAiChat);
+  server.on("/ai/chat", HTTP_OPTIONS, handleCorsOptions);
   server.begin();
 }
 

@@ -581,6 +581,42 @@ static String aiPerform(HTTP_CLIENT &http, uint8_t slot) {
   return response;
 }
 
+String chatProxy(const String &payload, int &httpCode) {
+  httpCode = 0;
+#if defined(ESP8266)
+  if (strncmp(config.endpoint, "https://", 8) == 0) {
+    logger::errorf("AI chat proxy rejected: https:// unsupported on ESP8266");
+    return "";
+  }
+  WiFiClient client;
+  HTTP_CLIENT http;
+  if (!http.begin(client, config.endpoint)) return "";
+#else
+  HTTP_CLIENT http;
+  if (!http.begin(config.endpoint)) return "";
+#endif
+  http.addHeader("Content-Type", "application/json");
+  if (strlen(config.api_key) > 0) {
+    String auth = "Bearer ";
+    auth += config.api_key;
+    http.addHeader("Authorization", auth);
+  }
+  unsigned long tmo = config.timeout_ms;
+#if defined(ESP8266)
+  if (tmo > 20000) tmo = 20000;
+#endif
+  http.setTimeout(tmo);
+  httpCode = http.POST(payload);
+  String response;
+  if (httpCode == 200) {
+    response = http.getString();
+  } else {
+    logger::errorf("AI chat proxy HTTP error: %d", httpCode);
+  }
+  http.end();
+  return response;
+}
+
 String performRequest(uint8_t slot) {
 #if defined(ESP8266)
   // Plain HTTP only on ESP8266: the BearSSL TLS buffers cannot fit this

@@ -106,4 +106,9 @@ int8_t getActiveSlot();
 const SlotResult& getSlotResult(uint8_t idx);
 const char* getLastError();
 
+// Stateless chat-proxy: forwards an arbitrary OpenAI-style JSON request body
+// to the configured endpoint (adds stored API key) and returns the upstream
+// response. Holds no conversation state (the browser drives the tool loop).
+String chatProxy(const String &payload, int &httpCode);
+
 }  // namespace ai
