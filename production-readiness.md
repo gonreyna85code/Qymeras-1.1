@@ -1,6 +1,15 @@
 # Qymeras 1.1 - Production Readiness
 
-# BLOCKER
+> **Branch context (2026-08-27):** this file lives on `feature/ai-experiments`
+> (AI line). The **production gate applies to the AI-free 1.1 MVP on `main`**
+> (HEAD `b2a9b01`), where the equivalent doc is kept current. On this branch the
+> content below is a historical record; the live status table and the soak
+> state are tracked in `progress.md` (host 79/79, ESP32-only soak IN PROGRESS,
+> OTA uploads PASS, T016 timezone verified on both boards).
+
+Historical notes:
+
+# BLOCKER (superseded — see progress.md for the live gate status)
 
 Hardware validation on physical ESP8266/ESP32 is still required before the
 1.1 production gate can be passed. Static/code review is green; soak, storage

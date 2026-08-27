@@ -28,7 +28,13 @@
 - [x] GUI Settings sub-tabs General/Network/AI; Network main tab removed
 - [x] Fully opt-in; api_key never echoed back
 - [x] Streaming /calib response (chunked) -- fixes heap-exhaustion JSON corruption on ESP8266
+- [x] Browser agent tool-loop + stateless `/ai/chat` relay (2026-08-24..27): device injects PROGMEM tool schema
+      (`AI_CHAT_TOOLS_JSON`, zero RAM) + `tool_choice:"auto"`; upstream error body surfaced (upstream `code`
+      interpolated); ESP8266 20s cap reported as 504; browser retries (3x/400ms); history/tool results shrunk.
+      Commits: 792705d/3e83221/60b76a2/7a81896/df78f1d.
 - [ ] AI per-slot rate limiting beyond global rate_limit_ms (future)
+- [ ] Freshness policy for AIDIG/AIANA staleness gating (future; entity values persist by design today)
+- [ ] Per-slot model override (qwen2:0.5b vs ornith-local:9b differ qualitatively — see progress table)
 
 ### P2 - Nice-to-Have (Improve after 1.1)
 - [ ] HTTPS for OTA transfers
@@ -39,8 +45,10 @@
 - [ ] Mobile app companion
 - [ ] Rule editor UI improvements
 
-### P3 - Future (Phase 3+)
-- [ ] AI/ML subsystem (out of scope for 1.1)
+### P3 - Future (Phase 3+, relative to the 1.1 MVP on `main`)
+- [ ] AI/ML subsystem — **ACTIVE on `feature/ai-experiments`** (authorized 2026-08).
+      `main` is the AI-free 1.1 MVP and must stay free of it (see AGENTS.md).
+      This branch continues the AI implementation; items below track the remaining work.
 - [ ] Zigbee/Z-Wave integration
 - [ ] Matter protocol support
 - [ ] Cloud dashboard
@@ -95,7 +103,7 @@
 ### T008: Memory Leak Testing 🔄 IN PROGRESS (observability added)
 - [x] GET /status diagnostics endpoint (uptime_ms, free_heap, rssi, reset_reason, chip) on both platforms
 - [x] Early soak (~5min AI+HTTP load): no reboot, no ERR/FTL, millis monotonic, ESP8266 heap stable ~9.5-9.8KB under /calib churn
-- [ ] 24h soak with periodic /status sampling (production gate requirement) — sampler RUNNING (soak.py -> soak.csv, 5-min cadence). Scope: ESP32 (.24) only — ESP8266 owned by parallel feature effort. Load: RISK DIGITAL slot via Ollama qwen2:0.5b interval 60s. Early trend: heap 191-200KB, 0 errors, only Software resets (deploys)
+- [ ] 24h soak with periodic /status sampling (production gate requirement) — sampler RUNNING (soak.py -> soak.csv, 5-min cadence). Scope: ESP32 (192.168.1.16, was .24) only — ESP8266 owned by parallel feature effort. Load: RISK DIGITAL slot via Ollama qwen2:0.5b interval 60s. Early trend: heap 191-200KB, 0 errors, only Software resets (deploys)
 - [ ] Set memory thresholds/alerts
 
 ### T008b: AI Subsystem Hardening ✅ CODE COMPLETE + HARDWARE VERIFIED (ESP32)
@@ -149,12 +157,12 @@
 - [ ] User guide revisions
 - [ ] API reference documentation
 
-### T015: Final Production Audit ⏳ PENDING
-- [ ] Complete all P0-P1 tasks
+### T015: Final Production Audit ⏳ PENDING (applies to `main` MVP, AI-free)
+- [ ] Complete all P0-P1 tasks (on `main`)
 - [ ] Verify all documentation
-- [ ] Build both platforms
+- [ ] Build both platforms (3 envs green on `main`, verified 2026-08-27)
 - [ ] Test critical paths
-- [ ] Sign off for production
+- [ ] Sign off for production — AI branch excluded from this gate
 
 ### T016: Production Hardening STEP 1 ✅ DONE (hardware verified 2026-08-23)
 - [x] Timezone semantics: runtime stays UTC; SENSOR_TIME `correction` = offset minutes from UTC; portable UTC→local via epoch+offset+gmtime()
@@ -164,6 +172,16 @@
 - [x] platformio.ini: espressif32 pinned @6.5.0 + new `esp32c3_devkit` env
 - [x] Host tests `tests/host_sanity.py` (45/45) + builds green on 3 envs
 - [x] Flash ESP32 + ESP8266 and verify: timezone persists (corr=180 survives OTA reboot) & shifts TIME rules (RULE_TIME fires at shifted local minute on BOTH boards), malformed `/calib/set` rejected (7 cases x2 boards, zero state change), discovery complete (11 remote entries bidirectional) ✅
+
+## Next AI Work (this branch — feature/ai-experiments)
+
+- [ ] Finish `/ai/chat` relay hardening: upstream TLS/proxy edge cases, streaming parse of chunked upstream bodies
+- [ ] Agent loop semantics (browser): tool-result truncation to match context budget; history eviction strategy
+- [ ] Re-verify device-side `/ai/run` validators + CONTROL against the relayed tool schema (two-path parity)
+- [ ] AIDIG/AIANA freshness policy decision (data-table row "stale-result invalidation" NOTE)
+- [ ] Per-slot model override (qwen2:0.5b DIGITAL/ANALOG/ANALYTIC vs ornith-local:9b CONDITIONAL/CONTROL)
+- [ ] Sustained soak on ESP32 (192.168.1.16) with the new relay+browser path present
+- [ ] Fold stabilized AI subset into a future release branch (NOT into `main` without owner request)
 
 ## Status Summary
 
@@ -175,9 +193,10 @@
 | Pending (requires hardware) | 4 | 25% |
 
 ## Final validation state
-See `progress.md` "FINAL VALIDATION STATUS TABLE". No area is marked PASS without
-hardware evidence; all hardware-dependent areas are currently NOT TESTED (no boards
-attached to this machine). Production gate: NOT READY until physical tests pass.
+This branch (`feature/ai-experiments`) carries the AI subsystem; its validation state is tracked in
+`progress.md` tables (host 79/79, hardware AI batteries PASS on ESP32, soak ESP32-only IN PROGRESS).
+The **production gate lives on `main`** (AI-free 1.1 MVP). See `progress.md` "FINAL VALIDATION STATUS TABLE".
+No area on either branch is marked PASS without hardware evidence.
 
 ## Next Actions
 

@@ -2,7 +2,13 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** Production-ready on ESP8266 & ESP32 | Built-in web server | UDP mesh networking | EEPROM persistence | Arduino Library
+**Status (this branch):** `feature/ai-experiments` — AI subsystem experimental line (optional `ai.cpp`, `/ai/chat` relay, browser agent tool-loop, virtual `AIDIG`/`AIANA` sensors feeding the rules engine). Opt-in: zero traffic when disabled.
+**Production (1.1 MVP):** the AI-free tree lives on `main` (`b2a9b01`, HEAD `5e46e12`). Do not port AI code there without an explicit request.
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | **Production 1.1 MVP — no AI.** Hardened deterministic core, 3-env green, host suite 79/79. |
+| `feature/ai-experiments` | **AI implementation line** (this branch): optional LLM prompt slots, browser chat agent, virtual sensors via `aidig()`/`aiana()`, CONTROL tool-calls through audited actuation primitives. |
 
 ---
 
@@ -93,7 +99,8 @@ void loop()    { core::loop(); }
 
 ## Supported Sensors
 
-Qymera supports **9 sensor types** plus **2 actuator types**. Each sensor has
+Qymera supports **12 sensor types** plus **2 actuator types** (enum values 1..14;
+AIDIG=13, AIANA=14 are AI-produced virtual sensors). Each sensor has
 individual calibration (offset, min/max, resolution, availability, persistence
 options).
 
@@ -109,6 +116,8 @@ options).
 | Contact | OPEN / CLOSED | bool | `sensors::contact()` | Reed switch, door sensor |
 | Generic | any | float | `sensors::custom()` | Any analog/digital value |
 | Time | N/A | epoch | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP |
+| AI Digital (13) | TRUE / FALSE | bool | `sensors::aidig()` | LLM-validated digital output |
+| AI Analog (14) | 0-100 | % | `sensors::aiana()` | LLM-validated analog output |
 | Relay (actuator) | ON / OFF | bool | `sensors::relay()` | Digital relay, latching |
 | Dimmer (actuator) | 0-100 | % | `sensors::dimmer()` | LED strip, fan, PWM |
 
@@ -159,15 +168,33 @@ reading all config from EEPROM.
 
 ### HTTP API (curl)
 
+Actuator endpoints take the **entry UID** (`id` from `/calib`, not the table index):
+
 ```bash
 # Factory reset (clears WiFi, returns to AP mode)
 curl -X POST http://<device-ip>/factory
 
-# Toggle an actuator
-curl -X POST http://<device-ip>/toggle -d "id=0&state=1"
+# Toggle an actuator (use the uid from /calib)
+curl -X POST http://<device-ip>/toggle -d "id=<uid>&state=1"
 
 # Set dimmer value
-curl -X POST http://<device-ip>/dimmer -d "id=0&value=75"
+curl -X POST http://<device-ip>/dimmer -d "id=<uid>&value=75"
+
+# Diagnostics
+curl http://<device-ip>/status
+```
+
+AI endpoints (this branch, opt-in — see "AI Subsystem" below):
+
+```bash
+# Configure a prompt slot (rate limited)
+curl -X POST http://<device-ip>/ai/set -d "target=prompt&slot=0&out_type=0&prompt=...&enabled=1"
+
+# Trigger a run for a slot (interval or manual)
+curl -X POST http://<device-ip>/ai/run -d "slot=0"
+
+# Per-slot last result
+curl http://<device-ip>/ai/status
 ```
 
 Full API reference and architecture: see `docs/architecture-baseline.md`.
@@ -201,6 +228,36 @@ on reset:
 
 ---
 
+## AI Subsystem (this branch — `feature/ai-experiments`, opt-in)
+
+An **optional, fully opt-in** data source: configured LLM prompt slots feed the
+existing rules engine as validated virtual sensors. Disabled by default — zero
+traffic, deterministic core unaffected.
+
+- **4 prompt slots** in EEPROM block 3087..3966 (`QMAI v1`); providers
+  OPENAI / OLLAMA / CUSTOM (configured endpoint URL).
+- **Output types:** `DIGITAL` → `sensors::aidig()` (virtual sensor type 13),
+  `ANALOG` → `sensors::aiana()` (type 14), `ANALYTIC` (raw text + log),
+  `CONTROL` (real tool-calls `set_relay`/`set_dimmer` through the same audited
+  actuation primitives as the web API — no direct hardware writes).
+- **Browser chat agent:** the AI panel runs the tool-loop **in the browser**
+  (same-origin) against a **stateless `/ai/chat` relay**. The device injects the
+  tool schema from **PROGMEM** (zero RAM) with `tool_choice:"auto"`, edits
+  nothing else, and relays the raw upstream response (upstream error body
+  surfaced; ESP8266 timeout-cap reported as 504).
+- Device-side runs (`/ai/run` interval/manual) apply strict-validated outputs;
+  a failed run invalidates the previous slot result (no stale-valid masking).
+- **Platform split:** ESP8266 uses plain HTTP only (TLS was dropped — BearSSL
+  buffers exceed the DRAM budget); the effective AI HTTP timeout is clamped to
+  20s on ESP8266. ESP32 supports full `https`.
+- `api_key` is write-only — never echoed back over the API.
+
+**Security:** open requests copy the provider `api_key` and can request actuation;
+run this on trusted local networks only, and keep the HTTP Basic Auth gate
+enabled when exposed off-LAN.
+
+---
+
 ## Common Use Cases
 
 ### Smart Greenhouse
@@ -229,13 +286,24 @@ on reset:
 
 ## Security Notes
 
-Qymera currently has **no authentication**. Recommended for home local networks
-only:
+The 1.1 tree ships with **HTTP Basic Auth infrastructure (dormant by default)**:
+all mutating endpoints check credentials when the gate is enabled, but out of the
+box requests without an `Authorization` header are served — designed for **trusted
+home local networks only**.
+
+Active hardening (this branch): rate limiting on all mutating POSTs
+(`/save`, `/genset/save`, `/rules/set`, `/rules/delete`, `/factory`, `/toggle`,
+`/dimmer`, `/calib/set`, `/ai/set`, `/ai/run`, `/ai/chat`), OTA gated by a
+chip-identity token, strict input validation, and CORS applied to all responses.
+See `docs/architecture-baseline.md` → "Security Limitations" for the complete list.
+
+Recommended for home use:
 
 1. Use only on a trusted local WiFi network
 2. Change the AP SSID from `QymeraSetup` to a random name via settings
 3. Block external access through your router's firewall
-4. For remote access, use a VPN or custom HTTP authentication
+4. For remote access, use a VPN or enable the HTTP Basic Auth gate
+5. On `feature/ai-experiments`, keep AI slots disabled unless actively used
 
 ---
 
@@ -259,7 +327,6 @@ Edit `config.h` for platform-specific settings. Defaults work for most cases:
 ```cpp
 #define MAX_SENSORS      64   // max sensors in memory
 #define MAX_RULES        20   // max rules stored in EEPROM
-#define PULSE_DURATION_MS  10  // default relay pulse duration
 ```
 
 ---
@@ -289,7 +356,9 @@ pio run -t upload --monitor -e esp32_devkit
 
 ## Roadmap
 
-MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications · mobile app. Driven by community needs.
+**Production (1.1 MVP, `main`):** gate on the 24h soak, factory-reset and storage-endurance hardware checks.
+**AI line (`feature/ai-experiments`):** relay hardening, freshness policy for `AIDIG`/`AIANA`, per-slot model override, then fold the stabilized AI subset into a future release.
+**Later:** MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications · mobile app. Driven by community needs.
 
 ---
 

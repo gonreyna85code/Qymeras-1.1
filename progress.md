@@ -1,5 +1,36 @@
 # Qymeras 1.1 Progress Tracker
 
+## Current State (2026-08-27)
+
+- **Branch:** `feature/ai-experiments` — AI implementation line for the next
+  release. HEAD: `df78f1d` (5 commits ahead of the last doc-sync `b885820`).
+- **Production `main`** (`b2a9b01` after 2026-08-27 force-sync) is the **AI-free
+  MVP** (1.1 tree, HEAD `5e46e12` + doc-sync). This branch is where the AI
+  subsystem lives; it will be folded into a future release once stabilized.
+- **Architecture shift (2026-08-24..27):** the browser now runs the AI agent
+  tool-loop **same-origin** and the device exposes a **stateless `/ai/chat`
+  relay** that proxies the provider. The device injects the tool schema from
+  **PROGMEM** (`AI_CHAT_TOOLS_JSON`, zero RAM) with `tool_choice:"auto"`,
+  surfaces the upstream error body (msg interpolation incl. upstream `code`),
+  and reports ESP8266 timeout-capped calls as **504** (`20s` HTTP cap).
+  - Commits: `792705d` UI input styling scoped to AI tab · `3e83221` stateless
+    relay + browser tool-loop · `60b76a2` upstream error body + 504 · `7a81896`
+    error JSON interpolates upstream code · `df78f1d` PROGMEM tool schema,
+    browser retries (3x/400ms), history/tool results shrunk.
+  - Device-side `/ai/run` (interval/manual) still applies validated outputs to
+    `sensors::aidig`/`aiana` and CONTROL via audited actuation primitives.
+- **Host sanity re-run 2026-08-27:** `python tests/host_sanity.py` → **79/79 PASS**.
+- **Fleet (2026-08-27):** ESP32 `192.168.1.16` (device_uid 183646728) — AI
+  hardware scope (supersedes `.24/.28`); ESP8266 `192.168.1.19` (device_uid
+  12014147) — owned by a parallel feature effort; do not flash/reconfigure/load-test
+  it without owner approval. IPs are DHCP-drifted.
+- **Probe payloads cleaned:** LLM tool-loop probes (`qwen3.5:2b`, `bt_*`,
+  `turn2_*`, etc.) were archived out of the repo root on 2026-08-27 (backup in a
+  workspace-external temp dir); they are not part of the git tree.
+- **Soak:** ESP32-only sampler (`$TEMP/opencode/ai_mock/soak.py` -> soak.csv,
+  outside the repo). Production gate (24h soak, factory reset, endurance) applies
+  to the `main` MVP, not to this experimental branch.
+
 ## Phase 1: Audit & Baseline (Current)
 
 ### Completed Tasks
@@ -181,6 +212,7 @@ Code-review-only items are NOT marked PASS.
 | ESP32 board health | NOTE | ESP32 (192.168.1.27) now STABLE with drain-fix build: clean boot, HTTP 200, no storm, 11-remote discovery, healthy. (Earlier instability was the drain-fix-less HEAD firmware storming; resolved by flashing the fix build.) |
 | ESP32 fleet IP (current) | 192.168.1.24 | DHCP drifts with reconnects; verified via /logs (WiFi connected, IP:192.168.1.24). |
 | ESP8266 fleet IP (current) | 192.168.1.25 | DHCP drifts; stable node. |
+| Fleet IP (2026-08-27, supersedes above) | ESP32 192.168.1.16 (uid 183646728) / ESP8266 192.168.1.19 (uid 12014147) | DHCP; verified via /calib. ESP8266 outside AI-testing scope (parallel effort). |
 |
  | Production gate: NOT READY — 24h memory soak + final matrix not run. All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations.| AI subsystem (Phase 1.2, authorized) | PASS | 4 prompt slots (EEPROM 3087..3966), DIGITAL/ANALOG/ANALYTIC validated outputs feed rules engine via sensors::aidig/aiana; CONTROL interface-only. ESP8266: plain-HTTP endpoints only (TLS dropped: BearSSL buffers cannot fit DRAM budget; mbedtls link cost +122KB flash / heap collapse). ESP32: full https support. GUI: Settings sub-tabs General/Network/AI (Network main tab removed). Opt-in: zero traffic when disabled; api_key never echoed. |
 | AI verification ESP8266 (.25) | PASS | verify_ai82.py: 27/27 — invalid inputs rejected (out_type/min>max/prompt len/enabled/target), configure+persist across reboot, CONTROL refusal, DIGITAL true/false + garbage rejection via mock LLM, ANALOG range checks + virtual entities (RISK/SCORE), disabled gating (no requests logged). |

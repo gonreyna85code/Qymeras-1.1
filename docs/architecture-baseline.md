@@ -56,6 +56,11 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 | `SENSOR_RAIN` | Rainfall |
 | `SENSOR_CONTACT` | Contact/relay state |
 | `SENSOR_GENERIC` | Generic sensor |
+| `SENSOR_AIDIG` (13) | AI digital — validated LLM output, boolean; feeds rules engine |
+| `SENSOR_AIANA` (14) | AI analog — validated LLM output, 0-100; feeds rules engine |
+
+`isValidSensorType()` accepts 1..14 on this branch (1..12 base + 13/14 AI
+virtual types; the 1.1 `main` tree uses 1..12 only).
 
 ### Calibration Model
 - Each sensor has individual calibration persisted per-slot
@@ -148,8 +153,8 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 | POST | `/rules/set` | Create/validate rule, type, comparator/threshold |
 | POST | `/rules/delete` | Delete rule by id (validate bounds before delete) |
 | POST | `/factory` | Factory reset — clear credentials, relay state, config → reboot in AP |
-| GET | `/toggle` | API toggle for actuators (id + logic) |
-| GET | `/dimmer` | Value control dimmer (id + value) |
+| POST | `/toggle` | Toggle actuator by entry UID (`id`=uid from /calib, not table index) — POST + OPTIONS/CORS |
+| POST | `/dimmer` | Set dimmer value by entry UID (`id` + `value` 0-100) — POST + OPTIONS/CORS |
 | GET | `/logs` | Recent logs JSON |
 | GET | `/status` | Diagnostics: uptime_ms, free_heap, rssi, reset_reason, chip |
 | GET | `/ota/status` | OTA state `{"ota":1}` or `{"ota":0}` |
@@ -158,6 +163,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 | POST | `/ai/set` | Configure global (`target=global`) or one slot (`target=prompt&slot=N`) — rate limited |
 | POST | `/ai/run` | Trigger a run for `slot=N` (rejected if disabled / in flight / rate-limited) |
 | GET | `/ai/status` | Per-slot last result: valid, digital, analog, raw, age_ms |
+| POST | `/ai/chat` | Stateless LLM chat relay for the browser agent: appends the PROGMEM tool schema if the payload has no `"tools"`, proxies the provider, returns the raw upstream body (504 on unreachable/capped ESP8266) — rate limited, OPTIONS/CORS |
 
 ### Web Interface
 - **Tabs**: WiFi, Calibration, Rules, Actuators, Factory, Logs
@@ -474,6 +480,25 @@ invalidates that slot's previous result (results[slot].valid=false) so stale out
 can never masquerade as fresh ones. On ESP8266 the effective HTTP timeout is clamped
 to 20s regardless of config: the blocking AI call runs in loop() context and freezes
 the single-loop web server for its duration.
+
+### Browser agent + stateless relay (2026-08-24..27)
+Two execution paths coexist:
+- **Device-side runs** (`/ai/run`, manual or interval): the device calls the
+  provider directly, applies the strict validators above, and writes
+  `aidig`/`aiana` / CONTROL as described — used by automations without a browser.
+- **Browser agent chat** (`/ai/chat`): the AI panel in the browser runs the agent
+  tool-loop **same-origin**. It POSTs chat-completion payloads to the stateless
+  `/ai/chat` relay, which (1) injects the tool schema from **PROGMEM**
+  (`AI_CHAT_TOOLS_JSON`, in flash, zero RAM) with `tool_choice:"auto"` when the
+  payload has no `"tools"` key, (2) proxies raw to the configured provider via
+  `ai::chatProxyStream`, and (3) returns the **upstream body verbatim** (so the
+  browser sees the real provider error, `code` interpolated). An unreachable or
+  timeout-capped provider returns `504` ("upstream timeout or unreachable (ESP8266
+  HTTP cap 20s)"). The browser agent retries up to 3x (400ms backoff), keeps a
+  bounded chat history, and truncates tool results to fit the context budget.
+  The system prompt instructs it to confirm before actuating and to verify state
+  changes via the device API. This offloads the tool-loop from the constrained
+  single-loop device; the relay never holds prompt-slot state.
 
 ### Storage
 EEPROM block 3087..3966 ("QMAI v1"): 8B header (magic/version/count), 168B global

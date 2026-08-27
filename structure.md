@@ -8,7 +8,7 @@
 |------|---------|-------|--------|
 | `core.cpp` | MCU init, WiFi/UDP, reporting | Core team | ✅ Working |
 | `core.h` | Core class definition, OTA control | Core team | ✅ Up to date |
-| `web.cpp` | HTTP server, handlers, OTA toggle | Web team | ✅ Working |
+| `web.cpp` | HTTP server, handlers, OTA toggle, `/ai/chat` relay, `/status` diagnostics | Web team | ✅ Working |
 | `web.h` | Web server class, endpoint declarations | Web team | ✅ Up to date |
 | `html.cpp` | Embedded HTML/CSS/JS implementation | Web team | ✅ Working |
 | `html.h` | Embedded HTML/CSS/JS constants | Web team | ✅ Up to date |
@@ -20,10 +20,8 @@
 | `automations.h` | Rule struct, evaluation logic | Automations team | ✅ Up to date |
 | `log.h` | 3-layer logging interface | Logging team | ✅ Working |
 | `log.cpp` | Logging implementation, buffers | Logging team | ✅ Working |
-| `ota.h` | OTA management interface | OTA team | ⚠️ Minimal |
-| `ota.cpp` | OTA implementation | OTA team | ⚠️ Minimal |
 | `ai.h` | AI module types (OutType, PromptCfg, SlotResult) | AI team | ✅ Working (1.2, authorized) |
-| `ai.cpp` | AI subsystem: 4 slots, Ollama/OpenAI-compatible client, validated outputs -> rules engine; CONTROL = real tool-calling actuation via sensors::setRelay/handleDimmer; ESP8266 timeout clamp 20s | AI team | ✅ Working (1.2, authorized) |
+| `ai.cpp` | AI subsystem: 4 slots, Ollama/OpenAI-compatible client, validated outputs -> rules engine; CONTROL = real tool-calling actuation via sensors::setRelay/handleDimmer; ESP8266 timeout clamp 20s; stateless `/ai/chat` provider relay that injects the PROGMEM tool schema (`AI_CHAT_TOOLS_JSON`, zero RAM) + tool_choice:auto, surfaces upstream error body (504 on cap) | AI team | ✅ Working (1.2, authorized) |
 | `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Working |
 | `espnow_p2p.cpp` | ESP-NOW transport implementation | Transport team | ✅ Working |
 
@@ -171,7 +169,7 @@
 | contributor | Files owned |
 |-------------|-------------|
 | Lead engineer | `agents.md`, `architecture-baseline.md`, `progress.md`, `structure.md`, `todo.md` |
-| Core team | `core.cpp`, `core.h`, `ota.h`, `ota.cpp` |
+| Core team | `core.cpp`, `core.h` |
 | Web team | `web.cpp`, `web.h`, `html.cpp`, `html.h` |
 | Sensors team | `sensors.cpp`, `sensors.h` |
 | Transport team | `mesh.cpp`, `mesh.h`, `espnow_p2p.cpp`, `espnow_p2p.h` |
@@ -217,7 +215,7 @@ user setup()
     → Sensors::init() [sensors.cpp]
     → Rules::init() [automations.cpp]
     → WebServer::begin() [web.cpp]
-    → OTA::init() [ota.cpp] (default: disabled)
+    → OTA::init() [core.cpp] (default: disabled)
     → Transport::init() [mesh.cpp] (STA=UDP, AP=ESP-NOW)
     → Log::init() [log.cpp] (3-layer buffers)
   → user loop()
