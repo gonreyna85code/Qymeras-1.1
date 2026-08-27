@@ -1,243 +1,146 @@
 # Qymeras 1.1 Structure & Ownership
 
-## File Organization
+Updated 2026-08-27 (branch `main`, HEAD `5e46e12`). Mirrors the actual source
+tree — files not listed here do not exist in `src/`.
 
-### Source Files (src/)
+## Source Files (src/)
 
 | File | Purpose | Owner | Status |
 |------|---------|-------|--------|
-| `core.cpp` | MCU init, WiFi/UDP, reporting | Core team | ✅ Working |
+| `Qymera.h` | Master library header for Arduino IDE sketches (includes core/sensors/mesh/web/automations/log) | Core team | ✅ Up to date |
+| `main.cpp` | PlatformIO entry point: `setup()`/`loop()` delegate to `core::begin()`/`core::loop()`; provides `initSatellite()`/`report()`/`onCommandHook()` | Platform team | ✅ Working |
+| `config.h` | Platform auto-detection (ESP8266/ESP32/S2/S3/C3), system limits, EEPROM layout offsets, PWM abstraction, network defaults | Platform team | ✅ Up to date |
+| `core.cpp` | MCU init, WiFi, OTA lifecycle, per-`report()` loop scaffolding, memory reporting | Core team | ✅ Working |
 | `core.h` | Core class definition, OTA control | Core team | ✅ Up to date |
-| `web.cpp` | HTTP server, handlers, OTA toggle | Web team | ✅ Working |
+| `storage.cpp` | Persistence backend: EEPROM (ESP8266) / Preferences (ESP32), zero-fill on missing keys, calibration UID slots, rules, OTA flag + device token, factory reset | Storage team | ✅ Working |
+| `storage.h` | Persistence API (begin/read/write/get/put/commit; credentials; settings; OTA flag; calibration; rules; integrity) | Storage team | ✅ Up to date |
+| `web.cpp` | HTTP server, endpoint handlers, rate limiting, strict input validation, OTA toggle/status | Web team | ✅ Working |
 | `web.h` | Web server class, endpoint declarations | Web team | ✅ Up to date |
-| `html.cpp` | Embedded HTML/CSS/JS implementation | Web team | ✅ Working |
+| `html.cpp` | Embedded HTML/CSS/JS (Devices/Settings/Rules/Automations/Logs; renderers for types 1..12) | Web team | ✅ Working |
 | `html.h` | Embedded HTML/CSS/JS constants | Web team | ✅ Up to date |
-| `sensors.cpp` | Sensor reading, calibration, actuators | Sensors team | ✅ Working |
-| `sensors.h` | SensorType enum, callbacks, registration | Sensors team | ✅ Up to date |
-| `mesh.cpp` | UDP + ESP-NOW mesh transport | Transport team | ✅ Working |
-| `mesh.h` | Transport layer, ESP-NOW peer management | Transport team | ✅ Up to date |
-| `automations.cpp` | Rule engine, rule storage, tick() | Automations team | ✅ Working |
-| `automations.h` | Rule struct, evaluation logic | Automations team | ✅ Up to date |
-| `log.h` | 3-layer logging interface | Logging team | ✅ Working |
-| `log.cpp` | Logging implementation, buffers | Logging team | ✅ Working |
-| `ota.h` | OTA management interface | OTA team | ⚠️ Minimal |
-| `ota.cpp` | OTA implementation | OTA team | ⚠️ Minimal |
-| `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Working |
-| `espnow_p2p.cpp` | ESP-NOW transport implementation | Transport team | ✅ Working |
+| `sensors.cpp` | Sensor reading, calibration, actuators, remote sensor lifecycle (stale/reclaim), fades, pulses | Sensors team | ✅ Working |
+| `sensors.h` | `SensorType` enum (NONE..CONTACT, 1..12), registration callbacks, `Calibration` struct, remote discovery callbacks | Sensors team | ✅ Up to date |
+| `mesh.cpp` | UDP + ESP-NOW mesh transport; packet protocol v4/v5 (kind byte, batched datagrams); bounded RX; drain fix | Transport team | ✅ Working |
+| `mesh.h` | Transport layer, wire protocol, ESP-NOW peer management | Transport team | ✅ Up to date |
+| `espnow_p2p.cpp` | ESP-NOW transport implementation (bounded 8x250B RX FIFO, portMUX) | Transport team | ✅ Working |
+| `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Up to date |
+| `automations.cpp` | Rule engine, rule storage, `tick()` (every 50 ms: EDGE/THRESHOLD/TIME/INTERVAL, AND/OR, cooldown/delay) | Automations team | ✅ Working |
+| `automations.h` | `Rule` struct, evaluation logic, `isIndexReferenced()` | Automations team | ✅ Up to date |
+| `log.h` | 3-layer logging interface (CORE/EVENTS/SENSORS) | Logging team | ✅ Working |
+| `log.cpp` | Logging implementation, circular buffers, JSON output, remote log ingest | Logging team | ✅ Working |
 
-### Configuration Files
+> Note: there is **no `ota.cpp`/`ota.h`** in `main`. OTA is handled by three
+> modules: `storage.cpp` (persisted flag + device identity token), `core.cpp`
+> (`ArduinoOTA` lifecycle: single `begin()`, per-loop `handle()`, guards), and
+> `web.cpp` (`/ota/status`, `/ota/toggle`).
+
+## Configuration Files
 
 | File | Purpose | Owner |
 |------|---------|-------|
+| `platformio.ini` | Build config (envs: `esp8266_generic`, `esp32_devkit`, `esp32c3_devkit`) | Platform team |
 | `library.properties` | Arduino library metadata | Platform team |
-| `platformio.ini` | Build configuration | Platform team |
+| `.gitignore` | Excludes `.pio`, `.vscode`, `.theia`, `.continue`, `/AGENTS.md`, `/skill` (local-only files) | Lead engineer |
 | `README.md` | User documentation (English) | Documentation team |
-| `AGENTS.md` | Agent/copilot guidelines | Lead engineer |
+| `AGENTS.md` | Agent/copilot guidelines (**not versioned** — local workspace file) | Lead engineer |
 | `docs/architecture-baseline.md` | System architecture | Lead engineer |
-| `progress.md` | Task tracking | Lead engineer |
-| `structure.md` | File organization | Lead engineer |
+| `progress.md` | Task tracking / final validation table | Lead engineer |
+| `structure.md` | File organization (this file) | Lead engineer |
 | `todo.md` | Task list | Lead engineer |
+| `production-readiness.md` | Production readiness state | Lead engineer |
 
-### Example Sketches
+## Example Sketches
 
 | File | Purpose | Status |
 |------|---------|--------|
 | `examples/Base/Base.ino` | Base example sketch | ✅ Created |
-| `examples/HardwareDemo.ino` | Hardware demo (renamed to Base) | ❌ Renamed |
+| `examples/HardwareDemo/HardwareDemo.ino` | Hardware demo | ✅ Present |
 
-### Documentation Files
+## Tests / Tooling
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `docs/architecture-baseline.md` | System architecture | ✅ Created |
-| `agents.md` | Agent guidelines | ✅ Created/updated |
-| `progress.md` | Task tracking | ✅ Created |
-| `structure.md` | File organization | ✅ Created |
-| `todo.md` | Task list | ✅ Created |
-| `README.md` | User documentation (English) | ✅ Translated |
+| `tests/host_sanity.py` | Host suite: timezone conversion, strict float parsing + ranges, ESP-NOW RX FIFO (45 checks / 45 pass) | ✅ Working |
+| `scripts/esp32_clean_reset.py` | ESP32 env post-build script (clean reset hook) | ✅ Working |
 
 ## Module Responsibilities
 
-### Core Module (`core.cpp` / `core.h`)
-- MCU initialization and setup
-- WiFi connectivity management (STA/AP mode)
-- OTA enable/disable control
-- Boot logic and state tracking
-- Memory reporting
-- **Responsibility**: Deterministic runtime initialization and loop scaffolding
-
-### Sensors Module (`sensors.cpp` / `sensors.h`)
-- Sensor type definition and enumeration
-- Sensor reading and calibration
-- Actuator control (relay/dimmer)
-- Pulse and fade modes
-- Sensor state reporting (`aidig()`, `aiana()`)
-- **Responsibility**: Sensor/actuator state management and calibration
-
-### Web Module (`web.cpp` / `web.h`)
-- HTTP server and endpoint handlers
-- WiFi credential management
-- Calibration updates
-- Rule management API
-- OTA toggle and status
-- Log reporting
-- **Responsibility**: Web-based configuration and status
-
-### Mesh/Transport Module (`mesh.cpp` / `mesh.h` / `espnow_p2p.cpp`)
-- UDP broadcast transport
-- ESP-NOW peer management
-- Bounded RX FIFO (8x250B ring; callback never blocks, overflow counter logged from loop())
-- Packet encoding/decoding
-- Peer discovery and cleanup
-- Transport mode auto-detection (STA=UDP, AP=ESP-NOW)
-- **Responsibility**: Reliable networking between devices
-
-### Automations Module (`automations.cpp` / `automations.h`)
-- Rule engine evaluation
-- Rule storage and persistence
-- AND/OR logic composition
-- Rule tick execution in loop()
-- **Responsibility**: Deterministic automation rule execution
-
-### Logging Module (`log.h` / `log.cpp`)
-- 3-layer logging (CORE, EVENTS, SENSORS)
-- Circular buffer management
-- JSON output for web endpoint
-- Log level filtering
-- **Responsibility**: Useful, controlled logging
-
-### Persistence Module (EEPROM/Preferences)
-- 4KB EEPROM layout (ESP8266)
-- Preferences namespace (ESP32)
-- Flag persistence (ota_enabled, transport_mode)
-- Factory reset logic
-- Diff check before EEPROM writes
-- **Responsibility**: Reliable state persistence across reboots
+- **Core (`core.cpp`)** — deterministic runtime init + loop scaffolding; WiFi STA/AP
+  management; OTA lifecycle; first-iteration `report()` → calibration load order.
+- **Storage (`storage.cpp`)** — a single persistence API for EEPROM (ESP8266) and
+  Preferences (ESP32); zero-fill + validation; UID-based calibration slots;
+  OTA flag/token; factory reset. Never calls `ArduinoOTA`.
+- **Sensors (`sensors.cpp`)** — registration, `SensorType` values, calibration,
+  relay/dimmer, fades/pulses, TIME (UTC clock + timezone offset), remote
+  lifecycle (local announces / remote visualizes + configures, never rebinds).
+- **Web (`web.cpp`)** — HTTP endpoints with strict validation + rate limiting;
+  remote-config routing via owner IP; auth gate (dormant).
+- **Mesh/Transport (`mesh.cpp` + `espnow_p2p.cpp`)** — UDP batching, packet
+  v4/v5 kind dispatch, ESP-NOW bounded RX FIFO, peer mgmt, STA=UDP / AP=ESP-NOW.
+- **Automations (`automations.cpp`)** — deterministic rule evaluation in `loop()`.
+- **Logging (`log.cpp`)** — 3-layer circular buffers, JSON for `/logs`, remote
+  ingest without re-broadcast.
 
 ## Platform Dependencies
 
 ### ESP8266 (generic ESP-12E / NodeMCU)
-- Core: `Arduino ESP8266 core`
-- WiFi: `WiFiUdp` for UDP
-- OTA: `ESP8266HTTPClient`, `ESP8266HTTPUpdateServer`
-- Storage: `EEPROM` (4KB)
-- Preferences: Not available (use EEPROM)
-- Logging: 3-layer circular buffer
-- ESP-NOW: Via `espnow_p2p` library
-- `raw_address()`: Patched in core
-- GPIO: `setSerialEnabled()` for pin reuse
+- Core: Arduino core espressif8266, framework package pinned `3.30102.0`.
+- Storage: EEPROM (4 kB). `WiFiUdp` for UDP; `ESP8266HTTPUpdateServer` for OTA.
+- `raw_address()` framework quirk patched in the pinned core.
 
-### ESP32 (devkit / generic)
-- Core: `Arduino ESP32 core`
-- WiFi: Native UDP support
-- OTA: `HTTPClient` with `SECURITY_*` constants
-- Storage: `Preferences` library (replaces EEPROM)
-- Preferences: Namespaces "qymeras", "wifi", "ota", "rules", "sensors"
-- Logging: 3-layer circular buffer
-- ESP-NOW: Via `ESPNow` class
-- `setSerialEnabled()`: For GPIO pin control
-- GPIO: 0-16 available (with serial disabled)
+### ESP32 (devkit, C3/S2/S3 via `config.h` defines)
+- Core: espressif32 platform pinned `@6.5.0`.
+- Storage: `Preferences` namespace `eeprom` (address-keyed).
+- Web/OTA: `WiFi`-native UDP; `HTTPClient` with `SECURITY_*` constants.
 
-### Framework Pinning
-- **ESP8266**: espressif8266@3.30102.0
-- **ESP32**: espressif32@6.5.0
-- Purpose: Avoid framework bugs, ensure stability
-- Pinning prevents automatic updates that break compatibility
+### Framework pinning
+- ESP8266 framework package: `framework-arduinoespressif8266@3.30102.0`.
+- ESP32: `platform = espressif32@6.5.0`.
+- Purpose: avoid framework bugs and unplanned upgrade breakage.
 
 ## Known Couplings & Dependencies
 
-### Tight Couplings (Acceptable)
-1. **EEPROM ↔ Preferences**: Platform-specific storage swap
-2. **WiFi mode ↔ Transport mode**: STA→UDP, AP→ESP-NOW
-3. **OTA flag ↔ EEPROM offset 2048**: Persistent enable/disable
-4. **Rule count ↔ MAX_RULES=20**: Hard limit in rule storage
+### Tight couplings (acceptable)
+1. EEPROM ↔ Preferences via the `storage` API (platform swap).
+2. WiFi mode ↔ transport mode (STA→UDP, AP→ESP-NOW).
+3. OTA flag ↔ runtime flag in `core` (normalized, cached, no per-loop reads).
+4. Rule references ↔ calibration slot indices (resolved at eval time).
 
-### Loose Couplings (Should Decouple)
-1. **Web handlers ↔ Sensors**: Current direct calls should go through API
-2. **Mesh callbacks ↔ Core**: ESP-NOW callbacks reference core state
-3. **Calibration ↔ EEPROM offsets**: Hardcoded offsets, should be configurable
-
-### Accidental Couplings (Must Fix)
-1. **`web.cpp` includes `sensors.cpp` headers directly**: Consider API layer
-2. **`core.cpp` references `log.cpp` internals**: Should use `log.h` interface only
-3. **`automations.cpp` knows about `EEPROM` offsets**: Should use persistence API
-
-## File Ownership Matrix
-
-| contributor | Files owned |
-|-------------|-------------|
-| Lead engineer | `agents.md`, `architecture-baseline.md`, `progress.md`, `structure.md`, `todo.md` |
-| Core team | `core.cpp`, `core.h`, `ota.h`, `ota.cpp` |
-| Web team | `web.cpp`, `web.h`, `html.cpp`, `html.h` |
-| Sensors team | `sensors.cpp`, `sensors.h` |
-| Transport team | `mesh.cpp`, `mesh.h`, `espnow_p2p.cpp`, `espnow_p2p.h` |
-| Automations team | `automations.cpp`, `automations.h` |
-| Logging team | `log.h`, `log.cpp` |
-| Platform team | `library.properties`, `platformio.ini` |
-| Documentation | `README.md`, all `docs/` files |
+### To watch
+1. Web handlers call into `sensors`/`automations` directly (fine today; an API
+   layer is a future nicety).
+2. Mesh callbacks in `core` reference network state.
+3. Calibration layout is offset-based in `config.h` (component-consistent).
 
 ## Build Verification
 
-### PlatformIO Commands
 ```bash
-pio run -e esp8266_generic   # Compile ESP8266
-pio run -e esp32_devkit      # Compile ESP32
-pio run -e esp32c3_devkit    # Compile ESP32-C3 (build-verified)
-pio run                      # Compile all platforms
-pio test                     # Run unit tests (if available)
-pio unitTest                 # Custom test runner
-python tests/host_sanity.py  # Host sanity tests (timezone/strict-float/FIFO)
+pio run -e esp8266_generic   # ESP8266 (full link, main.cpp provides setup/loop)
+pio run -e esp32_devkit      # ESP32
+pio run -e esp32c3_devkit    # ESP32-C3 (build-verified)
+pio run                      # all platforms
+python tests/host_sanity.py  # host suite (45/45)
 ```
 
-### Expected Build Output
-- **ESP8266**: Compiles with expected linker errors (missing setup()/loop())
-- **ESP32**: Compiles with expected linker errors (missing setup()/loop())
-- **Both**: No compilation errors in source files
-- **Linker errors**: Pre-existing (user sketch must provide setup()/loop())
-
-### Platform Differences in Build
-- ESP8266: Uses `WiFiUdp`, `ESP8266HTTPClient`
-- ESP32: Uses `WiFi` class UDP, `HTTPClient` with security
-- ESP8266: EEPROM 4KB
-- ESP32: Preferences (larger capacity)
-- ESP8266: `raw_address()` patched
-- ESP32: No `raw_address()` needed
+Expected: full-link SUCCESS on all three envs (this repo builds
+`src/main.cpp`, which provides `setup()`/`loop()`). Typical footprints
+(2026-08-27): ESP8266 RAM 69.6% / Flash 42.2%; ESP32 RAM 22.6% / Flash 73.7%;
+ESP32-C3 RAM 20.9% / Flash 72.8%.
 
 ## Module Integration Points
 
-### Initialization Flow
 ```
-user setup()
-  → Qymera::begin() [core.cpp]
-    → WiFi.begin() [core.cpp]
-    → Sensors::init() [sensors.cpp]
-    → Rules::init() [automations.cpp]
-    → WebServer::begin() [web.cpp]
-    → OTA::init() [ota.cpp] (default: disabled)
-    → Transport::init() [mesh.cpp] (STA=UDP, AP=ESP-NOW)
-    → Log::init() [log.cpp] (3-layer buffers)
-  → user loop()
-    → Qymera::loop() [core.cpp]
-      → Rules::tick() [automations.cpp]
-      → WebServer::handleClient() [web.cpp]
-      → Transport::tick() [mesh.cpp]
-      → Log::tick() [log.cpp] (optional)
-```
-
-### State Transition Flow
-```
-Boot → WiFi connecting → WiFi connected/AP mode
-  → Transport auto-detected (STA=UDP, AP=ESP-NOW)
-  → Rules loaded from EEPROM/Prefs
-  → Web server active
-  → OTA enabled/disabled flag checked
-```
-
-### Data Flow Flow
-```
-Sensor reading → Calibration → State update
-  → Rule evaluation (tick()) → Actuator control
-  → Web API → JSON response
-  → UDP/ESP-NOW broadcast → Peer devices
-  → Log buffers → Web / serial output
-```
+setup()
+  → core::begin()            Phase 1: serial, storage, creds/settings, OTA identity
+                             Phase 1b: sensors::init() → initSatellite() (register
+                                       entities) → automations::init()
+                             Phase 2: startWiFi() (+esp_netif_init on ESP32)
+                             Deferred: web/mesh/OTA once WiFi/AP operational
+loop()
+  → core::loop()              first iteration: report() → ensureTimeRegistered()
+                              → loadCalibration() → applyPersistedStates()
+     → Rules::tick()          automations (50 ms)
+     → WebServer::handleClient()
+     → Transport::tick()      mesh UDP/ESP-NOW
+     → OTA::handle()          only if ota_enabled && initialized
+     → report()               sensor reads via sensors::xxx()

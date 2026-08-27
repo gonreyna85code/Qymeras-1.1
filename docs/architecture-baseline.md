@@ -45,17 +45,25 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 ## Sensors/Device Model
 
 ### Sensor Types (MAX_SENSORS=64)
-| Type | Description |
-|------|-------------|
-| `SENSOR_TEMP` | Temperature |
-| `SENSOR_HUMI` | Humidity |
-| `SENSOR_LUMI` | Light |
-| `SENSOR_PRESS` | Pressure |
-| `SENSOR_LEVEL` | Level/flow |
-| `SENSOR_AIRQ` | Air quality |
-| `SENSOR_RAIN` | Rainfall |
-| `SENSOR_CONTACT` | Contact/relay state |
-| `SENSOR_GENERIC` | Generic sensor |
+Enum values (`src/sensors.h`), 1..12 on `main` — **no AIDIG/AIANA** (those
+virtual types exist only on `feature/ai-experiments`):
+
+| Value | Type | Description |
+|-------|------|-------------|
+| 1 | `SENSOR_LUMI` | Light |
+| 2 | `SENSOR_HUMI` | Humidity |
+| 3 | `SENSOR_TEMP` | Temperature |
+| 4 | `SENSOR_PRESS` | Pressure |
+| 5 | `SENSOR_LEVEL` | Level/flow |
+| 6 | `SENSOR_AIRQ` | Air quality |
+| 7 | `SENSOR_RAIN` | Rainfall |
+| 8 | `TYPE_DIMMER` | Dimmer (actuator, 0-100%) |
+| 9 | `TYPE_RELAY` | Relay (actuator) |
+| 10 | `SENSOR_TIME` | Time (UTC clock; `correction` = timezone offset) |
+| 11 | `SENSOR_GENERIC` | Generic sensor |
+| 12 | `SENSOR_CONTACT` | Contact/relay state |
+
+`isValidSensorType()` accepts `1..12`; 0 (`SENSOR_NONE`) marks a free slot.
 
 ### Calibration Model
 - Each sensor has individual calibration persisted per-slot
@@ -148,11 +156,16 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 | POST | `/rules/set` | Create/validate rule, type, comparator/threshold |
 | POST | `/rules/delete` | Delete rule by id (validate bounds before delete) |
 | POST | `/factory` | Factory reset — clear credentials, relay state, config → reboot in AP |
-| GET | `/toggle` | API toggle for actuators (id + logic) |
-| GET | `/dimmer` | Value control dimmer (id + value) |
+| POST | `/toggle` | API toggle for actuators (`id` = entity uid) |
+| POST | `/dimmer` | Value control dimmer (`id` = entity uid, `value` 0-100) |
 | GET | `/logs` | Recent logs JSON |
 | GET | `/ota/status` | OTA state `{"ota":1}` or `{"ota":0}` |
 | GET | `/ota/toggle` | Enable/disable OTA |
+
+State-changing endpoints (`/calib/set`, `/toggle`, `/dimmer`) also answer
+`HTTP_OPTIONS` with CORS headers so the browser UI can cross-post to remote
+nodes; every response (including 400/401/429) carries
+`Access-Control-Allow-Origin: *`.
 
 ### Web Interface
 - **Tabs**: WiFi, Calibration, Rules, Actuators, Factory, Logs
@@ -173,8 +186,8 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
   falls back to the local node; (2) enforces a 5s `AbortController` timeout;
   (3) detects network errors with a clear alert. Optimistic UI toggles
   (relay button, persist/pulse checkboxes) roll back on failure.
-  Renderers are resolved by sensor type via `TYPE_RENDERERS` (all 14 valid
-  types incl. AIDIG/AIANA); unknown types are skipped with a `console.warn` —
+  Renderers are resolved by sensor type via `TYPE_RENDERERS` (all 12 valid
+  types on `main`, 1..12); unknown types are skipped with a `console.warn` —
   GENERAL SETTINGS (node-level config: WiFi/ports/interval/OTA/factory reset)
   is never used as a fallback and is rendered exactly once, explicitly.
 
@@ -195,13 +208,19 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 - Port < 1024 or > 65500: reset to default
 - Interval < 5000ms or > 600000ms: reset to default
 
-### Wire Protocol (v4) - Packet Kind Dispatch
+### Wire Protocol (v4 / v5) - Packet Kind Dispatch
 - Legacy protocols v1/v2/v3 use the 8-byte `PacketHeader` (magic, version, size,
   uid) with an always-sensor payload.
 - **v4** adds an explicit `kind` byte (`PacketHeaderV4`, 9 bytes) after the base
   header so the receiver can dispatch the payload before parsing it:
-  - `PACKET_SENSOR = 1` → one or more `Packet` structs (47 bytes each).
+  - `PACKET_SENSOR = 1` → one or more `Packet` structs.
   - `PACKET_LOG = 2` → one `LogPacket` (66 bytes: layer, level, message[64]).
+- **v5** grows the sensor `Packet` from 47 → 58 bytes by mirroring the actuator
+  config the announcing node holds: `fade`, `persist`, `pers_state`, `pulse`,
+  `pulse_ms`. Remote nodes thus see the owner's relay persistence / dimmer fade
+  state without a second round-trip. Legacy v3/v4 sensor packets (47 bytes) are
+  still parsed for backwards compatibility; the exact-size alignment check in
+  `parseBuffer()` accepts both lengths.
 - `parseBuffer()` rejects unknown kinds and requires the sensor payload size to
   be an exact multiple of the packet length. This guarantees a `LogPacket` is
   NEVER parsed as a sensor `Packet` (they share the broadcast transport).
@@ -229,7 +248,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
   sensors/actuators by calibration index, so referenced slots are kept (hidden)
   until the rule is deleted; local sensor indexes never change and nothing is
   shifted.
-- `/calib` only exposes entries with `uid != 0`, a valid `SensorType` (1..14)
+- `/calib` only exposes entries with `uid != 0`, a valid `SensorType` (1..12)
   and, for remote entries, a non-stale `last_update`.
 
 ### Discovery Redistribution Loop (fixed)
@@ -480,8 +499,7 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 3. ~~Implement rate limiting on `/save`, `/rules/set`~~ ✅ done (6 req/2s burst)
 4. Validate all JSON payloads sizes
 5. Add CSRF tokens on web forms
-4. Validate all JSON payloads sizes
-5. Add CSRF tokens on web forms
+6. Signed OTA payloads (SHA-256, Phase 3+)
 
 ### Known Acceptable Limitations
 - Open network recommended for local IoT
@@ -550,3 +568,13 @@ ESP32 maps each EEPROM address to a Preferences key (`String(addr)`) in namespac
 6. **Factory reset** reliability validation
 7. **Documentation** updates for new features
 8. **Test suite** development for core logic
+
+## Optional AI Subsystem (authorized, NOT on main)
+
+An **optional external AI assistant** is authorized for the next release and is
+developed exclusively on `feature/ai-experiments`. It is fully opt-in: the
+deterministic core above is untouched when disabled. On `main` (HEAD
+`5e46e12`) there is no AI code — no `ai.cpp`/`ai.h`, no AIDIG/AIANA types, no
+QMAI EEPROM block. LLM tool-loop probe payloads (`qwen3.5:2b` against the
+device HTTP API) were archived out of the repo root on 2026-08-27; they are not
+part of the 1.1 tree. See `AGENTS.md` "Scope Change Authorization (2026-08)".

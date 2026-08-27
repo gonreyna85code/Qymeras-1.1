@@ -2,7 +2,7 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** Production-ready on ESP8266 & ESP32 | Built-in web server | UDP mesh networking | EEPROM persistence | Arduino Library
+**Status:** Qymeras 1.1 production candidate (ESP8266 + ESP32 hardware-validated; final soak/factory-reset hw tests pending) | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
 
 ---
 
@@ -44,9 +44,9 @@ lib_deps =
 
 ### 3. Create Your First Sketch
 
-Use the built-in [HardwareDemo example](examples/HardwareDemo/HardwareDemo.ino)
-as a starting point. The library handles WiFi, the web server, UDP mesh, and
-automation logic — your sketch only needs to:
+Use the built-in [Base example](examples/Base/Base.ino) as a starting point
+(`main.cpp` is the PlatformIO entry point). The library handles WiFi, the web
+server, UDP mesh, and automation logic — your sketch only needs to:
 
 - `initSatellite()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
 - `report()` &mdash; read sensors and report values via `sensors::xxx()` API
@@ -85,32 +85,35 @@ void loop()    { core::loop(); }
 
 ### 5. Configure Sensors and Rules
 
-- **SETTINGS** tab &mdash; calibrate sensors, set offsets, pin assignments
-- **AUTOMATIONS** tab &mdash; create automation rules with the visual wizard
+- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone, fade/pulse/persist
+- **AUTOMATIONS** tab (Rules) &mdash; create automation rules
 - **DEVICES** tab &mdash; control relays and dimmers in real time
 
 ---
 
 ## Supported Sensors
 
-Qymera supports **9 sensor types** plus **2 actuator types**. Each sensor has
-individual calibration (offset, min/max, resolution, availability, persistence
+Qymera supports **10 sensor types** plus **2 actuator types**. Each entity has
+individual calibration (offset, min/max, availability, persistence, pulse/fade
 options).
 
-| Sensor | Range | Unit | API | Typical Hardware |
-|--------|-------|------|-----|-------------------|
-| Temperature | -50 to +150 | °C | `sensors::temperature()` | DHT22, DS18B20, NTC |
-| Humidity | 0-100 | % | `sensors::humidity()` | DHT22, soil moisture |
-| Light | 0-65535 | lux | `sensors::luminosity()` | Photoresistor, BH1750 |
-| Pressure | 300-1100 | hPa | `sensors::pressure()` | BMP280, BME280 |
-| Level | 0-100 | % | `sensors::level()` | Ultrasonic, float switch |
-| Air Quality | GOOD / WARN / BAD | enum | `sensors::airQ()` | MQ135, SDS011 |
-| Rain | ON / OFF | bool | `sensors::rain()` | Rain drop sensor |
-| Contact | OPEN / CLOSED | bool | `sensors::contact()` | Reed switch, door sensor |
-| Generic | any | float | `sensors::custom()` | Any analog/digital value |
-| Time | N/A | epoch | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP |
-| Relay (actuator) | ON / OFF | bool | `sensors::relay()` | Digital relay, latching |
-| Dimmer (actuator) | 0-100 | % | `sensors::dimmer()` | LED strip, fan, PWM |
+| Sensor | API | Typical Hardware |
+|--------|-----|-------------------|
+| Temperature | `sensors::temperature()` | DHT22, DS18B20, NTC |
+| Humidity | `sensors::humidity()` | DHT22, soil moisture |
+| Light | `sensors::luminosity()` | Photoresistor, BH1750 |
+| Pressure | `sensors::pressure()` | BMP280, BME280 |
+| Level | `sensors::level()` | Ultrasonic, float switch |
+| Air Quality | `sensors::airQ()` | MQ135, SDS011 |
+| Rain | `sensors::rain()` | Rain drop sensor |
+| Contact | `sensors::contact()` | Reed switch, door sensor |
+| Generic | `sensors::custom()` | Any analog/digital value |
+| Time | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
+| Relay (actuator) | `sensors::relay()` | Digital relay, latching |
+| Dimmer (actuator) | `sensors::dimmer()` | LED strip, fan, PWM |
+
+Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
+5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.
 
 ---
 
@@ -120,23 +123,25 @@ Create rules combining up to **5 sensors** and **5 actuators** per rule.
 
 ### Rule Types
 
-- **Edge** &mdash; triggers on state change (RISING / FALLING) for booleans,
-  useful for motion detection or contact sensor transitions
-- **Threshold** &mdash; triggers when a sensor crosses a configurable
+- **Edge** &mdash; triggers on state change (RISING / FALLING) for boolean
+  entities (contact, rain)
+- **Threshold** &mdash; triggers when a calibrated sensor value crosses a
   threshold. Combine multiple conditions with AND/OR logic
-- **Scheduled** &mdash; triggers at a specific time daily. Uses NTP or local
-  RTC time
-- **Periodic** &mdash; triggers every N seconds for regular data reporting
+- **Time** &mdash; triggers once per day at a local time (uses NTP or local
+  RTC). Fires once per calendar day
+- **Interval** &mdash; triggers every N ms while the date window holds
 
-All rules support advanced options: execution delay, cooldown period, and
-minimum ON/OFF duration.
+All rules support execution delay, per-rule cooldown, and logic composition.
+Note: THRESHOLD has no hysteresis — always set a `cooldown_ms`; TIME
+`time_s` is truncated to minutes; TIME/INTERVAL have no catch-up after a reboot.
 
 ---
 
 ## Actuator Control
 
-**Relays:** ON / OFF / TOGGLE (invert state) / PULSE (activate for X ms then
-release). Supports state persistence across reboots.
+**Relays:** ON / OFF / TOGGLE / PULSE (activate for X ms then release).
+Supports state persistence across reboots (UID-matched restore before the first
+report — no boot glitch).
 
 **Dimmers:** Smooth fade transitions between 0-100% brightness for LEDs, fans,
 and other PWM loads.
@@ -149,28 +154,43 @@ and other PWM loads.
 
 All configuration is done through the web UI. After initial setup, the device
 operates independently — no internet needed. HTTP server runs on port 80,
-reading all config from EEPROM.
+reading all config from EEPROM / Preferences (ESP32).
 
-**Main tabs:**
-- **DEVICES** &mdash; Real-time actuator control
-- **AUTOMATIONS** &mdash; Visual rule creation wizard
-- **SETTINGS** &mdash; Sensor calibration and device configuration
-- **NETWORK** &mdash; WiFi management and factory reset
+**Main tabs:** DEVICES (actuators) · AUTOMATIONS (rules) · SETTINGS
+(calibration + remote entities) · LOGS · NETWORK (WiFi, OTA, factory reset)
+
+### Mesh
+
+- **STA mode:** UDP broadcast discovery/announcement (batched datagrams,
+  protocol v4/v5; up to 29 packets per datagram).
+- **AP mode:** ESP-NOW broadcast (bounded RX FIFO, peer management).
+- Remote entities are visible/controllable/calibratable across nodes by
+  POSTing to the owning node's IP; remote config is verified over HTTP and never
+  falls back silently to the local node.
 
 ### HTTP API (curl)
 
 ```bash
-# Factory reset (clears WiFi, returns to AP mode)
-curl -X POST http://<device-ip>/factory
+# Read everything (entities, one JSON array): resolve NAME → uid and index
+curl http://<device-ip>/calib
 
-# Toggle an actuator
-curl -X POST http://<device-ip>/toggle -d "id=0&state=1"
+# Toggle an actuator by its uid
+curl -X POST http://<device-ip>/toggle -d "id=<uid>"
 
-# Set dimmer value
-curl -X POST http://<device-ip>/dimmer -d "id=0&value=75"
+# Set dimmer level (0-100) by uid
+curl -X POST http://<device-ip>/dimmer -d "id=<uid>&value=75"
+
+# Read automation rules and device logs
+curl http://<device-ip>/rules
+curl http://<device-ip>/logs
 ```
 
-Full API reference and architecture: see `docs/architecture-baseline.md`.
+Key facts:
+- Commands address **entity `id` (uid)**; rules address **slot indexes**.
+- Remote entities must be addressed on their **owner's IP** (the `ip` field in
+  `/calib`).
+- Rate limit: 6 requests / 2 s burst on state-changing endpoints (7th → `429`).
+- Full API reference and architecture: see `docs/architecture-baseline.md`.
 
 ---
 
@@ -178,64 +198,48 @@ Full API reference and architecture: see `docs/architecture-baseline.md`.
 
 | Board | Status |
 |-------|--------|
-| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) | Fully Tested |
-| ESP32 (DevKit, WROOM, etc.) | Fully Tested |
+| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) | Fully Tested (hardware) |
+| ESP32 (DevKit, WROOM, etc.) | Fully Tested (hardware) |
 | ESP32-S2, ESP32-S3, ESP32-C3 | Build-verified (`esp32c3_devkit` env); hardware validation pending |
 
-Platform auto-detection via preprocessor defines. Add new boards by adding a
-`#define` block in `config.h`.
+Platform auto-detection via preprocessor defines in `config.h`.
 
 ---
 
-## Data Persistence (EEPROM 4 KB)
+## Data Persistence
 
 All web configuration survives power loss — only live sensor readings are lost
 on reset:
 
-| What persists | Size |
-|---------------|------|
-| WiFi credentials, calibration rules, automation rules | ~2.2 KB total |
-| Relay states (if persistence enabled) | 10 bytes |
+| Region (4 kB EEPROM / Preferences) | Size |
+|------------------------------------|------|
+| WiFi credentials | 100 B |
+| General settings (ports/interval) | 12 B |
+| Sensor calibration (UID slot: magic+version+uid+pers_state+min/max+correction+avail+persist+pulse+ms+fade) | 40 × 34 B = 1360 B |
+| Automation rules | 1600 B |
+| OTA device identity token + enable flag | 4 B + 1 B |
 
-**Factory reset:** SETTINGS tab → "Factory Reset" button, or HTTP `POST /factory`.
-
----
-
-## Common Use Cases
-
-### Smart Greenhouse
-```
-→ If temp > 30°C AND humidity > 80%  → turn on fan
-→ If soil dry (<30%)                 → activate water pump for 5 min
-→ Daily at 06:00                     → lights on
-→ Daily at 18:00                     → lights off
-```
-
-### Smart Home
-```
-→ Motion detected 18:00-22:00       → lights to 70% with 1s fade
-→ No motion after 23:00             → lights off after 3s
-→ Temp < 18°C                        → heater on
-```
-
-### Smart Irrigation
-```
-→ Zone 1 dry AND no rain             → open valve + pump
-→ Rain detected                      → close all valves (water saving)
-→ Temp < 5°C                         → stop pump (anti-freeze)
-```
+Factory reset behaviour: `POST /factory` clears credentials, calibration, rules
+and OTA flag, then reboots into `QymeraSetup` AP mode.
 
 ---
 
-## Security Notes
+## Security
 
-Qymera currently has **no authentication**. Recommended for home local networks
-only:
+- **Authentication infrastructure present but dormant** (HTTP Basic Auth gate
+  off by default; placeholder creds `admin:qymera123` stay in the firmware, not
+  in client JS). Recommended for trusted local networks only.
+- **OTA device identity check:** a chip-unique token (`GET_CHIP_ID()`) is stored
+  and verified on boot/toggle — a provisioning check, NOT a firmware
+  authenticity hash.
+- **Rate limiting:** burst-tolerant 6 req / 2 s on state-changing endpoints.
+- **Strict input validation:** rejects empty/trailing-junk/overflow/NaN/Inf and
+  enforces type ranges on every write path.
+- Known limitations: HTTP only (no HTTPS for OTA/web); no CSRF tokens; no
+  full firmware signing (SHA-256 deferred to Phase 3+).
 
-1. Use only on a trusted local WiFi network
-2. Change the AP SSID from `QymeraSetup` to a random name via settings
-3. Block external access through your router's firewall
-4. For remote access, use a VPN or custom HTTP authentication
+Use only on a trusted local WiFi network; block external access via router
+firewall; use a VPN for remote access.
 
 ---
 
@@ -244,53 +248,49 @@ only:
 **Device appears but won't join WiFi?**
 - First-time flash: ensure the USB cable supports data (not power-only)
 - Wait 10 seconds after power-on before scanning for networks
-- Verify router allows unknown MAC addresses on 2.4 GHz band
+- Verify router allows unknown MAC addresses on the 2.4 GHz band
 
 **Sensors not reporting values?**
 - Register the sensor in the SETTINGS tab, add calibration values, and save
 - Verify pin assignments match your hardware
+- Remote entities only appear while their owner announces (< ~30 s — `MESH_TIMEOUT`)
 
 ---
 
 ## Advanced Configuration
 
-Edit `config.h` for platform-specific settings. Defaults work for most cases:
+Edit `config.h` for platform-specific settings and limits:
 
 ```cpp
-#define MAX_SENSORS      64   // max sensors in memory
-#define MAX_RULES        20   // max rules stored in EEPROM
-#define PULSE_DURATION_MS  10  // default relay pulse duration
-```
-
----
-
-## Custom Sensors
-
-Register custom sensors by calling the appropriate API in your `report()` loop.
-Values appear immediately in the web UI and can be used in automation rules:
-
-```cpp
-float raw = analogRead(A5);
-sensors::temperature("MySensor", raw / 4.0f);
+#define MAX_SENSORS             64   // max entities in memory
+#define MAX_PERSISTED_SENSORS   40   // max persisted calibration slots
+#define MAX_RULES               20   // max automation rules
+#define EEPROM_SIZE             4096 // storage size
+#define BROADCAST_INTERVAL      5000 // mesh announce interval (ms)
 ```
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. To build and monitor via serial:
+Issues and PRs welcome. To build and verify:
 
 ```bash
 pip install platformio
-pio run -t upload --monitor -e esp32_devkit
+pio run -t upload --monitor -e esp32_devkit   # ESP32
+pio run -e esp8266_generic                     # ESP8266
+python tests/host_sanity.py                    # host test suite (45 checks)
 ```
 
 ---
 
 ## Roadmap
 
-MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications · mobile app. Driven by community needs.
+MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
+mobile app. An **optional external AI assistant subsystem** is authorized and
+under development on `feature/ai-experiments` (kept out of the 1.1 production
+tree per `AGENTS.md`).
 
 ---
 
-License: MIT — see `LICENSE` file.
+License: MIT — see `LICENSE` file (per `library.properties`).

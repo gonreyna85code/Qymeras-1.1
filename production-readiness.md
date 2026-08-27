@@ -1,98 +1,133 @@
 # Qymeras 1.1 - Production Readiness
 
-# BLOCKER
+State as of 2026-08-27 (branch `main`, HEAD `5e46e12`).
 
-Hardware validation on physical ESP8266/ESP32 is still required before the
-1.1 production gate can be passed. Static/code review is green; soak, storage
-endurance, and real OTA upload tests are NOT TESTED.
+## Summary
 
-## Blocker: HTTP Basic Auth
-- Auth was enforced server-side (`checkAuth()` forced `auth_enabled=true` because the hardcoded creds are non-empty), but the served GUI (`html.cpp`) never sends the `Authorization` header on any `fetch()` request → every state-changing call returned `401 Authentication required`.
-- Fix: `checkAuth()` initialization now keeps `auth_enabled = false`, so the gate short-circuits and the GUI works again. The auth infrastructure is retained but dormant, awaiting a future Phase-3 login flow.
-- Hardcoded credentials (`admin:qymera123`) remain in the firmware binary; they are NOT embedded into the served client JS (avoids exposing secrets in view-source).
+- **No active BLOCKERs.** All critical production defects reported across the
+  1.1 cycle have been fixed and hardware-validated on at least one node.
+- Remaining items are **validation-only** (long-duration / controlled-hardware
+  tests), not code fixes:
+  - 24h memory soak.
+  - Factory-reset reliability hardware test.
+  - Longer storage-endurance cycles (100-cycle test passed).
+  - ESP32-C3 / ESP32-S2 / ESP32-S3: build-verified only, no hardware validation.
+- Static code review and build matrix are green (3 envs). Host test suite 45/45.
 
-## [FIXED] OTA identity token & EEPROM overlap
-- Root cause (reported defect): the OTA enable flag and the identity-token slot
-  were originally stored at offsets 9 and 10, which **overlapped the relay-state
-  region (0..9) and the WiFi credentials block (starts at offset 10)**. Saving
-  the flag / provisioning the token corrupted relay state and the SSID length
-  byte — the reported "saving the OTA flag corrupts memory" bug.
-- Fix: flag and token relocated to a dedicated, non-aliased slot in the
-  reserved region after the rules block (`config.h`: `EEPROM_OTA_FLAG_ADDR`,
-  `EEPROM_OTA_HASH_ADDR`). The 4-byte token is now persisted/verified with
-  the 4-byte `put`/`get` helpers (no 1-byte truncation) and correct
-  provisioning detection (all-0xFF or all-0x00 = unprovisioned).
-- Builds verified green on both ESP8266 and ESP32.
+## Verified (hardware evidence — see `progress.md` FINAL VALIDATION STATUS TABLE)
 
-## [FIXED] Storage zero-fill (ESP32 random-fade bug)
-- `Preferences.getBytes()` left the destination untouched on missing keys;
-  `storage::get()` now zero-fills first and validates magic/version/uid, so
-  unprovisioned calibration slots fall back to deterministic defaults.
+| Area | Result |
+|------|--------|
+| ESP8266 + ESP32 boot | PASS (flashed + serial monitor) |
+| Sensors/actuators local + remote (mesh mirror) | PASS |
+| Automations (edge/threshold/time/interval, AND/OR, cooldown, delete) | PASS |
+| Relay persistence (UID-matched) + persist cycles A/B/C | PASS |
+| UDP discovery batching (+ remote lifecycle + stale slot reclamation) | PASS |
+| PHASE 6 remote-lifecycle storm (UDP re-yield wedge) | FIXED + hw-validated |
+| LOG-vs-sensor dispatch (packet kind PACKET_LOG) | PASS |
+| Rate limiter 6 req / 2 s burst; strict `/calib/set` validation | PASS (hw) |
+| Cross-mesh recovery across reboots | PASS (both nodes) |
+| OTA upload real (ESP32 and ESP8266) + OTA toggle | PASS |
+| Storage endurance (ESP8266, 100 write/verify cycles) | PASS |
+| Memory stability | PARTIAL — stable across session (ESP8266 ~18.36 kB heap, ESP32 no OOM); 24h soak not run |
 
-## [FIXED] Relay persistence
-- UID-based persistence with magic+version validation; persisted state applied
-  once at boot before the first report; no GPIO OFF->ON glitch at registration.
+## Current fleet
 
-## Blocker: ID Validation
-- HTTP endpoint ID parsing now rejects malformed input using strict full-string parsing.
-- Range checks are applied before acting on sensor, actuator, or rule IDs.
+| Node | IP (2026-08-27) | device_uid | Build env | Owner |
+|------|-----------------|-----------|-----------|-------|
+| ESP32 | 192.168.1.16 | 183646728 | `esp32_devkit` | main hardening scope |
+| ESP8266 | 192.168.1.19 | 12014147 | `esp8266_generic` | parallel feature effort — no flash/reconfig without owner approval |
 
-## Platforms
-- ESP8266: source compiles; linker errors are expected when `setup()`/`loop()` are absent.
-- ESP32: source compiles; linker errors are expected when `setup()`/`loop()` are absent.
+IPs are DHCP-assigned and drift. Verify before acting via `GET /calib`
+(`device_uid` + `ip` fields). ESP32 `/logs` verified clean 2026-08-27: 11
+remotes re-acquired, 10 stale slots reclaimed, no storm lines.
 
-## Status
-- Code compiles on both platforms.
-- Authentication is DISABLED (known open limitation); the GUI operates without auth. Deferred to Phase 3+.
-- ID parsing is stricter on write paths.
-- Remaining P0/P1 items are test/validation tasks, not code fixes.
+## Hardening history (production fixes)
 
-# WARN
-- No HTTPS for OTA (HTTP only).
-- OTA "integrity" is a **device identity / provisioning token** (`GET_CHIP_ID()`),
-  NOT a firmware hash and NOT cryptographic authenticity. Full SHA-256/authenticity
-  deferred to Phase 3+ (see AGENTS.md).
-- Authentication infrastructure is present but dormant (`auth_enabled=false`) so
-  the GUI works; hardcoded credentials remain in the binary as a placeholder.
+### [FIXED + VALIDATED] OTA identity token & EEPROM overlap
+- The OTA enable flag and identity-token slot originally lived at offsets 9/10,
+  overlapping relay-state (0..9) and the WiFi credentials block (starts at 10) —
+  "saving the OTA flag corrupts memory".
+- Fix: relocated to a dedicated non-aliased slot after the rules block
+  (`config.h`: `EEPROM_OTA_FLAG_ADDR`, `EEPROM_OTA_HASH_ADDR`); 4-byte `put`/`get`
+  helpers; provisioning detection (all-0xFF / all-0x00 = unprovisioned).
+- Flashed and OTA-upload verified on both nodes.
 
-# FINAL
-Code review and dual-platform builds are green. Physical validation (boot, relay
-persistence, factory reset, OTA upload, network reconnect, 24h soak, storage
-endurance) is required before declaring production-ready.
+### [FIXED] Storage zero-fill (ESP32 random-fade bug)
+- `Preferences.getBytes()` leaves the buffer untouched on missing keys →
+  `storage::get()` zero-fills first + validates magic/version/uid → deterministic
+  defaults instead of garbage (e.g. random fade).
 
-## STEP 1 Production Hardening (code + builds + host tests done, hardware verify pending)
+### [FIXED] Relay persistence boot glitch
+- UID-based persistence (magic+version); applied once at boot before the first
+  report; no OFF→ON GPIO glitch at registration.
 
-### Timezone semantics
-- Runtime clock always stays UTC (NTP syncs UTC; `time()` never shifted).
-- SENSOR_TIME `correction` IS the timezone offset in minutes from UTC (persisted).
-- UTC→local = `epoch + offset_min*60` decomposed with `gmtime()` (portable
-  ESP8266/ESP32; avoids libc TZ globals). Dead `time_offset` removed.
-- Affected: `getTime()`, `getMinutesOfDay()`, `updateNTPTime()`; TIME rules fire
-  on local minutes-of-day.
+### [FIXED + VALIDATED] PHASE 6 remote-lifecycle storm (ESP32 full-loop spin)
+- Symptom: after an ESP8266 reboot the ESP32 loop saturated (~30k-42k
+  "New remote sensor"/s), starving UDP/mesh/web/OTA; millis() froze.
+- Root cause: `WiFiUDP::parsePacket()` re-yielded a datagram that
+  `read(buf, 1400)` returned data for but did not dequeue (ESP32 socket quirk
+  under WiFi-transitional state). No progress guard in the tick.
+- Fix (`mesh.cpp::parseUDPPacket`): reject+drain oversized packets;
+  `if (len <= 0) { drain; break; }`; unconditional post-parse drain;
+  bounded per-tick RX (<=8 datagrams/socket).
+- Validated: 4x ESP8266-reboot stress + ESP32 clean boot = 0 storm lines.
 
-### ESP-NOW RX FIFO (removes single-slot RX buffer)
-- Bounded 8x250B ring, single-producer (callback) / single-consumer (loop).
-- Callback never blocks/allocates/logs; ESP32 guarded by portMUX critical sections.
-- Full queue → drop new message + `rx_overflow` counter; `mesh::tick()` logs the
-  delta. `espnow_get_rx_overflow()`/`espnow_get_rx_queue_depth()` exposed.
+### [FIXED + VALIDATED] Discovery batching + remote lifecycle
+- One datagram per sensor caused queue overflow on ESP32 under bursts.
+- Fix: batch <=29 packets/datagram (1400 B, below MTU); RX drain bounded to 8/
+  tick/socket; stale remotes hidden from `/calib` + unreferenced slots reclaimed;
+  `PACKET_LOG` never parsed as a sensor packet; remote logs never re-broadcast.
+- Discovered remote config routed to owner IP (`isVirtual()`), no local fallback.
 
-### `/calib/set` strict validation
-- `parseStrictFloat` rejects empty, trailing junk, overflow (ERANGE), NaN, Inf.
-- Ranges: timezone integer -720..840; fade/pulse 0..3600000 ms; persist/avail
-  strict "1"/"0". No silent coercion (e.g. `abc -> 0` is rejected).
+### [FIXED] Protocol v4 → v5
+- v4 added an explicit `kind` byte (`PACKET_SENSOR` / `PACKET_LOG`).
+- v5 (packet 47→58 B) mirrors fade/persist/pers_state/pulse/pulse_ms to remote
+  nodes; legacy v3/v4 packets still parsed. Both builds green.
 
-### `isVirtual()` remote-config error handling
-- 5s timeout (AbortController), `response.ok` verification, network-error alerts.
-- No false success: a 4xx/5xx from the owner shows an alert; never falls back to
-  the local node. Optimistic UI toggles (relay button, persist/pulse checkboxes)
-  roll back on failure.
+### [FIXED] Web/API input validation + rate limiting
+- Strict full-string parsing on all IDs/values; bounds checks on indices,
+  thresholds, levels, dates, ports; `/calib/set` uses `parseStrictFloat`
+  (rejects empty/trailing-junk/overflow/NaN/Inf) + type ranges
+  (timezone -720..840, fade/pulse 0..3600000 ms, persist/avail strict 0/1).
+- Rate limiting: burst-tolerant 6 req / 2 s window on all state-changing
+  endpoints (malformed → 400, burst → 429).
 
-### Build/tooling
-- `platformio.ini`: espressif32 pinned `@6.5.0`; new `esp32c3_devkit` env
-  (esp32-c3-devkitm-1). Builds green on esp8266_generic / esp32_devkit /
-  esp32c3_devkit with no warnings in project sources.
-- Host tests: `tests/host_sanity.py` (45 checks, 45/45 pass).
+### [FIXED] HTTP Basic Auth infrastructure (dormant by design)
+- Initially auth was forced `true` with no client-sent `Authorization` header →
+  every state-changing call 401. Fix: `auth_enabled=false` by default, the GUI
+  works, and the auth gate is a dormant Phase-3 facility.
+- Hardcoded placeholder credentials (`admin:qymera123`) stay in the binary,
+  never embedded in served client JS.
 
-### Remaining before production gate (unchanged)
-- Physical validation on ESP8266 + ESP32 (boot, persistence, OTA, soak, endurance).
-- ESP32-C3: flashed-hardware validation pending (build-verified only).
+## Known accepted limitations (1.1)
+
+- HTTP only (no HTTPS for OTA/web). ESP32 firmware retains https support for the
+  AI subsystem (external); base web/OTA is plain HTTP.
+- OTA "integrity" = device identity/provisioning token (`GET_CHIP_ID()`), NOT a
+  firmware hash / cryptographic authenticity. SHA-256 deferred to Phase 3+.
+- Authentication dormant; recommended for trusted local networks only.
+- THRESHOLD rules have no hysteresis (use `cooldown_ms`); TIME `time_s` is
+  truncated to minutes; TIME/INTERVAL have no catch-up after boot.
+- `inverted` actuator flag is set at registration only — not persisted.
+
+## Next steps before the production gate
+
+1. 24h memory soak on both nodes (sustained mesh traffic + web polling).
+2. Factory reset hardware test on ESP32 (.16): verify `/factory` clears
+   credentials/rules/calibration and returns to `QymeraSetup` AP mode.
+3. ESP8266 (.19) re-verification **requires owner approval** (parallel feature
+   effort owns that unit).
+4. ESP32-C3/S2/S3 hardware validation (build-verified only today).
+5. Environment endurance (>=1000 cycles) on a controlled board.
+
+## Build matrix (2026-08-27)
+
+| Env | Result | Footprint |
+|-----|--------|-----------|
+| `esp8266_generic` | SUCCESS (full link) | RAM 69.6%, Flash 42.2% |
+| `esp32_devkit` | SUCCESS (full link) | RAM 22.6%, Flash 73.7% |
+| `esp32c3_devkit` | SUCCESS (full link) | RAM 20.9%, Flash 72.8% |
+
+Host suite: `python tests/host_sanity.py` → 45/45 (timezone UTC conversion,
+strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow).

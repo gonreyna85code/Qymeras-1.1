@@ -14,11 +14,11 @@
 
 ### P1 - Important (Should fix for stability) 
 - [x] Compile verification on ESP8266 and ESP32 ✅
-- [ ] Factory reset reliability validation (hardware test pending)
-- [ ] Long-term EEPROM write endurance testing
+- [ ] Factory reset reliability validation (hardware test pending; ESP32 .16 planned)
+- [ ] Long-term EEPROM write endurance testing (100-cycle test passed; 1000+ pending)
 - [x] Network partition recovery (disconnect/GOT_IP events + auto-reconnect; hardware test pending)
 - [x] Input validation on all API endpoints ✅
-- [ ] Rate limiting on POST /save, /rules/set
+- [x] Rate limiting on POST /save, /rules/set ✅ (6 req / 2 s burst on all state-changing endpoints)
 - [x] Calibration value persistence (UID-based, survives reboot; reconfig after storage-layout migration)
 
 ### P2 - Nice-to-Have (Improve after 1.1)
@@ -31,7 +31,11 @@
 - [ ] Rule editor UI improvements
 
 ### P3 - Future (Phase 3+)
-- [ ] AI/ML subsystem (out of scope for 1.1)
+- [ ] AI/ML subsystem — **AUTHORIZED** (2026-08, owner). Developed ONLY on
+  `feature/ai-experiments`; must remain out of the 1.1 `main` tree. Live work:
+  LLM tool-loop probes (`qwen3.5:2b` via local Ollama; schemas, token/context
+  limits, turn2 shapes). Probe payload-files were archived out of the repo on
+  2026-08-27. See `AGENTS.md` "Scope Change Authorization (2026-08)".
 - [ ] Zigbee/Z-Wave integration
 - [ ] Matter protocol support
 - [ ] Cloud dashboard
@@ -130,8 +134,11 @@
 - [ ] User guide revisions
 - [ ] API reference documentation
 
-### T015: Final Production Audit ⏳ PENDING
-- [ ] Complete all P0-P1 tasks
+### T015: Final Production Audit 🔄 IN PROGRESS (2026-08-27 re-verified)
+- [x] Builds green re-verified 2026-08-27: esp8266_generic (RAM 69.6%/Flash 42.2%), esp32_devkit (RAM 22.6%/Flash 73.7%), esp32c3_devkit (RAM 20.9%/Flash 72.8%) — full link SUCCESS
+- [x] Host sanity suite re-verified 2026-08-27: `tests/host_sanity.py` 45/45 PASS
+- [x] Fleet verified 2026-08-27: ESP32 = 192.168.1.16 (device_uid 183646728), ESP8266 = 192.168.1.19 (device_uid 12014147); ESP32 /logs clean (11 remotes re-acquired, slot reclamation, no storm)
+- [ ] Complete all P0-P1 tasks (hardware-dependent: 24h soak, factory reset hw, endurance — pending)
 - [ ] Verify all documentation
 - [ ] Build both platforms
 - [ ] Test critical paths
@@ -156,17 +163,20 @@
 | Pending (requires hardware) | 4 | 25% |
 
 ## Final validation state
-See `progress.md` "FINAL VALIDATION STATUS TABLE". No area is marked PASS without
-hardware evidence; all hardware-dependent areas are currently NOT TESTED (no boards
-attached to this machine). Production gate: NOT READY until physical tests pass.
+See `progress.md` "FINAL VALIDATION STATUS TABLE". No item is marked PASS without
+hardware evidence. As of 2026-08-27: builds green on 3 envs, host suite 45/45,
+and both nodes hardware-healthy (ESP32 = 192.168.1.16, ESP8266 = 192.168.1.19;
+many P0 hardware PASS recorded). Remaining NOT TESTED: 24h memory soak,
+factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hardware validation —
+production gate stays NOT READY until those physical tests pass.
 
 ## Next Actions
 
 ### Immediate (This Session)
-- [ ] Verify build on both platforms with `pio run` ✅ (linker errors expected, no compile errors)
-- [ ] Check for any new linker errors
+- [x] Verify build on both platforms with `pio run` ✅ (linker errors expected, no compile errors)
+- [x] Check for any new linker errors ✅ (2026-08-27: 0 new, full link green on 3 envs)
 - [ ] Review diffs from current changes
-- [ ] Update this todo list with results ✅
+- [x] Update this todo list with results ✅ (2026-08-27: builds + host suite + fleet re-verified)
 
 ### This Week
 - [ ] Begin P0 task completion (already complete: framework pinning, raw_address, EEPROM migration, OTA toggle, logging)
