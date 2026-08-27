@@ -17,9 +17,7 @@ enum SensorType : uint8_t {
   TYPE_RELAY,
   SENSOR_TIME,
   SENSOR_GENERIC,
-  SENSOR_CONTACT,
-  SENSOR_AIDIG,
-  SENSOR_AIANA
+  SENSOR_CONTACT
 };
 
 struct Calibration {
@@ -122,8 +120,6 @@ void airQ(const String &key, const int &v);
 void rain(const String &key, bool v);
 void custom(const String &key, float raw);
 void contact(const String &key, bool v);
-void aidig(const String &key, bool v);
-void aiana(const String &key, float raw);
 void relay(const String &key, uint8_t pin, bool inverted = false);
 void dimmer(const String &key, uint8_t pin, bool inverted = false);
 

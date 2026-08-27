@@ -22,8 +22,6 @@
 | `log.cpp` | Logging implementation, buffers | Logging team | ✅ Working |
 | `ota.h` | OTA management interface | OTA team | ⚠️ Minimal |
 | `ota.cpp` | OTA implementation | OTA team | ⚠️ Minimal |
-| `ai.h` | AI module (not implemented) | - | ❌ Out of scope |
-| `ai.cpp` | AI module implementation | - | ❌ Out of scope |
 | `espnow_p2p.h` | ESP-NOW transport header | Transport team | ✅ Working |
 | `espnow_p2p.cpp` | ESP-NOW transport implementation | Transport team | ✅ Working |
 

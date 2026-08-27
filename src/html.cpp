@@ -187,18 +187,6 @@ CONTACT: (s, i) => `<div class='card'>
   <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
 </div>`,
 
-AIDIG: (s, i) => `<div class='card'>
-  <h3>AI DIGITAL ${s.name}</h3>
-  <p style='margin-left:6px;'>🤖 <b id='v${i}'>${s.value === 255 || s.value == null ? 'N/A' : s.state ? "ON" : "OFF"}</b></p>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
-</div>`,
-
-AIANA: (s, i) => `<div class='card'>
-  <h3>AI ANALOG ${s.name}</h3>
-  <p style='margin-left:6px;'>🧠 <b id='v${i}'>${s.value === 255 || s.value == null ? 'N/A' : Number(s.value).toFixed(2)}</b></p>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id='matterBtn${i}' data-name='${s.id}' class='matter-btn ${s.avail ? "on" : "off"}' style='margin-top:10px;'>${s.avail ? 'ENABLED' : 'DISABLED'}</button>
-</div>`,
-
 DIMM: (s, i) => `<div class='card'>
   <h3>DIMMER ${s.name}</h3>
   <p style='margin-left:6px;'>Fade: <b id='v${i}'>${s.fade}</b> ms</p>
@@ -285,9 +273,7 @@ const SensorType = Object.freeze({
   TYPE_RELAY: 9,
   SENSOR_TIME: 10,
   SENSOR_GENERIC: 11,
-  SENSOR_CONTACT: 12,
-  SENSOR_AIDIG: 13,
-  SENSOR_AIANA: 14
+  SENSOR_CONTACT: 12
 });
 
 const TYPE_ORDER = {
@@ -302,9 +288,7 @@ const TYPE_ORDER = {
   [SensorType.SENSOR_AIRQ]: 25,
   [SensorType.SENSOR_RAIN]: 26,
   [SensorType.SENSOR_CONTACT]: 27,
-  [SensorType.SENSOR_GENERIC]: 28,
-  [SensorType.SENSOR_AIDIG]: 29,
-  [SensorType.SENSOR_AIANA]: 30
+  [SensorType.SENSOR_GENERIC]: 28
 };
 
 function visualSort(devices) {
@@ -364,8 +348,6 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
     [SensorType.SENSOR_LUMI]:  { icon: '🔆', label: 'LUMINOSITY', format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
     [SensorType.SENSOR_GENERIC]: { icon: '🔬', label: 'CUSTOM', format: v => Number(v).toFixed(2) },
     [SensorType.SENSOR_CONTACT]: { icon: '🔒', label: 'CONTACT', format: (v,s) => s ? 'CLOSED' : 'OPEN' },
-    [SensorType.SENSOR_AIDIG]:   { icon: '🤖', label: 'AI DIGITAL', format: (v,s) => s ? 'ON' : 'OFF' },
-    [SensorType.SENSOR_AIANA]:   { icon: '🧠', label: 'AI ANALOG', format: v => Number(v).toFixed(2) },
   };
   const cfg = SENSOR_DISPLAY[type];
   if (cfg) {
@@ -485,9 +467,7 @@ const TYPE_RENDERERS = {
   [SensorType.SENSOR_GENERIC]: cardRenderers.GENERIC,
   [SensorType.SENSOR_CONTACT]: cardRenderers.CONTACT,
   [SensorType.SENSOR_TIME]: cardRenderers.TIME,
-  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI,
-  [SensorType.SENSOR_AIDIG]: cardRenderers.AIDIG,
-  [SensorType.SENSOR_AIANA]: cardRenderers.AIANA
+  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI
 };
 
 async function loadCalib() {
@@ -546,10 +526,6 @@ async function updateSettingsValues() {
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
       else if (s.type === SensorType.SENSOR_CONTACT)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? "CLOSED" : "OPEN";
-      else if (s.type === SensorType.SENSOR_AIDIG)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? "ON" : "OFF";
-      else if (s.type === SensorType.SENSOR_AIANA)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
       else if (s.type === SensorType.SENSOR_TIME)
         el.innerHTML = formatTime(s);
       else
