@@ -116,10 +116,14 @@ select option{background:var(--surface)}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:999px;background:var(--border);outline:none;margin:12px 0;cursor:pointer;border:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer}
 input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:none;cursor:pointer}
+.gradient-bg{border:none;appearance:none;width:100%;height:8px;border-radius:999px;background:var(--border);outline:none;margin:12px 0;cursor:pointer}
+.gradient-bg::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer}
+.gradient-bg::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:none;cursor:pointer}
 .dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow-mild)}
 .stat-label{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted)}
 .stat-value{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat-value.time{font-size:18px;align-self:center}
 .dash-section{margin-bottom:18px}
 .section-title{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
 .devices-dashboard{}
@@ -155,6 +159,11 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .rule-info b{font-weight:600}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--text-muted);padding:40px 16px;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius-md);font-size:14px}
 .empty.sm{padding:18px}
+.d-none{display:none}
+.d-block{display:block}
+.input-full{flex:1}
+.gradient-bg{background:linear-gradient(to right,var(--accent) var(--bg),var(--border) var(--bg))}
+.small-text{font-size:12px;color:var(--text-muted)}
 .log-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
 .log-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;min-height:260px;max-height:56vh;overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.5}
 .log-panel h3{margin:0 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:8px;text-align:center}
@@ -209,8 +218,9 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <header class="topbar">
   <div class="brand"><span>Qymeras</span><span class="brand-sub">1.1</span></div>
   <div class="top-actions">
-    <span class="status-chip" id="linkStatus"><span class="dot ok"></span><span data-i18n="chip.online">Online</span></span>
-    <div id="themePicker" role="group" aria-label="Tema de color">
+<span class="status-chip" id="linkStatus"><span class="dot ok"></span><span data-i18n="chip.online">Online</span></span>
+<span class="status-chip" id="systemHealth" title="System health status"></span>
+<div id="themePicker" role="group" aria-label="Tema de color">
       <button type="button" class="themeDot" data-bg="#414141" aria-label="Tema oscuro"></button>
       <button type="button" class="themeDot" data-bg="#f7f2ff" aria-label="Tema claro"></button>
       <button type="button" class="themeDot" data-bg="#4c834e" aria-label="Tema forest"></button>
@@ -223,11 +233,11 @@ const char Tabs[] PROGMEM = R"rawliteral(
   </div>
 </header>
 <nav class="nav" aria-label="Navegación principal">
-  <button type="button" class="navitem active" id="t_control" onclick="show('control')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span data-i18n="nav.devices">Devices</span></button>
-  <button type="button" class="navitem" id="t_auto" onclick="show('auto')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 11-13h-7z" stroke-linejoin="round"/></svg><span data-i18n="nav.automations">Automations</span></button>
-  <span class="nav-sep"></span>
-  <button type="button" class="navitem" id="t_config" onclick="show('config')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg><span data-i18n="nav.settings">Settings</span></button>
-  <button type="button" class="navitem" id="t_logs" onclick="show('logs')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke-linecap="round"/><circle cx="4" cy="6" r="1.2" fill="currentColor"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/></svg><span data-i18n="nav.logs">Logs</span></button>
+<button type="button" class="navitem active" id="t_control" onclick="show('control')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span data-i18n="nav.devices">Devices</span></button>
+<button type="button" class="navitem" id="t_auto" onclick="show('auto')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 11-13h-7z" stroke-linejoin="round"/></svg><span data-i18n="nav.automations">Automations</span></button>
+<span class="nav-sep"></span>
+<button type="button" class="navitem" id="t_config" onclick="show('config')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg><span data-i18n="nav.settings">Settings</span></button>
+<button type="button" class="navitem" id="t_logs" onclick="show('logs')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke-linecap="round"/><circle cx="4" cy="6" r="1.2" fill="currentColor"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/></svg><span data-i18n="nav.logs">Logs</span></button>
 </nav>
 <main class="main">
   <section id="control" class="view content">
@@ -245,7 +255,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
         <button class="btn primary" onclick="newRule()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span data-i18n="btn.newRule">New rule</span></button>
       </div>
       <div id="auto_table"></div>
-      <div class="empty" id="auto_empty" style="display:none"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
+      <div class="empty" id="auto_empty" class="d-none"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
     </div>
   </section>
   <section id="config" class="view content" style="display:none">
@@ -257,7 +267,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
       <div id="cards"></div>
     </div>
   </section>
-  <section id="logs" class="view content" style="display:none">
+  <section id="logs" class="view content">
     <div class="pages">
       <div class="page-head">
         <div><h1 data-i18n="page.logs">Logs</h1><p class="page-sub" data-i18n="page.logs.sub">Auto-refresh every 2 s</p></div>
@@ -566,7 +576,7 @@ DIMM: (s, i) => `<div class="settings-card">
   </div>
   <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade}</b></div>
   <div class="field-row">
-    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.fade')}" style="min-width:120px">
+    <input id="ref${i}" class="input sm min-width-120" placeholder="${t('cal.ph.fade')}"">
     <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>${t('cal.btn.fade')}</button>
   </div>
   
@@ -575,14 +585,17 @@ DIMM: (s, i) => `<div class="settings-card">
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+    <button type="button" class="switch ${s.avail?'on':''}" role="switch" aria-checked="${s.avail?'true':'false'}" aria-label="Alternar relé ${s.name}" onclick="toggleMatterSwitch(${i},'${s.id}','${s.name}')"><span class="knob"></span></button>
   </div>
-  <label class="check"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i},"${s.name}")'>${t('cal.check.persist')}</label>
-  <label class="check"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'>${t('cal.check.pulse')}</label>
+  <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b><span class="unit"> ms</span></div>
   <div class="field-row">
-    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)' style="min-width:120px;${s.pulse ? '' : 'display:none;'}">
+    <label class="switch"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'><span class="knob"></span>${t('cal.check.pulse')}</label>
+    <label class="switch"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i})'><span class="knob"></span>${t('cal.check.persist')}</label>
   </div>
-  
+  <div class="field-row">
+    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
+    <button class="btn ghost sm" onclick='setCalib(${i},"pulse","${s.name}")'>${t('cal.btn.set')}</button>
+  </div>
 </div>`,
 
 TIME: (s, i) => `<div class="settings-card">
@@ -731,7 +744,7 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
         <span class="value-lg"><b id="dev_val_${id}">${displayValue}</b><span class="unit">%</span></span>
         <span class="state-text ${state?'on':'off'}" id="dev_state_${id}">${state ? t('dev.on') : t('dev.off')}</span>
       </div>
-      <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" style="background:linear-gradient(to right,var(--accent) ${displayValue}%,var(--border) ${displayValue}%)" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
+      <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" class="gradient-bg" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
       <div class="device-row">${devStatus(sensor)}<span class="small-note">${t('dev.drag')}</span></div>
     </div>`;
   }
@@ -772,6 +785,60 @@ const char JS[] PROGMEM = R"rawliteral(
 
 var calibPromise = null;
 let sensors = [];
+
+// Toast notifications
+function showToast(type, message, duration = 3000) {
+  const container = document.getElementById('toast-container');
+  if (!container) {
+    const toasts = document.createElement('div');
+    toasts.id = 'toast-container';
+    toasts.style.position = 'fixed';
+    toasts.style.bottom = '20px';
+    toasts.style.left = '50%';
+    toasts.style.transform = 'translateX(-50%)';
+    toasts.style.zIndex = '9999';
+    toasts.style.display = 'flex';
+    toasts.style.flexDirection = 'column';
+    toasts.style.gap = '4px';
+    document.body.appendChild(toasts);
+    container = toasts;
+  }
+  const toast = document.createElement('div');
+  toast.style.background = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--info)';
+  toast.style.color = 'var(--on-accent)';
+  toast.style.padding = '8px 12px';
+  toast.style.borderRadius = 'var(--radius-sm)';
+  toast.style.minWidth = '200px';
+  toast.style.boxShadow = 'var(--shadow-mild)';
+  toast.style.animation = 'fadeIn .3s ease';
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity .3s';
+    setTimeout(() => container.removeChild(toast), 300);
+  }, duration);
+}
+
+// Initialize toast container on page load
+document.addEventListener('DOMContentLoaded', () => {
+  const existing = document.getElementById('toast-container');
+  if (!existing) {
+    const toasts = document.createElement('div');
+    toasts.id = 'toast-container';
+    toasts.style.position = 'fixed';
+    toasts.style.bottom = '20px';
+    toasts.style.left = '50%';
+    toasts.style.transform = 'translateX(-50%)';
+    toasts.style.zIndex = '9999';
+    toasts.style.display = 'flex';
+    toasts.style.flexDirection = 'column';
+    toasts.style.gap = '4px';
+    document.body.appendChild(toasts);
+  }
+});
+
+/* -------------------- DEVICES -------------------- */
 
 async function getCalib(force = false) {
   if (!force && Array.isArray(sensors) && sensors.length) {
@@ -828,7 +895,11 @@ async function loadDevices() {
       <div class="dash-stats">
         <div class="stat-card"><span class="stat-label">${t('stat.actuators')}</span><span class="stat-value">${actCount}</span></div>
         <div class="stat-card"><span class="stat-label">${t('stat.sensors')}</span><span class="stat-value">${sensCount}</span></div>
-        <div class="stat-card"><span class="stat-label">${t('stat.time')}</span><span class="stat-value" style="font-size:18px;align-self:center">${clock}</span></div>
+        <div class="stat-card"><span class="stat-label">${t('stat.time')}</span><span class="stat-value time">${clock}</span></div>
+      </div>
+      <div class="search-box" style="margin:12px 0;display:flex;gap:8px;">
+        <input type="text" id="devSearch" class="input-sm" placeholder="${t('dev.search')}..." style="flex:1;">
+        <button class="btn ghost sm" onclick="filterDevices()" style="min-width:60px;">${t('dev.filter')}</button>
       </div>
       <div class="devices-mobile-list">${mobile}</div>
       <div class="devices-desktop-layout">
@@ -878,7 +949,11 @@ const TYPE_RENDERERS = {
 async function loadCalib() {
   try {
     const data = await getCalib(true);
-    let html = "<div class='settings-grid'>";
+    let html = `<div class='settings-grid'>
+<div class="search-box" style="grid-column:1/-1;margin:8px 0;display:flex;gap:8px;">
+  <input type="text" id="settingsSearch" class="input-sm" placeholder="Buscar configuración..." style="flex:1;">
+  <button class="btn ghost sm" onclick="filterSettings()" style="min-width:80px;">Filtrar</button>
+</div>`;
     data.forEach((s, i) => {
       const render = sensorCardRenderer(s);
       if (!render) return;
@@ -972,16 +1047,13 @@ async function isVirtual(id, path, body = null) {
     });
     clearTimeout(timer);
   } catch (e) {
-    if (e && e.name === 'AbortError')
-      alert(tf('alert.isVirtualTimeout', { ip: sensor.ip }));
-    else
-      alert(tf('alert.isVirtualNet', { ip: sensor.ip }));
+    showToast('error', tf('alert.isVirtualNet', { ip: sensor.ip }));
     return { handled:true, ok:false };
   }
   if (!res.ok) {
     let detail = '';
     try { detail = await res.text(); } catch(_) {}
-    alert(tf('alert.isVirtualHttp', { ip: sensor.ip, status: res.status, detail: detail ? ': ' + detail : '' }));
+    showToast('error', tf('alert.isVirtualHttp', { ip: sensor.ip, status: res.status, detail: detail ? ': ' + detail : '' }));
     return { handled:true, ok:false };
   }
   return { handled:true, ok:true };
@@ -1009,11 +1081,25 @@ async function toggleMatterSwitch(i, id, name) {
     }
     return;
   }
-  await fetch('/calib/set', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
+  try {
+    const res = await fetch('/calib/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch(_) {}
+      showToast('error', tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+      btn.classList.toggle('ok', wasOn);
+      btn.setAttribute('aria-pressed', wasOn ? 'true' : 'false');
+      btn.textContent = wasOn ? t('chip.enabled') : t('chip.disabled');
+      return;
+    }
+    showToast('success', t('chip.enabled'));
+  } catch (e) {
+    showToast('error', t('alert.localNet'));
+  }
 }
 
 async function setPort(i) {
@@ -1024,12 +1110,18 @@ async function setPort(i) {
   if (b) params.append('broadcast', b);
   if (c) params.append('command', c);
   if (r) params.append('interval', r);
-  await fetch('/genset/save', {
+  const res = await fetch('/genset/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString()
   });
-  alert(t('alert.saved'));
+  if (!res.ok) {
+    let detail = '';
+    try { detail = await res.text(); } catch(_) {}
+    showToast('error', tf('alert.saveError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+    return;
+  }
+  showToast('success', t('alert.saved'));
 }
 
 async function setCalib(i, type, name, refOverride = null) {
@@ -1070,16 +1162,17 @@ function togglePersist(i, name) {
   const pulse   = document.getElementById(`pulseChk${i}`);
   const input   = document.getElementById(`ref${i}`);
   const wasPersist = persist.checked;
-  if (persist.checked) {
-    pulse.checked = false;
-    input.style.display = 'none';
-    setCalib(i, 'pulse', name, 0);
+  
+  if (pulse && pulse.checked) {
+    // Pulse is active, cannot enable persistence
+    persist.checked = false;
+    return;
   }
-  setCalib(i, 'persist', name, persist.checked ? 1 : 0).then(ok => {
+  
+  const val = persist.checked ? 1 : 0;
+  setCalib(i, 'persist', name, val).then(ok => {
     if (!ok) {
       persist.checked = wasPersist;
-      pulse.checked = !wasPersist;
-      if (input) input.style.display = wasPersist ? 'none' : 'inline-block';
     }
   });
 }
@@ -1087,26 +1180,15 @@ function togglePersist(i, name) {
 function togglePulse(i, name) {
   const pulse   = document.getElementById(`pulseChk${i}`);
   const persist = document.getElementById(`persistChk${i}`);
-  const input   = document.getElementById(`ref${i}`);
   const wasPulse = pulse.checked;
+  
   if (pulse.checked) {
-    persist.checked = false;
-    setCalib(i, 'persist', name, 0).then(ok => {
-      if (!ok) {
-        pulse.checked = wasPulse;
-        if (persist) persist.checked = !wasPulse;
-        if (input) input.style.display = 'none';
-      }
-    });
-    input.style.display = 'inline-block';
+    // Activate pulse, disable persistence
+    if (persist) persist.checked = false;
+    setCalib(i, 'persist', 0);
   } else {
-    input.style.display = 'none';
-    setCalib(i, 'pulse',  name, 0).then(ok => {
-      if (!ok) {
-        pulse.checked = wasPulse;
-        if (input) input.style.display = 'inline-block';
-      }
-    });
+    // Deactivate pulse
+    setCalib(i, 'persist', 0);
   }
 }
 
@@ -1446,7 +1528,7 @@ function showStep(n){
             </select>
           ` : `
             <div class="field-row">
-              <select id="cmp_${sIdx}" class="input sm" style="flex:1">
+              <select id="cmp_${sIdx}" class="input sm input-full">
                 <option value="0" ${cond.cmp===0?'selected':''}>&gt; </option>
                 <option value="1" ${cond.cmp===1?'selected':''}>&lt; </option>
                 <option value="2" ${cond.cmp===2?'selected':''}>= </option>
@@ -1477,8 +1559,8 @@ function showStep(n){
          <div class="field">
            <label>${t('wiz.runAt')}</label>
            <div class="field-row">
-             <input id="time_hour" class="input sm" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs" style="flex:1">
-             <input id="time_minute" class="input sm" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min" style="flex:1">
+<input id="time_hour" class="input sm input-full" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs">
+            <input id="time_minute" class="input sm input-full" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min">
            </div>
          </div>
        </div>`;
@@ -1525,13 +1607,14 @@ function showStep(n){
         <div class="action-box">
           <div class="rule-info"><b>${a.name}</b><span>${state}</span></div>
           <div class="field-row">
-            <select id="action_${i}" class="input sm" style="flex:1">
+            <select id="action_${i}" class="input sm input-full">
               <option value="0" ${action===0?'selected':''}>ON</option>
               <option value="1" ${action===1?'selected':''}>OFF</option>
               <option value="2" ${action===2?'selected':''}>TOGGLE</option>
               ${a.type===8?`<option value="3" ${action===3?'selected':''}>LEVEL</option>`:''}
             </select>
-            ${a.type===8?`<input id="level_${i}" class="input sm" type="number" min="0" max="100" value="${level}" style="flex:1;width:80px;${action===3?'':'display:none;'}">`:''}
+            ${a.type===8?`<input id="level_${i}" class="input sm input-full" type="number" min="0" max="100" value="${level}"${action===3?'':` class="d-none"`}>`
+:''}
           </div>
         </div>`;
       });
@@ -2124,9 +2207,23 @@ async function loadRules(){
 loadRules();
 loadDevices();
 loadCalib();
-setInterval(() => {
-  loadDevices();
-  updateSettingsValues();
+let pollIntervalRef = setInterval(() => {
+  if(document.visibilityState !== 'hidden') {
+    loadDevices();
+    updateSettingsValues();
+    // Simple health check using cached sensor data
+    const healthStatus = document.getElementById('systemHealth');
+    if (sensors && sensors.length > 0) {
+      const visibleSensors = sensors.filter(s => s.local || (!s.local && s.age_ms && s.age_ms <= 30000));
+      if (visibleSensors.length > 0) {
+        healthStatus.title = `${visibleSensors.length} sensors`;
+        healthStatus.innerHTML = `<span class="dot ok"></span>${visibleSensors.length}`;
+      } else {
+        healthStatus.title = 'No sensors';
+        healthStatus.innerHTML = '<span class="dot bad"></span>0';
+      }
+    }
+  }
 }, 5000);
 
 if(location.search.indexOf('saved=1') >= 0){
@@ -2143,8 +2240,60 @@ if(location.search.indexOf('saved=1') >= 0){
   document.addEventListener('keydown', e => {
     if(e.key === 'Escape' && modal.style.display === 'flex') closeRule();
   });
-})();
+})
 
+function filterDevices() {
+  const term = document.getElementById('devSearch')?.value?.toLowerCase() || '';
+  const cards = document.querySelectorAll('.device-card');
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const name = card.querySelector('.device-name')?.textContent?.toLowerCase() || '';
+    const type = card.querySelector('.chip')?.textContent?.toLowerCase() || '';
+    const show = name.includes(term) || type.includes(term);
+    card.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+  // Update empty state
+  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
+  if (visibleCount === 0) {
+    if (!document.querySelector('.empty.sm')) {
+      const div = document.createElement('div');
+      div.className = 'empty sm';
+      div.innerHTML = '<span data-i18n="dev.noSensors">No matching devices</span>';
+      document.querySelector('.devices-desktop-layout')?.prepend(div);
+    }
+  } else {
+    const existing = document.querySelector('.empty.sm');
+    if (existing) existing.remove();
+  }
+}
+
+function filterSettings() {
+  const term = document.getElementById('settingsSearch')?.value?.toLowerCase() || '';
+  const cards = document.querySelectorAll('.settings-card');
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const name = card.querySelector('.settings-card-head h3')?.textContent?.toLowerCase() || '';
+    const show = name.includes(term);
+    card.style.display = show ? '' : 'none';
+    if (show) visibleCount++;
+  });
+  // Update empty state
+  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
+  if (visibleCount === 0) {
+    if (!document.querySelector('.empty.sm')) {
+      const div = document.createElement('div');
+      div.className = 'empty sm';
+      div.innerHTML = '<span data-i18n="dev.noSettings">No matching settings</span>';
+      document.querySelector('.settings-grid')?.prepend(div);
+    }
+  } else {
+    const existing = document.querySelector('.empty.sm');
+    if (existing) existing.remove();
+  }
+}
+
+(function languageSelector() {
 /* -------------------- LANGUAGE SELECTOR -------------------- */
 
 function setLang(l) {
@@ -2153,7 +2302,7 @@ function setLang(l) {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     el.textContent = t(el.getAttribute('data-i18n'));
   });
-  document.querySelectorAll('.langbtn').forEach(btn => {
+document.querySelectorAll('.langbtn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.lang === LANG);
   });
   const tab = window.activeTab || 'control';
@@ -2168,6 +2317,7 @@ document.querySelectorAll('.langbtn').forEach(btn => {
 });
 
 setLang(LANG);
+})(); /* -------------------- LANGUAGE SELECTOR -------------------- */
 </script>
 <div id="ruleModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
   <div class="modal-content">
