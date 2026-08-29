@@ -705,7 +705,7 @@ function devStatus(s) {
 }
 
 function deviceCard(name, value, id, state, fade, type, sensor = null) {
-  if (type === SensorType.SENSOR_TIME) return;
+  if (type === SensorType.SENSOR_TIME) return '';
   if (type === SensorType.TYPE_RELAY) {
     return `<div class="device-card" data-name="${name}" data-type="${type}">
       <div class="device-head">
