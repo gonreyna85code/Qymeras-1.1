@@ -694,8 +694,7 @@ function formatTime(s) {
   if (s.value == null) return 'N/A';
   const offsetMin = s.correction ?? 0;
   const t = new Date((s.value + offsetMin * 60) * 1000);
-  return `<div>${t.getUTCFullYear()}-${pad(t.getUTCMonth()+1)}-${pad(t.getUTCDate())}</div>
-    <div>${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())}</div>`;
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth()+1)}-${pad(t.getUTCDate())} - ${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())}`;
 }
 
 function devStatus(s) {
