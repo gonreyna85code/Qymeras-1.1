@@ -133,9 +133,10 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .devices-actuator-grid,.devices-sensor-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
 @media (min-width:1100px){.devices-desktop-layout{grid-template-columns:minmax(280px,38%) minmax(440px,1fr)}}
 @media (max-width:899px){.devices-mobile-list{display:grid;gap:12px}.devices-desktop-layout{display:none}}
-.device-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px;display:flex;flex-direction:column;gap:10px}
+.device-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px;display:grid;grid-template-rows:auto 1fr auto;gap:8px}
 .device-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.device-name{font-weight:700;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:auto}
+.device-control{display:flex;align-items:center;justify-content:center;gap:10px}
+.device-footer{display:flex;align-items:center;justify-content:flex-start;padding-top:4px}
 .device-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .dimmer-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:2px}
 .state-text{font-weight:800;font-size:13px;letter-spacing:.5px}
@@ -724,29 +725,35 @@ function devStatus(s) {
 function deviceCard(name, value, id, state, fade, type, sensor = null) {
   if (type === SensorType.SENSOR_TIME) return '';
   if (type === SensorType.TYPE_RELAY) {
+    const pulse = sensor && sensor.pulse;
+    const persist = sensor && sensor.persist;
+    const isPulseActive = pulse && state;
+    const displayState = isPulseActive ? 'PULSE' : (state ? t('dev.on') : t('dev.off'));
+    const stateClass = isPulseActive ? 'pulse' : (state ? 'on' : 'off');
     return `<div class="device-card" data-name="${name}" data-type="${type}">
       <div class="device-head">
         <span class="chip neutral">RELAY</span>
         <span class="device-name">${name}</span>
-        <span class="state-text ${state?'on':'off'}" id="dev_${id}">${state ? t('dev.on') : t('dev.off')}</span>
       </div>
-      <div class="device-row">
+      <div class="device-control">
+        <button type="button" class="switch ${state?'on':'off'}" role="switch" aria-checked="${state}" aria-label="Alternar relé ${name}" onclick="toggleDevice(${id})"><span class="knob"></span></button>
+        <span class="state-text ${stateClass}" id="dev_state_${id}">${displayState}</span>
+      </div>
+      <div class="device-footer">
         ${devStatus(sensor)}
-        <button type="button" class="switch ${state?'on':''}" role="switch" aria-checked="${state?state:false}" aria-label="Alternar relé ${name}" onclick="toggleDevice(${id})"><span class="knob"></span></button>
       </div>
     </div>`;
   }
-  if (type === SensorType.TYPE_DIMMER) {
+if (type === SensorType.TYPE_DIMMER) {
     const displayValue = state ? value : 0;
     return `<div class="device-card dimmer" data-name="${name}" data-type="${type}">
       <div class="device-head">
         <span class="chip neutral">DIMMER</span>
         <span class="device-name">${name}</span>
-        <button type="button" class="switch ${state?'on':''}" role="switch" aria-checked="${state?state:false}" aria-label="Alternar dimmer ${name}" onclick="toggleDevice(${id})"><span class="knob"></span></button>
       </div>
       <div class="dimmer-row">
         <span class="value-lg"><b id="dev_val_${id}">${displayValue}</b><span class="unit">%</span></span>
-        <span class="state-text ${state?'on':'off'}" id="dev_state_${id}">${state ? t('dev.on') : t('dev.off')}</span>
+        <button type="button" class="switch ${state?'on':''}" role="switch" aria-checked="${state?state:false}" aria-label="Alternar dimmer ${name}" onclick="toggleDevice(${id})"><span class="knob"></span></button>
       </div>
       <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" class="gradient-bg" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
       <div class="device-row">${devStatus(sensor)}<span class="small-note">${t('dev.drag')}</span></div>
