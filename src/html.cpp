@@ -742,6 +742,7 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
     [SensorType.SENSOR_AIRQ]:  { label: () => sLabel(SensorType.SENSOR_AIRQ), format: v => v == 0 ? t('air.good') : v == 1 ? t('air.warn') : v == 2 ? t('air.bad') : 'N/A' },
     [SensorType.SENSOR_RAIN]:  { label: () => sLabel(SensorType.SENSOR_RAIN), format: v => v ? t('yn.yes') : t('yn.no') },
     [SensorType.SENSOR_LUMI]:  { label: () => sLabel(SensorType.SENSOR_LUMI), format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
+    [SensorType.SENSOR_LEVEL]: { label: () => sLabel(SensorType.SENSOR_LEVEL), format: v => v.toFixed(0) + ' %' },
     [SensorType.SENSOR_GENERIC]: { label: () => sLabel(SensorType.SENSOR_GENERIC), format: v => Number(v).toFixed(2) },
     [SensorType.SENSOR_CONTACT]: { label: () => sLabel(SensorType.SENSOR_CONTACT), format: (v,s) => s ? t('yn.closed') : t('yn.open') },
   };
