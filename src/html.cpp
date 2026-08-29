@@ -589,10 +589,12 @@ REL: (s, i) => `<div class="settings-card">
   </div>
   <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b><span class="unit"> ms</span></div>
   <div class="field-row">
-    <span>${t('cal.check.pulse')}</span>
-    <button type="button" class="switch ${s.pulse?'on':''}" role="switch" aria-checked="${s.pulse?'true':'false'}" aria-label="Modo pulso ${s.name}" onclick="togglePulse(${i})"><span class="knob"></span></button>
     <span>${t('cal.check.persist')}</span>
     <button type="button" class="switch ${s.persist?'on':''}" role="switch" aria-checked="${s.persist?'true':'false'}" aria-label="Persistencia ${s.name}" onclick="togglePersist(${i})"><span class="knob"></span></button>
+  </div>
+  <div class="field-row">
+    <span>${t('cal.check.pulse')}</span>
+    <button type="button" class="switch ${s.pulse?'on':''}" role="switch" aria-checked="${s.pulse?'true':'false'}" aria-label="Modo pulso ${s.name}" onclick="togglePulse(${i})"><span class="knob"></span></button>
   </div>
   <div class="field-row">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
