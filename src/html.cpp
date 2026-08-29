@@ -814,10 +814,10 @@ async function loadDevices() {
     visualSort(data).forEach((s, i) => {
       const card = deviceCard(s.name, s.value, s.id, s.state, s.fade, s.type, s);
       mobile += card;
-      if (s.type === SensorType.TYPE_RELAY || s.type === SensorType.TYPE_DIMMER || s.type === SensorType.SENSOR_TIME) {
+      if (s.type === SensorType.TYPE_RELAY || s.type === SensorType.TYPE_DIMMER) {
         actuators += card;
         actCount++;
-      } else {
+      } else if (s.type !== SensorType.SENSOR_TIME) {
         deviceSensors += card;
         sensCount++;
       }
