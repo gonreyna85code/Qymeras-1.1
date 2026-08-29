@@ -87,7 +87,7 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--text-muted);flex:0 0 auto}
 .dot.ok{background:var(--success)}.dot.warn{background:var(--warning)}.dot.bad{background:var(--danger)}.dot.info{background:var(--info)}
 .status{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.4px;text-transform:uppercase}
-.metric{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.metric{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;text-align:center}
 .metric.sm{font-size:18px}
 .metric .unit{font-size:15px;font-weight:700;color:var(--text-muted);margin-left:2px}
 .eyebrow{font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--accent);text-transform:uppercase}
@@ -300,7 +300,7 @@ es: {
   newRule:'Nueva regla', refresh:'Refrescar'}, saved:{
   notice:'Ajustes guardados. El dispositivo se está reiniciando...'}, log:{
   core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error'}, stat:{
-  actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado'}, chip:{
+  actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado', time:'Tiempo'}, chip:{
   enabled:'Habilitado', disabled:'Deshabilitado', online:'En línea'}, status:{
   local:'Local', remote:'Remoto', offline:'Desconectado'}, dev:{
   on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel'}, no:{
@@ -360,7 +360,7 @@ en: {
   newRule:'New rule', refresh:'Refresh'}, saved:{
   notice:'Settings saved. The device is restarting...'}, log:{
   core:'Core', events:'Events', sensors:'Sensors / Warn / Error'}, stat:{
-  actuators:'Actuators', sensors:'Sensors', updated:'Updated'}, chip:{
+  actuators:'Actuators', sensors:'Sensors', updated:'Updated', time:'Time'}, chip:{
   enabled:'Enabled', disabled:'Disabled', online:'Online'}, status:{
   local:'Local', remote:'Remote', offline:'Offline'}, dev:{
   on:'ON', off:'OFF', drag:'Drag to adjust level'}, no:{
@@ -706,6 +706,7 @@ function devStatus(s) {
 }
 
 function deviceCard(name, value, id, state, fade, type, sensor = null) {
+  if (type === SensorType.SENSOR_TIME) return;
   if (type === SensorType.TYPE_RELAY) {
     return `<div class="device-card" data-name="${name}" data-type="${type}">
       <div class="device-head">
@@ -735,18 +736,10 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
       <div class="device-row">${devStatus(sensor)}<span class="small-note">${t('dev.drag')}</span></div>
     </div>`;
   }
-  if (type === SensorType.SENSOR_TIME) {
-    return `<div class="device-card time-card" data-name="${name}" data-type="${type}">
-      <div class="device-head"><span class="chip neutral">TIME</span><span class="device-name">${name}</span></div>
-      <div class="time-value" id="dev_${id}">${formatTime(sensor || {value})}</div>
-      <div class="device-row">${devStatus(sensor)}</div>
-    </div>`;
-  }
   const SENSOR_DISPLAY = {
     [SensorType.SENSOR_TEMP]:  { label: () => sLabel(SensorType.SENSOR_TEMP), format: v => v.toFixed(2) + ' °C' },
     [SensorType.SENSOR_HUMI]:  { label: () => sLabel(SensorType.SENSOR_HUMI), format: v => v.toFixed(0) + ' %' },
     [SensorType.SENSOR_PRESS]: { label: () => sLabel(SensorType.SENSOR_PRESS), format: v => v.toFixed(0) + ' kPa' },
-    [SensorType.SENSOR_LEVEL]: { label: () => sLabel(SensorType.SENSOR_LEVEL), format: v => v.toFixed(0) + ' %' },
     [SensorType.SENSOR_AIRQ]:  { label: () => sLabel(SensorType.SENSOR_AIRQ), format: v => v == 0 ? t('air.good') : v == 1 ? t('air.warn') : v == 2 ? t('air.bad') : 'N/A' },
     [SensorType.SENSOR_RAIN]:  { label: () => sLabel(SensorType.SENSOR_RAIN), format: v => v ? t('yn.yes') : t('yn.no') },
     [SensorType.SENSOR_LUMI]:  { label: () => sLabel(SensorType.SENSOR_LUMI), format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
@@ -830,12 +823,12 @@ async function loadDevices() {
       }
     });
     const now = new Date();
-    const clock = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+    const clock = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0') + ' ' + String(now.getUTCFullYear()) + '-' + String(now.getUTCMonth() + 1).padStart(2, '0') + '-' + String(now.getUTCDate()).padStart(2, '0');
     const html = `
       <div class="dash-stats">
         <div class="stat-card"><span class="stat-label">${t('stat.actuators')}</span><span class="stat-value">${actCount}</span></div>
         <div class="stat-card"><span class="stat-label">${t('stat.sensors')}</span><span class="stat-value">${sensCount}</span></div>
-        <div class="stat-card"><span class="stat-label">${t('stat.updated')}</span><span class="stat-value" style="font-size:18px;align-self:center">${clock}</span></div>
+        <div class="stat-card"><span class="stat-label">${t('stat.time')}</span><span class="stat-value" style="font-size:18px;align-self:center">${clock}</span></div>
       </div>
       <div class="devices-mobile-list">${mobile}</div>
       <div class="devices-desktop-layout">
