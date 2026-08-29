@@ -587,14 +587,14 @@ REL: (s, i) => `<div class="settings-card">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
     <button type="button" class="switch ${s.avail?'on':''}" role="switch" aria-checked="${s.avail?'true':'false'}" aria-label="Alternar relé ${s.name}" onclick="toggleMatterSwitch(${i},'${s.id}','${s.name}')"><span class="knob"></span></button>
   </div>
-  <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade ? s.fade : t('cal.fade.disabled')}</b></div>
+  <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b><span class="unit"> ms</span></div>
   <div class="field-row">
     <label class="switch"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'><span class="knob"></span>${t('cal.check.pulse')}</label>
     <label class="switch"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i})'><span class="knob"></span>${t('cal.check.persist')}</label>
   </div>
   <div class="field-row">
-    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.fade')}" value="${s.fade ?? ''}" onchange='setCalib(${i},"fad","${s.name}",this.value)'>
-    <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>${t('cal.btn.fade')}</button>
+    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
+    <button class="btn ghost sm" onclick='setCalib(${i},"pulse","${s.name}")'>${t('cal.btn.pulse')}</button>
   </div>
 </div>`,
 
