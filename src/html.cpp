@@ -30,23 +30,11 @@ const char Styles[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang='es'><head>
 --accent:#2fbf71;--accent-hover:#4cd78c;--on-accent:#06230f;
 --success:#4ade80;--warning:#fbbf24;--danger:#f87171;--info:#38bdf8;
 }
-[data-theme="lime"]{
---bg:#10140e;--bg-2:#161c12;--surface:#1a2016;--surface-2:#222a1b;--surface-hover:#2b3623;
---border:#344126;--text:#f0f4e8;--text-muted:#a4b38f;
---accent:#9fd33a;--accent-hover:#b3e056;--on-accent:#141c05;
---success:#7be14a;--warning:#f5c542;--danger:#f87171;--info:#3fd5ff;
-}
 [data-theme="sand"]{
 --bg:#191410;--bg-2:#201a13;--surface:#262015;--surface-2:#2f291c;--surface-hover:#3a3324;
 --border:#4a402b;--text:#f1ead9;--text-muted:#b4a887;
 --accent:#dc9b4f;--accent-hover:#eab273;--on-accent:#241607;
 --success:#7ee081;--warning:#f0bd5d;--danger:#ec6a5e;--info:#66b6e8;
-}
-[data-theme="ice"]{
---bg:#0b141d;--bg-2:#101b26;--surface:#16222e;--surface-2:#1d2b39;--surface-hover:#263748;
---border:#2c3f52;--text:#eaf6ff;--text-muted:#8fb2cc;
---accent:#38bdf8;--accent-hover:#6cd2ff;--on-accent:#04202e;
---success:#3ee0a0;--warning:#f5c542;--danger:#f47066;--info:#60a5fa;
 }
 *{box-sizing:border-box}
 html{color-scheme:dark}
@@ -60,11 +48,15 @@ button{font-family:var(--font)}
 .brand-sub{font-size:10px;font-weight:700;color:var(--accent);background:var(--surface-2);border:1px solid var(--border);padding:2px 7px;border-radius:999px}
 .top-actions{display:flex;align-items:center;gap:14px}
 .status-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-muted)}
+.lang-switch{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:var(--surface-2)}
+.langbtn{border:none;background:transparent;color:var(--text-muted);padding:4px 12px;font-size:12px;font-weight:800;letter-spacing:.4px;cursor:pointer;transition:background .15s,color .15s}
+.langbtn:hover{background:var(--surface-hover);color:var(--text)}
+.langbtn.active{background:var(--accent);color:var(--on-accent)}
 #themePicker{display:flex;gap:7px}
 .themeDot{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid var(--border);padding:0;transition:transform .15s,box-shadow .15s;background:var(--surface-2)}
 .themeDot:hover{transform:scale(1.15)}
 .themeDot:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#cdfcff"]{background:#cdfcff}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}.themeDot[data-bg="#61b956"]{background:#61b956}
+.themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}
 .nav{background:var(--surface);border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
 .navitem{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font-weight:600;font-size:13px;cursor:pointer;text-align:left;transition:background .15s,color .15s}
 .navitem:hover{background:var(--surface-hover);color:var(--text)}
@@ -144,6 +136,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .time-value{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
 .settings-general{grid-column:1/-1}
+.settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
 .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:16px;display:flex;flex-direction:column;gap:12px}
 .settings-card h3{margin:2px 0 0;font-size:15px}
 .settings-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
@@ -211,30 +204,31 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <header class="topbar">
   <div class="brand"><span>Qymeras</span><span class="brand-sub">1.1</span></div>
   <div class="top-actions">
-    <span class="status-chip" id="linkStatus"><span class="dot ok"></span>Online</span>
+    <span class="status-chip" id="linkStatus"><span class="dot ok"></span><span data-i18n="chip.online">Online</span></span>
     <div id="themePicker" role="group" aria-label="Tema de color">
       <button type="button" class="themeDot" data-bg="#414141" aria-label="Tema oscuro"></button>
       <button type="button" class="themeDot" data-bg="#f7f2ff" aria-label="Tema claro"></button>
       <button type="button" class="themeDot" data-bg="#4c834e" aria-label="Tema forest"></button>
-      <button type="button" class="themeDot" data-bg="#61b956" aria-label="Tema lime"></button>
       <button type="button" class="themeDot" data-bg="#c1af8d" aria-label="Tema sand"></button>
-      <button type="button" class="themeDot" data-bg="#cdfcff" aria-label="Tema ice"></button>
+    </div>
+    <div class="lang-switch" role="group" aria-label="Idioma / Language">
+      <button type="button" class="langbtn" data-lang="es" aria-label="Español">ES</button>
+      <button type="button" class="langbtn" data-lang="en" aria-label="English">EN</button>
     </div>
   </div>
 </header>
 <nav class="nav" aria-label="Navegación principal">
-  <button type="button" class="navitem active" id="t_control" onclick="show('control')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Devices</span></button>
-  <button type="button" class="navitem" id="t_auto" onclick="show('auto')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 11-13h-7z" stroke-linejoin="round"/></svg><span>Automations</span></button>
+  <button type="button" class="navitem active" id="t_control" onclick="show('control')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span data-i18n="nav.devices">Devices</span></button>
+  <button type="button" class="navitem" id="t_auto" onclick="show('auto')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 11-13h-7z" stroke-linejoin="round"/></svg><span data-i18n="nav.automations">Automations</span></button>
   <span class="nav-sep"></span>
-  <button type="button" class="navitem" id="t_wifi" onclick="show('wifi')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8.5 15.5a6.5 6.5 0 0 1 7 0" stroke-linecap="round"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg><span>Network</span></button>
-  <button type="button" class="navitem" id="t_logs" onclick="show('logs')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke-linecap="round"/><circle cx="4" cy="6" r="1.2" fill="currentColor"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/></svg><span>Logs</span></button>
-  <button type="button" class="navitem" id="t_config" onclick="show('config')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg><span>Settings</span></button>
+  <button type="button" class="navitem" id="t_config" onclick="show('config')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z" stroke-linejoin="round"/></svg><span data-i18n="nav.settings">Settings</span></button>
+  <button type="button" class="navitem" id="t_logs" onclick="show('logs')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke-linecap="round"/><circle cx="4" cy="6" r="1.2" fill="currentColor"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/></svg><span data-i18n="nav.logs">Logs</span></button>
 </nav>
 <main class="main">
   <section id="control" class="view content">
     <div class="pages">
       <div class="page-head">
-        <div><h1>Devices</h1><p class="page-sub">Vistas de actuadores y sensores en tiempo real</p></div>
+        <div><h1 data-i18n="page.devices">Devices</h1><p class="page-sub" data-i18n="page.devices.sub">Real-time views of actuators and sensors</p></div>
       </div>
       <div id="devices_cards"></div>
     </div>
@@ -242,53 +236,32 @@ const char Tabs[] PROGMEM = R"rawliteral(
   <section id="auto" class="view content" style="display:none">
     <div class="pages">
       <div class="page-head">
-        <div><h1>Automations</h1><p class="page-sub">Reglas de automatización</p></div>
-        <button class="btn primary" onclick="newRule()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Nueva regla</button>
+        <div><h1 data-i18n="page.auto">Automations</h1><p class="page-sub" data-i18n="page.auto.sub">Automation rules</p></div>
+        <button class="btn primary" onclick="newRule()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span data-i18n="btn.newRule">New rule</span></button>
       </div>
       <div id="auto_table"></div>
-      <div class="empty" id="auto_empty" style="display:none">No hay reglas de automatización.<br>Crea la primera para empezar.</div>
+      <div class="empty" id="auto_empty" style="display:none"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
     </div>
   </section>
   <section id="config" class="view content" style="display:none">
     <div class="pages">
       <div class="page-head">
-        <div><h1>Settings</h1><p class="page-sub">Calibración, persistencia y configuración del nodo</p></div>
+        <div><h1 data-i18n="page.config">Settings</h1><p class="page-sub" data-i18n="page.config.sub">Calibration, persistence and node configuration</p></div>
       </div>
+      <div id="savedNotice" class="notice success" style="display:none" data-i18n="saved.notice">Settings saved. The device is restarting...</div>
       <div id="cards"></div>
-    </div>
-  </section>
-  <section id="wifi" class="view content" style="display:none">
-    <div class="pages">
-      <div class="page-head">
-        <div><h1>Network</h1><p class="page-sub">Configuración de red WiFi</p></div>
-      </div>
-      <div id="savedNotice" class="notice success" style="display:none">Ajustes guardados. El dispositivo se está reiniciando...</div>
-      <div class="card" style="max-width:420px">
-        <form action="/save" method="post">
-          <div class="field">
-            <label for="ssid">SSID</label>
-            <input id="ssid" class="input" name="ssid" autocomplete="off" placeholder="Nombre de la red" required>
-          </div>
-          <div class="field">
-            <label for="pass">Contraseña</label>
-            <input id="pass" class="input" name="pass" type="password" autocomplete="off" placeholder="Contraseña WiFi" required>
-          </div>
-          <button type="submit" class="btn primary">Guardar y reiniciar</button>
-        </form>
-        <p class="small-note" style="margin:12px 0 0">Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.</p>
-      </div>
     </div>
   </section>
   <section id="logs" class="view content" style="display:none">
     <div class="pages">
       <div class="page-head">
-        <div><h1>Logs</h1><p class="page-sub">Actualización automática cada 2 s</p></div>
-        <button class="btn ghost" onclick="refreshLogs()">Refrescar</button>
+        <div><h1 data-i18n="page.logs">Logs</h1><p class="page-sub" data-i18n="page.logs.sub">Auto-refresh every 2 s</p></div>
+        <button class="btn ghost" onclick="refreshLogs()"><span data-i18n="btn.refresh">Refresh</span></button>
       </div>
       <div class="log-grid">
-        <div class="log-panel" id="log-core"><h3>Core</h3></div>
-        <div class="log-panel" id="log-events"><h3>Events</h3></div>
-        <div class="log-panel" id="log-sensors"><h3>Sensors / Warn / Error</h3></div>
+        <div class="log-panel" id="log-core"><h3 data-i18n="log.core">Core</h3></div>
+        <div class="log-panel" id="log-events"><h3 data-i18n="log.events">Events</h3></div>
+        <div class="log-panel" id="log-sensors"><h3 data-i18n="log.sensors">Sensors / Warn / Error</h3></div>
       </div>
     </div>
   </section>
@@ -296,6 +269,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
 </div>
 <script>
 async function show(tab){
+  window.activeTab = tab;
   document.querySelectorAll('.content').forEach(c=>c.style.display='none');
   document.querySelectorAll('.navitem').forEach(t=>t.classList.remove('active'));
   document.getElementById(tab).style.display='block';
@@ -307,6 +281,159 @@ async function show(tab){
   if (tab === 'logs'){ refreshLogs(); startLogAutoRefresh(); }
     else { stopLogAutoRefresh(); }
 }
+
+/* -------------------- I18N -------------------- */
+
+const I18N = {
+es: {
+  title:'Qymeras 1.1', nav:{
+  devices:'Dispositivos', automations:'Automatizaciones', settings:'Ajustes', logs:'Registros'}, page:{
+  devices:'Dispositivos', 'devices.sub':'Vistas de actuadores y sensores en tiempo real',
+  auto:'Automatizaciones', 'auto.sub':'Reglas de automatización',
+  config:'Ajustes', 'config.sub':'Calibración, persistencia y configuración del nodo',
+  logs:'Registros', 'logs.sub':'Actualización automática cada 2 s'}, btn:{
+  newRule:'Nueva regla', refresh:'Refrescar'}, saved:{
+  notice:'Ajustes guardados. El dispositivo se está reiniciando...'}, log:{
+  core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error'}, stat:{
+  actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado'}, chip:{
+  enabled:'Habilitado', disabled:'Deshabilitado', online:'En línea'}, status:{
+  local:'Local', remote:'Remoto', offline:'Desconectado'}, dev:{
+  on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel'}, no:{
+  actuators:'No hay actuadores', sensors:'No hay sensores'}, air:{
+  good:'Bueno', warn:'Aviso', bad:'Malo'}, yn:{ yes:'Sí', no:'No', closed:'Cerrado', open:'Abierto'}, cal:{
+  'btn.set0':'Fijar 0%', 'btn.set100':'Fijar 100%', 'btn.ref':'Fijar valor', 'btn.reset':'Resetear',
+  'btn.fade':'Fijar fade', 'ph.ref':'Valor', 'ph.fade':'Fade (ms)', 'ph.pulse':'Tiempo de pulso (ms)',
+  'check.persist':'Persistencia', 'check.pulse':'Modo pulso (ms)'}, timezone:{
+  title:'Zona horaria'}, cfg:{
+  title:'Configuración del nodo', broadcast:'Puerto broadcast', command:'Puerto comando',
+  interval:'Intervalo de reporte', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
+  'ph.interval':'Intervalo (ms)', ota:'Arduino OTA', save:'Guardar', factory:'Restablecer a fábrica'}, net:{
+  title:'Red del nodo', ssid:'SSID', 'ssid.ph':'Nombre de la red', pass:'Contraseña',
+  'pass.ph':'Contraseña WiFi', save:'Guardar y reiniciar',
+  note:'Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.'}, alert:{
+  saved:'Guardado', isVirtualTimeout:'Tiempo de espera agotado: {ip} no respondió',
+  isVirtualNet:'Error de red: no se pudo contactar a {ip}',
+  isVirtualHttp:'Error en {ip} (HTTP {status}{detail})', localError:'Error local (HTTP {status}{detail})',
+  localNet:'Error de red al contactar este dispositivo'}, factory:{
+  confirm:'¿Seguro? Esto borrará todos los ajustes y la información.', doing:'Reiniciando...',
+  err:'Error enviando reset'}, ota:{ enableMsg:'El dispositivo se reiniciará para activar OTA. ¿Continuar?',
+  disableMsg:'El dispositivo se reiniciará para desactivar OTA. ¿Continuar?'}, wiz:{
+  titleNew:'Nueva regla de automatización', titleEdit:'Editar regla de automatización', cancel:'Cancelar',
+  back:'Atrás', next:'Siguiente', save:'Guardar', type:'Tipo de regla',
+  edge:'EDGE - Cambios de estado', 'edge.desc':'Se ejecuta cuando un sensor cambia de estado',
+  thresh:'THRESHOLD - Valores límite', 'thresh.desc':'Se ejecuta cuando un valor cruza el umbral',
+  time:'TIME - A una hora', 'time.desc':'Ejecuta a una hora fija dentro de un rango de fechas',
+  intervalTxt:'INTERVAL - Cada X tiempo', 'interval.desc':'Ejecuta periódicamente cada intervalo',
+  sensors:'Seleccionar sensores', hint:'Ctrl/Cmd + clic para seleccionar varios',
+  noSensors:'Sin sensores', conditions:'Condiciones', rising:'Subida', falling:'Caída',
+  dates:'Rango de fechas y hora', from:'Desde cuándo:', to:'Hasta cuándo:', runAt:'Hora de ejecución:',
+  logic:'Lógica', all:'TODAS las condiciones (AND)', any:'AL MENOS UNA condición (OR)',
+  actuators:'Actuadores', noActuators:'Sin actuadores', actions:'Acciones',
+  intervalMs:'Intervalo (ms)', delayMs:'Delay (ms)', cooldownMs:'Cooldown (ms)',
+  selectType:'Debes seleccionar un tipo de regla', needSensor:'Debes seleccionar al menos un sensor para este tipo de regla',
+  needThreshold:'Debes completar el threshold para el sensor', threshRange:'El threshold debe estar entre -1000 y 10000',
+  timeRange:'La hora debe estar entre 00:00 y 23:59', dateOrder:'La fecha "desde" no puede ser posterior a "hasta"',
+  needActuator:'Debes seleccionar al menos un actuador', loadActions:'Error al cargar las acciones',
+  loadActuator:'Error al cargar el actuador', levelDimmerOnly:'La acción LEVEL solo se puede usar en dimmers',
+  levelRange:'El level debe estar entre 0 y 100', delayRange:'El delay debe estar entre 0 y 60000 ms',
+  cooldownRange:'El cooldown debe estar entre 0 y 3600000 ms', intervalRange:'El intervalo debe estar entre 1000 y 3600000 ms',
+  hourRange:'La hora debe estar entre 0 y 23', minRange:'Los minutos deben estar entre 0 y 59',
+  levelActuator:'El level del actuador debe estar entre 0 y 100 (actual: {level})',
+  saved:'Regla guardada correctamente', saveError:'Error al guardar:', connError:'Error de conexión:',
+  deleteConfirm:'¿Eliminar la regla {id}?', edit:'Editar', delete:'Eliminar'}, rule:{
+  sensors:'Sensor(es)', condition:'Condición', logic:'Lógica', actions:'Acciones', actuators:'Actuador(es)',
+  delay:'Delay / Cooldown', title:'Regla', empty:'No hay reglas de automatización.',
+  emptyHint:'Crea la primera para empezar.'}
+},
+en: {
+  title:'Qymeras 1.1', nav:{
+  devices:'Devices', automations:'Automations', settings:'Settings', logs:'Logs'}, page:{
+  devices:'Devices', 'devices.sub':'Real-time views of actuators and sensors',
+  auto:'Automations', 'auto.sub':'Automation rules',
+  config:'Settings', 'config.sub':'Calibration, persistence and node configuration',
+  logs:'Logs', 'logs.sub':'Auto-refresh every 2 s'}, btn:{
+  newRule:'New rule', refresh:'Refresh'}, saved:{
+  notice:'Settings saved. The device is restarting...'}, log:{
+  core:'Core', events:'Events', sensors:'Sensors / Warn / Error'}, stat:{
+  actuators:'Actuators', sensors:'Sensors', updated:'Updated'}, chip:{
+  enabled:'Enabled', disabled:'Disabled', online:'Online'}, status:{
+  local:'Local', remote:'Remote', offline:'Offline'}, dev:{
+  on:'ON', off:'OFF', drag:'Drag to adjust level'}, no:{
+  actuators:'No actuators', sensors:'No sensors'}, air:{
+  good:'Good', warn:'Warn', bad:'Bad'}, yn:{ yes:'Yes', no:'No', closed:'Closed', open:'Open'}, cal:{
+  'btn.set0':'Set 0%', 'btn.set100':'Set 100%', 'btn.ref':'Set ref value', 'btn.reset':'Reset',
+  'btn.fade':'Set fade', 'ph.ref':'Value', 'ph.fade':'Fade (ms)', 'ph.pulse':'Pulse time (ms)',
+  'check.persist':'Persistence', 'check.pulse':'Pulse mode (ms)'}, timezone:{
+  title:'Time zone'}, cfg:{
+  title:'Node configuration', broadcast:'Broadcast port', command:'Command port',
+  interval:'Report interval', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
+  'ph.interval':'Interval (ms)', ota:'Arduino OTA', save:'Save', factory:'Factory reset'}, net:{
+  title:'Node network', ssid:'SSID', 'ssid.ph':'Network name', pass:'Password',
+  'pass.ph':'WiFi password', save:'Save & restart',
+  note:'After saving, the device will restart and connect to the new network.'}, alert:{
+  saved:'Saved', isVirtualTimeout:'Aborted: {ip} did not respond',
+  isVirtualNet:'Network error: could not reach {ip}',
+  isVirtualHttp:'Error in {ip} (HTTP {status}{detail})', localError:'Local error (HTTP {status}{detail})',
+  localNet:'Network error contacting this device'}, factory:{
+  confirm:'Are you sure? This will erase all settings and data.', doing:'Restarting...',
+  err:'Error sending reset'}, ota:{ enableMsg:'The device will restart to enable OTA. Continue?',
+  disableMsg:'The device will restart to disable OTA. Continue?'}, wiz:{
+  titleNew:'New automation rule', titleEdit:'Edit automation rule', cancel:'Cancel',
+  back:'Back', next:'Next', save:'Save', type:'Rule type',
+  edge:'EDGE - State changes', 'edge.desc':'Runs when a sensor changes state',
+  thresh:'THRESHOLD - Threshold values', 'thresh.desc':'Runs when a value crosses a threshold',
+  time:'TIME - At a fixed time', 'time.desc':'Runs at a fixed time within a date range',
+  intervalTxt:'INTERVAL - Every X time', 'interval.desc':'Runs periodically every interval',
+  sensors:'Select sensors', hint:'Ctrl/Cmd + click to select several',
+  noSensors:'No sensors', conditions:'Conditions', rising:'Rising', falling:'Falling',
+  dates:'Date range and time', from:'From:', to:'Until:', runAt:'Execution time:',
+  logic:'Logic', all:'ALL conditions (AND)', any:'AT LEAST ONE condition (OR)',
+  actuators:'Actuators', noActuators:'No actuators', actions:'Actions',
+  intervalMs:'Interval (ms)', delayMs:'Delay (ms)', cooldownMs:'Cooldown (ms)',
+  selectType:'Please select a rule type', needSensor:'Select at least one sensor for this rule type',
+  needThreshold:'You must fill in the threshold for the sensor', threshRange:'The threshold must be between -1000 and 10000',
+  timeRange:'The time must be between 00:00 and 23:59', dateOrder:'The start date cannot be after the end date',
+  needActuator:'Select at least one actuator', loadActions:'Error loading the actions',
+  loadActuator:'Error loading the actuator', levelDimmerOnly:'The LEVEL action can only be used on dimmers',
+  levelRange:'The level must be between 0 and 100', delayRange:'The delay must be between 0 and 60000 ms',
+  cooldownRange:'Cooldown must be between 0 and 3600000 ms', intervalRange:'The interval must be between 1000 and 3600000 ms',
+  hourRange:'Hour must be between 0 and 23', minRange:'Minutes must be between 0 and 59',
+  levelActuator:'The actuator level must be between 0 and 100 (current: {level})',
+  saved:'Rule saved successfully', saveError:'Save error:', connError:'Connection error:',
+  deleteConfirm:'Delete rule {id}?', edit:'Edit', delete:'Delete'}, rule:{
+  sensors:'Sensor(s)', condition:'Condition', logic:'Logic', actions:'Actions', actuators:'Actuator(s)',
+  delay:'Delay / Cooldown', title:'Rule', empty:'There are no automation rules.',
+  emptyHint:'Create the first one to get started.'}
+}
+};
+
+const SENSOR_LABEL = {
+  1:['Luminosidad','Luminosity'], 2:['Humedad','Humidity'], 3:['Temperatura','Temperature'],
+  4:['Presión','Pressure'], 5:['Nivel','Level'], 6:['Calidad del aire','Air quality'],
+  7:['Lluvia','Rain'], 8:['Dimmer','Dimmer'], 9:['Relé','Relay'],
+  10:['Hora','Time'], 11:['Personalizado','Custom'], 12:['Contacto','Contact']
+};
+
+let LANG = 'es';
+try { LANG = localStorage.getItem('lang') || 'es'; } catch(e) {}
+
+function t(k) {
+  const d = I18N[LANG] || I18N.es;
+  let v = k.split('.').reduce((o, p) => (o == null ? o : o[p]), d);
+  if (v == null) v = k.split('.').reduce((o, p) => (o == null ? o : o[p]), I18N.es);
+  return v == null ? k : v;
+}
+
+function tf(k, map) {
+  let s = t(k);
+  if (map) for (const m in map) s = s.split('{' + m + '}').join(map[m]);
+  return s;
+}
+
+function sLabel(type) {
+  const a = SENSOR_LABEL[type];
+  return a ? a[LANG === 'en' ? 1 : 0] : 'GENERAL';
+}
 )rawliteral";
 
 
@@ -314,23 +441,23 @@ const char Rules[] PROGMEM = R"rawliteral(
 function renderAutomationTable(rules){
   let html = '<div class="rule-list">';
   if(!rules || !rules.length){
-    html += '<div class="empty">No hay reglas de automatización.</div>';
+    html += '<div class="empty">' + t('rule.empty') + '</div>';
   } else {
     rules.forEach((r,i)=>{
       html += `
       <div class="rule-card">
         <div class="rule-head">
           <span class="chip neutral">${['EDGE','THRESHOLD','TIME','INTERVAL'][r.type] || 'RULE'} #${r.id}</span>
-          <h3>${r.name || 'Regla'}</h3>
+          <h3>${r.name || t('rule.title')}</h3>
           <div class="rule-actions"></div>
         </div>
-        <div class="rule-info"><span>Sensores</span><b>${r.sensors.join(", ")}</b></div>
-        <div class="rule-info"><span>Lógica</span><b>${r.logical_and?'AND':'OR'}</b></div>
-        <div class="rule-info"><span>Acciones</span><b>${r.actions.join(", ")}</b></div>
-        <div class="rule-info"><span>Delay / Cooldown</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
+        <div class="rule-info"><span>${t('rule.sensors')}</span><b>${r.sensors.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.logic')}</span><b>${r.logical_and?'AND':'OR'}</b></div>
+        <div class="rule-info"><span>${t('rule.actions')}</span><b>${r.actions.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.delay')}</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
         <div class="rule-actions">
-          <button class="btn ghost sm" onclick="editRule(${i})">Editar</button>
-          <button class="btn danger sm" onclick="deleteRule(${i})">Eliminar</button>
+          <button class="btn ghost sm" onclick="editRule(${i})">${t('wiz.edit')}</button>
+          <button class="btn danger sm" onclick="deleteRule(${i})">${t('wiz.delete')}</button>
         </div>
       </div>`;
     });
@@ -340,7 +467,7 @@ function renderAutomationTable(rules){
 }
 function newRule(){
   loadSensorsAndActuators().then(()=>{
-    document.getElementById('ruleModalTitle').textContent='Nueva regla de automatización';
+    document.getElementById('ruleModalTitle').textContent=t('wiz.titleNew');
     startWizard();
     document.getElementById('ruleModal').style.display='flex';
   });
@@ -352,100 +479,100 @@ const char CardsSettings[] PROGMEM = R"rawliteral(
 function sensorCalibCard(s, i, cfg) {
   const minMaxBtns = cfg.hasMinMax ? `
     <div class="field-row">
-      <button class="btn ghost sm" onclick='setCalib(${i},"min","${s.name}")'>Set 0%</button>
-      <button class="btn ghost sm" onclick='setCalib(${i},"max","${s.name}")'>Set 100%</button>
+      <button class="btn ghost sm" onclick='setCalib(${i},"min","${s.name}")'>${t('cal.btn.set0')}</button>
+      <button class="btn ghost sm" onclick='setCalib(${i},"max","${s.name}")'>${t('cal.btn.set100')}</button>
     </div>` : '';
   return `<div class="settings-card">
     <div class="settings-card-head">
       <div><span class="eyebrow">${cfg.label}</span><h3>${s.name}</h3></div>
-      <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+      <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
     </div>
     <div class="metric" id="v${i}">${cfg.format(s.value)}</div>
     <div class="field-row">
-      <input id="ref${i}" class="input sm" placeholder="Valor">
-      <button class="btn ghost sm" onclick='setCalib(${i},"ref","${s.name}")'>Set Ref Val</button>
+      <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.ref')}">
+      <button class="btn ghost sm" onclick='setCalib(${i},"ref","${s.name}")'>${t('cal.btn.ref')}</button>
     </div>
     ${minMaxBtns}
     <div class="btn-row">
-      <button class="btn ghost sm" onclick='setCalib(${i},"res","${s.name}")'>Reset</button>
+      <button class="btn ghost sm" onclick='setCalib(${i},"res","${s.name}")'>${t('cal.btn.reset')}</button>
     </div>
-    <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+    <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>`;
 }
 
 const cardRenderers = {
 
-HUMI: (s, i) => sensorCalibCard(s, i, { label: 'HUMIDITY', format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
+HUMI: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
 
-LEVE: (s, i) => sensorCalibCard(s, i, { label: 'LEVEL', format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
+LEVE: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : v + ' %', hasMinMax: true }),
 
-LUMI: (s, i) => sensorCalibCard(s, i, { label: 'LUMINOSITY', format: v => (v === 255 || v == null) ? 'N/A' : (v * 108.9432 / 7074).toFixed(0) + ' lx', hasMinMax: false }),
+LUMI: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : (v * 108.9432 / 7074).toFixed(0) + ' lx', hasMinMax: false }),
 
-TEMP: (s, i) => sensorCalibCard(s, i, { label: 'TEMPERATURE', format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' °C', hasMinMax: false }),
+TEMP: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' °C', hasMinMax: false }),
 
-PRES: (s, i) => sensorCalibCard(s, i, { label: 'PRESSURE', format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' kPa', hasMinMax: false }),
+PRES: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : v.toFixed(2) + ' kPa', hasMinMax: false }),
 
-GENERIC: (s, i) => sensorCalibCard(s, i, { label: 'CUSTOM', format: v => (v === 255 || v == null) ? 'N/A' : Number(v).toFixed(2), hasMinMax: false }),
+GENERIC: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : Number(v).toFixed(2), hasMinMax: false }),
 
 AIRQ: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">AIR QUALITY</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
+    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
   </div>
-  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A'}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A'}</div>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
 </div>`,
 
 RAIN: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">RAIN</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
+    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
   </div>
-  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value ? 'YES' : 'NO'}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value ? t('yn.yes') : t('yn.no')}</div>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
 </div>`,
 
 CONTACT: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">CONTACT</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
+    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
   </div>
-  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.state ? 'CLOSED' : 'OPEN'}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.state ? t('yn.closed') : t('yn.open')}</div>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
 </div>`,
 
 DIMM: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">DIMMER</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
+    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
   </div>
-  <div class="kv"><span>Fade</span><b id="v${i}">${s.fade}</b></div>
+  <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade}</b></div>
   <div class="field-row">
-    <input id="ref${i}" class="input sm" placeholder="Fade (ms)" style="min-width:120px">
-    <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>Set Fade</button>
+    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.fade')}" style="min-width:120px">
+    <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>${t('cal.btn.fade')}</button>
   </div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
 </div>`,
 
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">RELAY</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail?'ENABLED':'DISABLED'}</span>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
+    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
   </div>
-  <label class="check"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i},"${s.name}")'>Persistence</label>
-  <label class="check"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'>Pulse Mode (ms)</label>
+  <label class="check"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i},"${s.name}")'>${t('cal.check.persist')}</label>
+  <label class="check"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'>${t('cal.check.pulse')}</label>
   <div class="field-row">
-    <input id="ref${i}" class="input sm" placeholder="Pulse time (ms)" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)' style="min-width:120px;${s.pulse ? '' : 'display:none;'}">
+    <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)' style="min-width:120px;${s.pulse ? '' : 'display:none;'}">
   </div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? 'ENABLED' : 'DISABLED'}</button>
+  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
 </div>`,
 
 TIME: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">LOCAL TIME</span><h3>Zona horaria</h3></div>
+    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${t('timezone.title')}</h3></div>
   </div>
   <div class="metric sm" id="v${i}">--</div>
-  <select onchange="setCalib(${i},'timezone','TIME',this.value)"> 
+  <select onchange="setCalib(${i},'timezone','TIME',this.value)">
     <option value="-720" ${s.correction==-720?'selected':''}>UTC-12 (Baker Island)</option>
     <option value="-660" ${s.correction==-660?'selected':''}>UTC-11 (Samoa)</option>
     <option value="-600" ${s.correction==-600?'selected':''}>UTC-10 (Hawái)</option>
@@ -479,20 +606,20 @@ TIME: (s, i) => `<div class="settings-card">
 
 DEFAULT: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
-    <div><span class="eyebrow">GENERAL</span><h3>Configuración del nodo</h3></div>
+    <div><span class="eyebrow">GENERAL</span><h3>${t('cfg.title')}</h3></div>
   </div>
-  <div class="kv"><span>Puerto broadcast</span><b>${genset.broadcast_port}</b></div>
-  <div class="kv"><span>Puerto comando</span><b>${genset.command_port}</b></div>
-  <div class="kv"><span>Report interval</span><b>${genset.report_interval} ms</b></div>
+  <div class="kv"><span>${t('cfg.broadcast')}</span><b>${genset.broadcast_port}</b></div>
+  <div class="kv"><span>${t('cfg.command')}</span><b>${genset.command_port}</b></div>
+  <div class="kv"><span>${t('cfg.interval')}</span><b>${genset.report_interval} ms</b></div>
   <div class="field-row">
-    <input id="broadcast_port" class="input sm" placeholder="Broadcast">
-    <input id="command_port" class="input sm" placeholder="Command">
-    <input id="ref${i}" class="input sm" placeholder="Interval (ms)">
+    <input id="broadcast_port" class="input sm" placeholder="${t('cfg.ph.broadcast')}">
+    <input id="command_port" class="input sm" placeholder="${t('cfg.ph.command')}">
+    <input id="ref${i}" class="input sm" placeholder="${t('cfg.ph.interval')}">
   </div>
-  <label class="check"><input type="checkbox" id="otaChk" onchange="toggleOta(this.checked)"> Arduino OTA</label>
+  <label class="check"><input type="checkbox" id="otaChk" onchange="toggleOta(this.checked)"> ${t('cfg.ota')}</label>
   <div class="btn-row">
-    <button class="btn primary" onclick="setPort(${i})">Guardar</button>
-    <button class="btn danger" onclick="factoryReset()">Factory Reset</button>
+    <button class="btn primary" onclick="setPort(${i})">${t('cfg.save')}</button>
+    <button class="btn danger" onclick="factoryReset()">${t('cfg.factory')}</button>
   </div>
 </div>`
 };
@@ -554,10 +681,10 @@ function formatTime(s) {
 }
 
 function devStatus(s) {
-  if (!s || s.local) return '<span class="status"><span class="dot ok"></span>Local</span>';
+  if (!s || s.local) return '<span class="status"><span class="dot ok"></span>' + t('status.local') + '</span>';
   return (s.age_ms != null && s.age_ms <= 30000)
-    ? '<span class="status"><span class="dot info"></span>Remote</span>'
-    : '<span class="status"><span class="dot bad"></span>Offline</span>';
+    ? '<span class="status"><span class="dot info"></span>' + t('status.remote') + '</span>'
+    : '<span class="status"><span class="dot bad"></span>' + t('status.offline') + '</span>';
 }
 
 function deviceCard(name, value, id, state, fade, type, sensor = null) {
@@ -566,7 +693,7 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
       <div class="device-head">
         <span class="chip neutral">RELAY</span>
         <span class="device-name">${name}</span>
-        <span class="state-text ${state?'on':'off'}" id="dev_${id}">${state ? 'ON' : 'OFF'}</span>
+        <span class="state-text ${state?'on':'off'}" id="dev_${id}">${state ? t('dev.on') : t('dev.off')}</span>
       </div>
       <div class="device-row">
         ${devStatus(sensor)}
@@ -584,10 +711,10 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
       </div>
       <div class="dimmer-row">
         <span class="value-lg"><b id="dev_val_${id}">${displayValue}</b><span class="unit">%</span></span>
-        <span class="state-text ${state?'on':'off'}" id="dev_state_${id}">${state ? 'ON' : 'OFF'}</span>
+        <span class="state-text ${state?'on':'off'}" id="dev_state_${id}">${state ? t('dev.on') : t('dev.off')}</span>
       </div>
       <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" style="background:linear-gradient(to right,var(--accent) ${displayValue}%,var(--border) ${displayValue}%)" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
-      <div class="device-row">${devStatus(sensor)}<span class="small-note">Arrastra para ajustar nivel</span></div>
+      <div class="device-row">${devStatus(sensor)}<span class="small-note">${t('dev.drag')}</span></div>
     </div>`;
   }
   if (type === SensorType.SENSOR_TIME) {
@@ -598,22 +725,22 @@ function deviceCard(name, value, id, state, fade, type, sensor = null) {
     </div>`;
   }
   const SENSOR_DISPLAY = {
-    [SensorType.SENSOR_TEMP]:  { label: 'TEMPERATURE', format: v => v.toFixed(2) + ' °C' },
-    [SensorType.SENSOR_HUMI]:  { label: 'HUMIDITY', format: v => v.toFixed(0) + ' %' },
-    [SensorType.SENSOR_PRESS]: { label: 'PRESSURE', format: v => v.toFixed(0) + ' kPa' },
-    [SensorType.SENSOR_LEVEL]: { label: 'LEVEL', format: v => v.toFixed(0) + ' %' },
-    [SensorType.SENSOR_AIRQ]:  { label: 'AIR QUALITY', format: v => v == 0 ? 'GOOD' : v == 1 ? 'WARN' : v == 2 ? 'BAD' : 'N/A' },
-    [SensorType.SENSOR_RAIN]:  { label: 'RAIN', format: v => v ? 'YES' : 'NO' },
-    [SensorType.SENSOR_LUMI]:  { label: 'LUMINOSITY', format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
-    [SensorType.SENSOR_GENERIC]: { label: 'CUSTOM', format: v => Number(v).toFixed(2) },
-    [SensorType.SENSOR_CONTACT]: { label: 'CONTACT', format: (v,s) => s ? 'CLOSED' : 'OPEN' },
+    [SensorType.SENSOR_TEMP]:  { label: () => sLabel(SensorType.SENSOR_TEMP), format: v => v.toFixed(2) + ' °C' },
+    [SensorType.SENSOR_HUMI]:  { label: () => sLabel(SensorType.SENSOR_HUMI), format: v => v.toFixed(0) + ' %' },
+    [SensorType.SENSOR_PRESS]: { label: () => sLabel(SensorType.SENSOR_PRESS), format: v => v.toFixed(0) + ' kPa' },
+    [SensorType.SENSOR_LEVEL]: { label: () => sLabel(SensorType.SENSOR_LEVEL), format: v => v.toFixed(0) + ' %' },
+    [SensorType.SENSOR_AIRQ]:  { label: () => sLabel(SensorType.SENSOR_AIRQ), format: v => v == 0 ? t('air.good') : v == 1 ? t('air.warn') : v == 2 ? t('air.bad') : 'N/A' },
+    [SensorType.SENSOR_RAIN]:  { label: () => sLabel(SensorType.SENSOR_RAIN), format: v => v ? t('yn.yes') : t('yn.no') },
+    [SensorType.SENSOR_LUMI]:  { label: () => sLabel(SensorType.SENSOR_LUMI), format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
+    [SensorType.SENSOR_GENERIC]: { label: () => sLabel(SensorType.SENSOR_GENERIC), format: v => Number(v).toFixed(2) },
+    [SensorType.SENSOR_CONTACT]: { label: () => sLabel(SensorType.SENSOR_CONTACT), format: (v,s) => s ? t('yn.closed') : t('yn.open') },
   };
   const cfg = SENSOR_DISPLAY[type];
   if (cfg) {
     const dv = (value === 255 || value == null) ? 'N/A' : cfg.format(value, state);
     return `<div class="device-card sensor" data-name="${name}" data-type="${type}">
       <div class="device-head">
-        <span class="chip neutral">${cfg.label}</span>
+        <span class="chip neutral">${cfg.label()}</span>
         <span class="device-name">${name}</span>
       </div>
       <div class="metric" id="dev_${id}">${dv}</div>
@@ -688,19 +815,19 @@ async function loadDevices() {
     const clock = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
     const html = `
       <div class="dash-stats">
-        <div class="stat-card"><span class="stat-label">Actuators</span><span class="stat-value">${actCount}</span></div>
-        <div class="stat-card"><span class="stat-label">Sensors</span><span class="stat-value">${sensCount}</span></div>
-        <div class="stat-card"><span class="stat-label">Actualizado</span><span class="stat-value" style="font-size:18px;align-self:center">${clock}</span></div>
+        <div class="stat-card"><span class="stat-label">${t('stat.actuators')}</span><span class="stat-value">${actCount}</span></div>
+        <div class="stat-card"><span class="stat-label">${t('stat.sensors')}</span><span class="stat-value">${sensCount}</span></div>
+        <div class="stat-card"><span class="stat-label">${t('stat.updated')}</span><span class="stat-value" style="font-size:18px;align-self:center">${clock}</span></div>
       </div>
       <div class="devices-mobile-list">${mobile}</div>
       <div class="devices-desktop-layout">
         <div class="devices-column devices-actuators">
-          <div class="section-title">Actuators</div>
-          <div class="devices-actuator-grid">${actuators || "<div class='empty sm'>No hay actuadores</div>"}</div>
+          <div class="section-title">${t('stat.actuators')}</div>
+          <div class="devices-actuator-grid">${actuators || "<div class='empty sm'>" + t('no.actuators') + "</div>"}</div>
         </div>
         <div class="devices-column devices-sensors">
-          <div class="section-title">Sensors</div>
-          <div class="devices-sensor-grid">${deviceSensors || "<div class='empty sm'>No hay sensores</div>"}</div>
+          <div class="section-title">${t('stat.sensors')}</div>
+          <div class="devices-sensor-grid">${deviceSensors || "<div class='empty sm'>" + t('no.sensors') + "</div>"}</div>
         </div>
       </div>
     `;
@@ -749,10 +876,29 @@ async function loadCalib() {
     });
     html += `
       <div class="settings-general">
-        ${cardRenderers.DEFAULT(
-          { value: 0, min: 0, max: 0 },
-          data.length
-        )}
+        <div class="settings-row">
+          ${cardRenderers.DEFAULT(
+            { value: 0, min: 0, max: 0 },
+            data.length
+          )}
+          <div class="settings-card">
+            <div class="settings-card-head">
+              <div><span class="eyebrow">NETWORK</span><h3>${t('net.title')}</h3></div>
+            </div>
+            <form action="/save" method="post">
+              <div class="field">
+                <label for="ssid">${t('net.ssid')}</label>
+                <input id="ssid" class="input" name="ssid" autocomplete="off" placeholder="${t('net.ssid.ph')}" required>
+              </div>
+              <div class="field">
+                <label for="pass">${t('net.pass')}</label>
+                <input id="pass" class="input" name="pass" type="password" autocomplete="off" placeholder="${t('net.pass.ph')}" required>
+              </div>
+              <button type="submit" class="btn primary">${t('net.save')}</button>
+            </form>
+            <p class="small-note" style="margin:12px 0 0">${t('net.note')}</p>
+          </div>
+        </div>
       </div>
     `;
     html += "</div>";
@@ -775,9 +921,9 @@ async function updateSettingsValues() {
       else if (s.type === SensorType.SENSOR_PRESS)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' kPa';
       else if (s.type === SensorType.SENSOR_RAIN)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value ? "YES" : "NO";
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value ? t('yn.yes') : t('yn.no');
       else if (s.type === SensorType.SENSOR_AIRQ)
-        el.innerText = s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? 'GOOD' : s.value == 1 ? 'WARN' : s.value == 2 ? 'BAD' : 'N/A';
+        el.innerText = s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A';
       else if (s.type === SensorType.SENSOR_LEVEL)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
       else if (s.type === SensorType.TYPE_DIMMER)
@@ -787,7 +933,7 @@ async function updateSettingsValues() {
       else if (s.type === SensorType.SENSOR_GENERIC)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
       else if (s.type === SensorType.SENSOR_CONTACT)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? "CLOSED" : "OPEN";
+        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? t('yn.closed') : t('yn.open');
       else if (s.type === SensorType.SENSOR_TIME)
         el.innerHTML = formatTime(s);
       else
@@ -817,15 +963,15 @@ async function isVirtual(id, path, body = null) {
     clearTimeout(timer);
   } catch (e) {
     if (e && e.name === 'AbortError')
-      alert(`Tiempo de espera agotado: ${sensor.ip} no respondió`);
+      alert(tf('alert.isVirtualTimeout', { ip: sensor.ip }));
     else
-      alert(`Error de red: no se pudo contactar a ${sensor.ip}`);
+      alert(tf('alert.isVirtualNet', { ip: sensor.ip }));
     return { handled:true, ok:false };
   }
   if (!res.ok) {
     let detail = '';
     try { detail = await res.text(); } catch(_) {}
-    alert(`Error en ${sensor.ip} (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+    alert(tf('alert.isVirtualHttp', { ip: sensor.ip, status: res.status, detail: detail ? ': ' + detail : '' }));
     return { handled:true, ok:false };
   }
   return { handled:true, ok:true };
@@ -838,7 +984,7 @@ async function toggleMatterSwitch(i, id, name) {
   const wasOn = btn.classList.contains('on');
   const on = btn.classList.toggle('on');
   btn.classList.toggle('off', !on);
-  btn.textContent = on ? 'ENABLED' : 'DISABLED';
+  btn.textContent = on ? t('chip.enabled') : t('chip.disabled');
   const body =
     `id=${encodeURIComponent(id)}` +
     `&type=avail` +
@@ -848,7 +994,7 @@ async function toggleMatterSwitch(i, id, name) {
     if (!r.ok) {
       btn.classList.toggle('on', wasOn);
       btn.classList.toggle('off', !wasOn);
-      btn.textContent = wasOn ? 'ENABLED' : 'DISABLED';
+      btn.textContent = wasOn ? t('chip.enabled') : t('chip.disabled');
     }
     return;
   }
@@ -868,7 +1014,7 @@ async function setPort(i) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `broadcast=${b}&command=${c}&interval=${r}`
   });
-  alert('Guardado');
+  alert(t('alert.saved'));
 }
 
 async function setCalib(i, type, name, refOverride = null) {
@@ -894,12 +1040,12 @@ async function setCalib(i, type, name, refOverride = null) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch(_) {}
-      alert(`Error local (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+      alert(tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
       return false;
     }
     return true;
   } catch (e) {
-    alert('Error de red al contactar este dispositivo');
+    alert(t('alert.localNet'));
     return false;
   }
 }
@@ -1001,7 +1147,7 @@ async function sendDimmer(id, value) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch(_) {}
-      alert(`Error local (HTTP ${res.status}${detail ? ': ' + detail : ''})`);
+      alert(tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
       return;
     }
     setTimeout(loadDevices, 100);
@@ -1011,14 +1157,14 @@ async function sendDimmer(id, value) {
 }
 
 function factoryReset() {
-  if (!confirm('¿Seguro? Esto borrará todos los ajustes y la información.')) return;
+  if (!confirm(t('factory.confirm'))) return;
   fetch('/factory', { method: 'POST' })
-    .then(() => alert('Reiniciando...'))
-    .catch(() => alert('Error enviando reset'));
+    .then(() => alert(t('factory.doing')))
+    .catch(() => alert(t('factory.err')));
 }
 
 async function toggleOta(enabled) {
-  if (!confirm('El dispositivo se reiniciará para ' + (enabled ? 'activar' : 'desactivar') + ' OTA. ¿Continuar?')) return;
+  if (!confirm(tf(enabled ? 'ota.enableMsg' : 'ota.disableMsg'))) return;
   try {
     await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
   } catch(e) {
@@ -1049,8 +1195,7 @@ async function syncOtaCheckbox() {
 /* -------------------- THEMES -------------------- */
 
 const THEME_MAP = {
-  '#414141':'dark', '#f7f2ff':'light', '#4c834e':'forest',
-  '#61b956':'lime', '#c1af8d':'sand', '#cdfcff':'ice'
+  '#414141':'dark', '#f7f2ff':'light', '#4c834e':'forest', '#c1af8d':'sand'
 };
 
 function setBackground(color){
@@ -1089,9 +1234,9 @@ function renderLogs(logs){
   const coreEl = document.getElementById('log-core');
   const evntEl = document.getElementById('log-events');
   const sensEl = document.getElementById('log-sensors');
-  coreEl.innerHTML = '<h3>Core</h3>';
-  evntEl.innerHTML = '<h3>Events</h3>';
-  sensEl.innerHTML = '<h3>Sensors / Warn / Error</h3>';
+  coreEl.innerHTML = '<h3>' + t('log.core') + '</h3>';
+  evntEl.innerHTML = '<h3>' + t('log.events') + '</h3>';
+  sensEl.innerHTML = '<h3>' + t('log.sensors') + '</h3>';
   logs.forEach(e => {
     const el = document.createElement('div');
     el.className = 'log-entry ' + (e.l === 'CORE' ? 'core' : e.l === 'EVNT' ? 'evnt' : 'sens');
@@ -1218,17 +1363,17 @@ function showStep(n){
   /* ================= STEP 0 ================= */
   if(stepNum === 0) {
     content = `<div class="wizard-step">
-      <h3>Tipo de regla</h3>
-       ${[0,1,2,3].map(t=>{
+      <h3>${t('wiz.type')}</h3>
+       ${[0,1,2,3].map(ti=>{
          const cfg = [
-           {txt:'EDGE - Cambios de estado',desc:'Se ejecuta cuando un sensor cambia de estado'},
-           {txt:'THRESHOLD - Valores límite',desc:'Se ejecuta cuando un valor cruza el umbral'},
-           {txt:'TIME - A una hora',desc:'Ejecuta a una hora fija dentro de un rango de fechas'},
-           {txt:'INTERVAL - Cada X tiempo',desc:'Ejecuta periódicamente cada intervalo'}
-         ][t];
+           {txt:t('wiz.edge'),desc:t('wiz.edge.desc')},
+           {txt:t('wiz.thresh'),desc:t('wiz.thresh.desc')},
+           {txt:t('wiz.time'),desc:t('wiz.time.desc')},
+           {txt:t('wiz.intervalTxt'),desc:t('wiz.interval.desc')}
+         ][ti];
          return `
          <label class="wizard-option">
-           <input type="radio" name="type" value="${t}" ${wizard.data.type===t?'checked':''}>
+           <input type="radio" name="type" value="${ti}" ${wizard.data.type===ti?'checked':''}>
            <div>
              <strong>${cfg.txt}</strong>
              <small>${cfg.desc}</small>
@@ -1241,9 +1386,9 @@ function showStep(n){
   /* ================= STEP 1 ================= */
   else if(stepNum === 1) {
     content = `<div class="wizard-step">
-      <h3>Seleccionar sensores</h3>
+      <h3>${t('wiz.sensors')}</h3>
       <select id="sensorList" multiple size="5" class="input"></select>
-      <span class="wizard-hint">Ctrl/Cmd + clic para seleccionar varios</span>
+      <span class="wizard-hint">${t('wiz.hint')}</span>
     </div>`;
   }
 
@@ -1251,10 +1396,10 @@ function showStep(n){
   else if(stepNum === 2) {
 
     if(wizard.data.sensors.length === 0){
-      content = `<h3>Sin sensores</h3>`;
+      content = `<h3>${t('wiz.noSensors')}</h3>`;
     } else {
 
-      content = `<div class="wizard-step"><h3>Condiciones</h3>`;
+      content = `<div class="wizard-step"><h3>${t('wiz.conditions')}</h3>`;
 
       wizard.data.sensors.forEach(sIdx=>{
         const s = sensorByIndex(sIdx);
@@ -1281,8 +1426,8 @@ function showStep(n){
           <div class="rule-info"><b>${s.name}</b><span>${val}</span></div>
           ${wizard.data.type === 0 ? `
             <select id="cmp_${sIdx}">
-              <option value="0" ${cond.cmp===0?'selected':''}>RISING</option>
-              <option value="1" ${cond.cmp===1?'selected':''}>FALLING</option>
+              <option value="0" ${cond.cmp===0?'selected':''}>${t('wiz.rising')}</option>
+              <option value="1" ${cond.cmp===1?'selected':''}>${t('wiz.falling')}</option>
             </select>
           ` : `
             <div class="field-row">
@@ -1305,17 +1450,17 @@ function showStep(n){
 
      if(wizard.data.type === 2) {
        content = `<div class="wizard-step">
-         <h3>Rango de fechas y hora</h3>
+         <h3>${t('wiz.dates')}</h3>
          <div class="field">
-           <label for="date_start">Desde cuándo:</label>
+           <label for="date_start">${t('wiz.from')}</label>
            <input id="date_start" type="date" value="${wizard.data.date_start}">
          </div>
          <div class="field">
-           <label for="date_end">Hasta cuándo:</label>
+           <label for="date_end">${t('wiz.to')}</label>
            <input id="date_end" type="date" value="${wizard.data.date_end}">
          </div>
          <div class="field">
-           <label>Hora de ejecución:</label>
+           <label>${t('wiz.runAt')}</label>
            <div class="field-row">
              <input id="time_hour" class="input sm" type="number" min="0" max="23" value="${wizard.data.time_hour}" placeholder="Hs" style="flex:1">
              <input id="time_minute" class="input sm" type="number" min="0" max="59" value="${wizard.data.time_minute}" placeholder="Min" style="flex:1">
@@ -1324,9 +1469,9 @@ function showStep(n){
        </div>`;
      } else if(wizard.data.sensors.length > 1) {
        content = `<div class="wizard-step">
-         <h3>Lógica</h3>
-         <label class="wizard-option"><input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''}><div><strong>TODAS las condiciones (AND)</strong></div></label>
-         <label class="wizard-option"><input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''}><div><strong>AL MENOS UNA condición (OR)</strong></div></label>
+         <h3>${t('wiz.logic')}</h3>
+         <label class="wizard-option"><input type="radio" name="logic" value="1" ${wizard.data.logic===1?'checked':''}><div><strong>${t('wiz.all')}</strong></div></label>
+         <label class="wizard-option"><input type="radio" name="logic" value="0" ${wizard.data.logic===0?'checked':''}><div><strong>${t('wiz.any')}</strong></div></label>
        </div>`;
      }
    }
@@ -1334,9 +1479,9 @@ function showStep(n){
   /* ================= STEP 4 ================= */
   else if(stepNum === 4) {
     content = `<div class="wizard-step">
-      <h3>Actuadores</h3>
+      <h3>${t('wiz.actuators')}</h3>
       <select id="actuatorList" multiple size="5" class="input"></select>
-      <span class="wizard-hint">Ctrl/Cmd + clic para seleccionar varios</span>
+      <span class="wizard-hint">${t('wiz.hint')}</span>
     </div>`;
   }
 
@@ -1344,10 +1489,10 @@ function showStep(n){
   else if(stepNum === 5) {
 
     if(wizard.data.actuators.length === 0){
-      content = `<h3>Sin actuadores</h3>`;
+      content = `<h3>${t('wiz.noActuators')}</h3>`;
     } else {
 
-      content = `<div class="wizard-step"><h3>Acciones</h3>`;
+      content = `<div class="wizard-step"><h3>${t('wiz.actions')}</h3>`;
 
       wizard.data.actuators.forEach((aIdx,i)=>{
         const a = sensorByIndex(aIdx);
@@ -1388,18 +1533,18 @@ function showStep(n){
 
     if(wizard.data.type === 3){
       content += `<div class="field">
-        <label for="interval">Intervalo (ms)</label>
+        <label for="interval">${t('wiz.intervalMs')}</label>
         <input id="interval" class="input" type="number" value="${wizard.data.interval||1000}">
       </div>`;
     }
 
     content += `
       <div class="field">
-        <label for="delay">Delay (ms)</label>
+        <label for="delay">${t('wiz.delayMs')}</label>
         <input id="delay" class="input" type="number" value="${wizard.data.delay}">
       </div>
       <div class="field">
-        <label for="cooldown">Cooldown (ms)</label>
+        <label for="cooldown">${t('wiz.cooldownMs')}</label>
         <input id="cooldown" class="input" type="number" value="${wizard.data.cooldown}">
       </div>
     </div>`;
@@ -1410,8 +1555,8 @@ function showStep(n){
   let html = `<div>${content}</div>`;
    html += `
   <div class="wizard-nav">
-    ${n>0?'<button class="btn ghost" onclick="prevStep()">Atrás</button>':''}
-    ${n<steps.length-1?'<button class="btn primary" onclick="nextStep()">Siguiente</button>':'<button class="btn primary" onclick="finishWizard()">Guardar</button>'}
+    ${n>0?'<button class="btn ghost" onclick="prevStep()">' + t('wiz.back') + '</button>':''}
+    ${n<steps.length-1?'<button class="btn primary" onclick="nextStep()">' + t('wiz.next') + '</button>':'<button class="btn primary" onclick="finishWizard()">' + t('wiz.save') + '</button>'}
   </div>`;
 
   document.getElementById('wizardContent').innerHTML = html;
@@ -1447,7 +1592,7 @@ function validateStep(stepNum) {
   if(stepNum === 0) {
     const typeRadio = document.querySelector('input[name="type"]:checked');
     if(!typeRadio) {
-      alert('Debes seleccionar un tipo de regla');
+      alert(t('wiz.selectType'));
       return false;
     }
     return true;
@@ -1455,7 +1600,7 @@ function validateStep(stepNum) {
 
   if(stepNum === 1) {
     if((wizard.data.type === 0 || wizard.data.type === 1) && wizard.data.sensors.length === 0) {
-      alert('Debes seleccionar al menos un sensor para este tipo de regla');
+      alert(t('wiz.needSensor'));
       return false;
     }
     return true;
@@ -1469,12 +1614,12 @@ function validateStep(stepNum) {
 
         if(wizard.data.type === 1) { // THRESHOLD
           if(!threshInput || threshInput.value === '') {
-            alert(`Debes completar el threshold para el sensor`);
+            alert(t('wiz.needThreshold'));
             return false;
           }
           const threshVal = parseFloat(threshInput.value);
           if(isNaN(threshVal) || threshVal < -1000 || threshVal > 10000) {
-            alert(`El threshold debe estar entre -1000 y 10000`);
+            alert(t('wiz.threshRange'));
             return false;
           }
         }
@@ -1494,7 +1639,7 @@ function validateStep(stepNum) {
       const min = parseInt(timeMinEl.value) || 0;
 
       if(hour < 0 || hour > 23 || min < 0 || min > 59) {
-        alert('La hora debe estar entre 00:00 y 23:59');
+        alert(t('wiz.timeRange'));
         return false;
       }
 
@@ -1502,7 +1647,7 @@ function validateStep(stepNum) {
         const start = new Date(dateStartEl.value);
         const end = new Date(dateEndEl.value);
         if(start > end) {
-          alert('La fecha "desde" no puede ser posterior a "hasta"');
+          alert(t('wiz.dateOrder'));
           return false;
         }
       }
@@ -1512,7 +1657,7 @@ function validateStep(stepNum) {
 
   if(stepNum === 4) {
     if(wizard.data.actuators.length === 0) {
-      alert('Debes seleccionar al menos un actuador');
+      alert(t('wiz.needActuator'));
       return false;
     }
     return true;
@@ -1524,7 +1669,7 @@ function validateStep(stepNum) {
       const levelInput = document.getElementById(`level_${aPos}`);
 
       if(!actionSelect) {
-        alert('Error al cargar las acciones');
+        alert(t('wiz.loadActions'));
         return false;
       }
 
@@ -1532,12 +1677,12 @@ function validateStep(stepNum) {
       const aIdx = wizard.data.actuators[aPos];
       const actuator = sensorByIndex(aIdx);
       if(!actuator) {
-        alert('Error al cargar el actuador');
+        alert(t('wiz.loadActuator'));
         return false;
       }
 
       if(action === 3 && actuator.type !== 8) {
-        alert('La acción LEVEL solo se puede usar en dimmers');
+        alert(t('wiz.levelDimmerOnly'));
         return false;
       }
 
@@ -1761,22 +1906,22 @@ async function finishWizard(){
   // ========== VALIDACIONES FRONTEND ==========
 
   if(wizard.data.actuators.length === 0) {
-    alert('Debes seleccionar al menos un actuador');
+    alert(t('wiz.needActuator'));
     return;
   }
 
   if((wizard.data.type === 0 || wizard.data.type === 1) && wizard.data.sensors.length === 0) {
-    alert('Este tipo de regla requiere al menos un sensor');
+    alert(t('wiz.needSensor'));
     return;
   }
 
   if(wizard.data.type === 2) {
     if(wizard.data.time_hour < 0 || wizard.data.time_hour > 23) {
-      alert('La hora debe estar entre 0 y 23');
+      alert(t('wiz.hourRange'));
       return;
     }
     if(wizard.data.time_minute < 0 || wizard.data.time_minute > 59) {
-      alert('Los minutos deben estar entre 0 y 59');
+      alert(t('wiz.minRange'));
       return;
     }
   }
@@ -1786,25 +1931,25 @@ async function finishWizard(){
       const dateStart = new Date(wizard.data.date_start);
       const dateEnd = new Date(wizard.data.date_end);
       if(dateStart > dateEnd) {
-        alert('La fecha "desde" no puede ser posterior a la fecha "hasta"');
+        alert(t('wiz.dateOrder'));
         return;
       }
     }
   }
 
   if(wizard.data.delay < 0 || wizard.data.delay > 60000) {
-    alert('El delay debe estar entre 0 y 60000 ms');
+    alert(t('wiz.delayRange'));
     return;
   }
 
   if(wizard.data.cooldown < 0 || wizard.data.cooldown > 3600000) {
-    alert('El cooldown debe estar entre 0 y 3600000 ms');
+    alert(t('wiz.cooldownRange'));
     return;
   }
 
   if(wizard.data.type === 3) {
     if(wizard.data.interval < 1000 || wizard.data.interval > 3600000) {
-      alert('El intervalo debe estar entre 1000 y 3600000 ms');
+      alert(t('wiz.intervalRange'));
       return;
     }
   }
@@ -1812,7 +1957,7 @@ async function finishWizard(){
   wizard.data.actuators.forEach((aIdx, aPos) => {
     const level = wizard.data.levels[aPos] || 0;
     if(level < 0 || level > 100) {
-      alert(`El level del actuador debe estar entre 0 y 100 (actual: ${level})`);
+      alert(tf('wiz.levelActuator', { level }));
       return;
     }
   });
@@ -1823,7 +1968,7 @@ async function finishWizard(){
     if(!actuator) return;
 
     if(action === 3 && actuator.type !== 8) {
-      alert(`La acción LEVEL solo se puede usar en dimmers`);
+      alert(t('wiz.levelDimmerOnly'));
       return;
     }
   });
@@ -1903,7 +2048,7 @@ async function finishWizard(){
 
 function editRule(i){
   loadSensorsAndActuators().then(()=>{
-    document.getElementById('ruleModalTitle').textContent='Editar regla de automatización';
+    document.getElementById('ruleModalTitle').textContent=t('wiz.titleEdit');
     startWizard(i);
     document.getElementById('ruleModal').style.display='flex';
   });
@@ -1914,7 +2059,7 @@ function closeRule(){
 }
 
 async function deleteRule(i){
-  if(!confirm('¿Eliminar la regla '+i+'?')) return;
+  if(!confirm(tf('wiz.deleteConfirm', { id: i }))) return;
   await fetch('/rules/delete',{
     method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
@@ -1946,14 +2091,14 @@ async function loadRules(){
         <div class="rule-head">
           <span class="chip neutral">${typeName[r.type] || 'RULE'} #${r.id}</span>
           <div class="rule-actions">
-            <button class="btn ghost sm" onclick="editRule(${r.id})">Editar</button>
-            <button class="btn danger sm" onclick="deleteRule(${r.id})">Eliminar</button>
+            <button class="btn ghost sm" onclick="editRule(${r.id})">${t('wiz.edit')}</button>
+            <button class="btn danger sm" onclick="deleteRule(${r.id})">${t('wiz.delete')}</button>
           </div>
         </div>
-        <div class="rule-info"><span>Sensor(es)</span><b>${r.sensors.join(", ")}</b></div>
-        <div class="rule-info"><span>Condición</span><b>${r.logical_and ? 'AND' : 'OR'}</b></div>
-        <div class="rule-info"><span>Actuador(es)</span><b>${r.actuators.join(", ")}</b></div>
-        <div class="rule-info"><span>Delay / Cooldown</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
+        <div class="rule-info"><span>${t('rule.sensors')}</span><b>${r.sensors.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.logic')}</span><b>${r.logical_and ? 'AND' : 'OR'}</b></div>
+        <div class="rule-info"><span>${t('rule.actions')}</span><b>${r.actuators.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.delay')}</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
       </div>`).join('') + '</div>';
     table.innerHTML = html;
   } catch(e) {
@@ -1984,16 +2129,40 @@ if(location.search.indexOf('saved=1') >= 0){
     if(e.key === 'Escape' && modal.style.display === 'flex') closeRule();
   });
 })();
+
+/* -------------------- LANGUAGE SELECTOR -------------------- */
+
+function setLang(l) {
+  LANG = (l === 'en') ? 'en' : 'es';
+  try { localStorage.setItem('lang', LANG); } catch(e) {}
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('.langbtn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.lang === LANG);
+  });
+  const tab = window.activeTab || 'control';
+  if (tab === 'control') loadDevices();
+  else if (tab === 'auto') loadRules();
+  else if (tab === 'config') { loadCalib(); syncOtaCheckbox(); }
+  else if (tab === 'logs') refreshLogs();
+}
+
+document.querySelectorAll('.langbtn').forEach(btn => {
+  btn.addEventListener('click', () => setLang(btn.dataset.lang || 'es'));
+});
+
+setLang(LANG);
 </script>
 <div id="ruleModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
   <div class="modal-content">
     <div class="modal-head">
-      <h2 id="ruleModalTitle">Nueva regla de automatización</h2>
+      <h2 id="ruleModalTitle" data-i18n="wiz.titleNew">Nueva regla de automatización</h2>
       <button type="button" class="icon-btn" onclick="closeRule()" aria-label="Cerrar">×</button>
     </div>
     <div id="wizardContent"></div>
     <div class="modal-foot">
-      <button class="btn ghost sm" onclick="closeRule()">Cancelar</button>
+      <button class="btn ghost sm" onclick="closeRule()" data-i18n="wiz.cancel">Cancelar</button>
     </div>
   </div>
 </div>

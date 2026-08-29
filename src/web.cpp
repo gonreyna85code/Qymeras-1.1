@@ -124,12 +124,16 @@ static void handleCorsOptions() {
 }
 
 void sendStartupJS() {
-  if (WiFi.getMode() == WIFI_AP)
-    server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
-  else
-    server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
+  if (WiFi.getMode() == WIFI_AP) {
+    server.sendContent_P(PSTR("let savedTab='config';show(savedTab);"));
+  } else {
+    server.sendContent_P(
+      PSTR("let savedTab=(localStorage.getItem('tab')||'control');"
+           "savedTab=['control','auto','config','logs'].includes(savedTab)?savedTab:'control';"
+           "show(savedTab);"));
+  }
   server.sendContent_P(
-    PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+    PSTR("['control','auto','config','logs'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
   server.sendContent_P(
     PSTR("window.genset={broadcast_port:"));
   server.sendContent(String(core::genset.broadcast_port));
