@@ -1,69 +1,84 @@
 #pragma once
-#include <Arduino.h>
+/*
+  config.h - Qymera configuration for the native ESP-IDF port (qymera-IDF)
+
+  This branch builds Qymera solely with ESP-IDF drivers. There is deliberate
+  #error on the Arduino framework: the historical Arduino build lives on the
+  `main` branch. All platform access goes through src/hal/ (qhal/qudp/
+  qhttpserver), so the deterministic core modules stay portable.
+*/
+
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <math.h>
+
+#include "esp_system.h"
+#include "esp_attr.h"
 
 /* =========================
-   PLATAFORMA & COMPATIBILIDAD
+   PLATAFORMA
    ========================= */
 
-// Auto-detección
-#if defined(ESP8266)
-#define PLATFORM_ESP8266 1
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-typedef ESP8266WebServer WebServerCompat;
-#define PROGMEM_ATTR ICACHE_FLASH_ATTR
-#define GET_CHIP_ID() ESP.getChipId()
-#define SET_WIFI_SLEEP() WiFi.setSleepMode(WIFI_NONE_SLEEP)
-#define SET_AUTO_CONNECT() WiFi.setAutoConnect(true), WiFi.setAutoReconnect(true)
-#define RESET_MCU() ESP.reset()
+#if defined(ESP_PLATFORM) && !defined(ARDUINO)
+#define PLATFORM_ESP_IDF 1
 
-#elif defined(ESP32)
-#define PLATFORM_ESP32 1
-#include <WiFi.h>
-#include <WebServer.h>
-typedef WebServer WebServerCompat;
-#define ICACHE_FLASH IRAM_ATTR
-#define GET_CHIP_ID() ((uint32_t)ESP.getEfuseMac())
-#define SET_WIFI_SLEEP() WiFi.setSleep(false)
-#define SET_AUTO_CONNECT() WiFi.setAutoReconnect(true)
-#define RESET_MCU() ESP.restart()
+#include "hal/qstr.h"
+#include "hal/qhal.h"
+#include "hal/qudp.h"
+#include "hal/qhttpserver.h"
 
-#elif defined(ESP32S2)
-#define PLATFORM_ESP32S2 1
-#include <WiFi.h>
-#include <WebServer.h>
-typedef WebServer WebServerCompat;
-#define ICACHE_FLASH IRAM_ATTR
-#define GET_CHIP_ID() ((uint32_t)ESP.getEfuseMac())
-#define SET_WIFI_SLEEP() WiFi.setSleep(false)
-#define SET_AUTO_CONNECT() WiFi.setAutoReconnect(true)
-#define RESET_MCU() ESP.restart()
+typedef QymeraServer WebServerCompat;
 
-#elif defined(ESP32S3)
-#define PLATFORM_ESP32S3 1
-#include <WiFi.h>
-#include <WebServer.h>
-typedef WebServer WebServerCompat;
-#define ICACHE_FLASH IRAM_ATTR
-#define GET_CHIP_ID() ((uint32_t)ESP.getEfuseMac())
-#define SET_WIFI_SLEEP() WiFi.setSleep(false)
-#define SET_AUTO_CONNECT() WiFi.setAutoReconnect(true)
-#define RESET_MCU() ESP.restart()
+#define PROGMEM
+#define PSTR(s) s
+#define PROGMEM_ATTR
+#define ICACHE_FLASH_ATTR
+#define ICACHE_FLASH
 
-#elif defined(ESP32C3)
-#define PLATFORM_ESP32C3 1
-#include <WiFi.h>
-#include <WebServer.h>
-typedef WebServer WebServerCompat;
-#define ICACHE_FLASH IRAM_ATTR
-#define GET_CHIP_ID() ((uint32_t)ESP.getEfuseMac())
-#define SET_WIFI_SLEEP() WiFi.setSleep(false)
-#define SET_AUTO_CONNECT() WiFi.setAutoReconnect(true)
-#define RESET_MCU() ESP.restart()
+#define GET_CHIP_ID() qhal_chip_id()
+#define SET_WIFI_SLEEP() ((void)0)
+#define SET_AUTO_CONNECT() ((void)0)
+#define RESET_MCU() qhal_restart()
 
 #else
-#error "Plataforma no soportada. Usa: ESP8266, ESP32, ESP32S2, ESP32S3, ESP32C3"
+#error "qymera-IDF branch requires a native ESP-IDF build (ESP_PLATFORM && !ARDUINO). Arduino builds live on the 'main' branch."
 #endif
+
+/* =========================
+   ARDUINO-COMPAT MINI ALIASES
+   Only the tokens the Qymera modules actually use. Everything maps to native
+   ESP-IDF via src/hal/. Kept intentionally tiny.
+   ========================= */
+
+#define LOW 0
+#define HIGH 1
+#define OUTPUT 1
+#define INPUT 0
+
+inline void pinMode(uint8_t pin, uint8_t mode) {
+  if (mode == OUTPUT) qhal_pin_output(pin);
+  else                qhal_pin_input(pin);
+}
+inline void digitalWrite(uint8_t pin, uint8_t val) {
+  qhal_digital_write(pin, val != LOW);
+}
+inline uint8_t digitalRead(uint8_t pin) {
+  return qhal_digital_read(pin) ? HIGH : LOW;
+}
+inline void delay(unsigned long ms) {
+  qhal_delay(ms);
+}
+
+template <typename T> inline T constrain(T v, T lo, T hi) {
+  return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
+inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
 
 /* =========================
    LIMITES DEL SISTEMA
@@ -74,7 +89,9 @@ typedef WebServer WebServerCompat;
 #define MAX_RULES 20
 
 /* =========================
-   EEPROM
+   PERSISTENCIA (imagen EEPROM 4 KiB)
+   Offsets historicales; la imagen completa vive en NVS como un único blob y
+   todos los accesos byte-a-byte ocurren sobre una copia en RAM.
    ========================= */
 
 #define EEPROM_SIZE 4096
@@ -84,10 +101,6 @@ typedef WebServer WebServerCompat;
    kept only as the layout anchor and is zeroed by factory reset. Do not use. */
 #define EEPROM_RELAY_STATE_START 0
 #define EEPROM_RELAY_STATE_SIZE 10
-
-/* OTA flag & device identity token relocated below (after the rules region) so
-   they do not alias the relay-state region (0..9) or the credentials block.
-   The token is a chip-ID provisioning check, NOT a firmware hash. */
 
 /* WiFi credentials */
 #define EEPROM_CRED_START (EEPROM_RELAY_STATE_START + EEPROM_RELAY_STATE_SIZE)
@@ -141,41 +154,19 @@ typedef WebServer WebServerCompat;
 
 /* =========================
    PWM ABSTRACTION (0-255, 8-bit)
-   ESP8266: default analogWrite range is 1023 (10-bit)
-   ESP32:   default analogWrite range is 255 (8-bit)
-   Common abstraction: map to 0-255 on both platforms
+   Backed by LEDC (native) via qhal, 1 kHz / 8-bit to match the historical
+   Arduino core behavior.
    ========================= */
 
-#ifdef PLATFORM_ESP8266
-  #define PWM_MAX_RAW 1023
-  #define PWM_MAX_OUT 255
-  inline void pwmSetup(uint8_t pin) {
-    static bool pwm_range_set = false;
-    if (!pwm_range_set) {
-      analogWriteRange(PWM_MAX_OUT);
-      analogWriteFreq(1000);
-      pwm_range_set = true;
-    }
-    pinMode(pin, OUTPUT);
-  }
-  inline void pwmWritePin(uint8_t pin, uint8_t value) {
-    analogWrite(pin, value);
-  }
-  inline uint8_t pwmReadPin(uint8_t pin) {
-    return (uint8_t)(analogRead(pin) * PWM_MAX_OUT / PWM_MAX_RAW);
-  }
+#define PWM_MAX_RAW 4095
+#define PWM_MAX_OUT 255
 
-#elif defined(PLATFORM_ESP32) || defined(PLATFORM_ESP32S2) \
-   || defined(PLATFORM_ESP32S3) || defined(PLATFORM_ESP32C3)
-  #define PWM_MAX_RAW 4095
-  #define PWM_MAX_OUT 255
-  inline void pwmSetup(uint8_t pin) {
-    pinMode(pin, OUTPUT);
-  }
-  inline void pwmWritePin(uint8_t pin, uint8_t value) {
-    analogWrite(pin, value);
-  }
-  inline uint8_t pwmReadPin(uint8_t pin) {
-    return (uint8_t)(analogRead(pin) * PWM_MAX_OUT / PWM_MAX_RAW);
-  }
-#endif
+inline void pwmSetup(uint8_t pin) {
+  qhal_pwm_setup(pin);
+}
+inline void pwmWritePin(uint8_t pin, uint8_t value) {
+  qhal_pwm_write(pin, value);
+}
+inline uint8_t pwmReadPin(uint8_t pin) {
+  return qhal_pwm_read(pin);
+}

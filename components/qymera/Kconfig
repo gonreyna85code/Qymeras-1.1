@@ -1,0 +1,18 @@
+menu "Qymera runtime"
+
+config QYMERA_LOOP_STACK_SIZE
+    int "Main loop task stack size (bytes)"
+    default 8192
+    help
+        Stack budget for the Qymera core loop task. HTTP parsing, rule
+        evaluation and JSON building all run here.
+
+config QYMERA_WEB_PORT
+    int "HTTP web server port"
+    default 80
+
+config QYMERA_REPORT_INTERVAL_DEFAULT_MS
+    int "Default report interval (ms)"
+    default 5000
+
+endmenu

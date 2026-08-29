@@ -1,5 +1,4 @@
 #include "sensors.h"
-#include <WiFiClient.h>
 #include <time.h>
 #include "config.h"
 #include "core.h"
@@ -36,8 +35,8 @@ static void bindLocalSensor(uint8_t idx, const String &name, SensorType type) {
   c.type = type;
   c.local = true;
    c.device_uid = GET_CHIP_ID();
-   IPAddress ip = WiFi.localIP();
-   snprintf(c.device_ip, sizeof(c.device_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+   QIP ip = qhal_local_ip();
+   snprintf(c.device_ip, sizeof(c.device_ip), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
 }
 
 // Local-only name lookup for the sensor read/registration functions. A name
@@ -410,7 +409,7 @@ void relay(const String &key, uint8_t pin, bool inverted) {
   }
   auto &c = calibrations[idx];
   if (is_new) {
-    Serial.printf(
+    printf(
       "REGISTER idx=%d name=%s persist=%d pers=%d\n",
       idx,
       c.name.c_str(),
@@ -557,7 +556,7 @@ void ntp(const RTCTime &t) {
 }
 
 void initNTP() {
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  qhal_sntp_init();
 }
 
 void updateNTPTime() {
@@ -643,10 +642,7 @@ void onRemoteSensorDiscovered(
       web::saveCalibrationSlot(idx);
     }
     if (!timeValid() && sensor_value > 1704067200) {
-      timeval tv;
-      tv.tv_sec = (time_t)sensor_value;
-      tv.tv_usec = 0;
-      settimeofday(&tv, nullptr);
+      qhal_settimeofday((time_t)sensor_value);
       rtc(getTime());
     }
     return;

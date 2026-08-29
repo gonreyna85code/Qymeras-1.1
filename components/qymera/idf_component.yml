@@ -1,0 +1,8 @@
+name: qymera
+version: "1.1.0"
+description: >
+  Qymera native ESP-IDF component. Deterministic IoT runtime: WiFi web UI,
+  UDP mesh protocol v5, sensors/actuators, calibration, automations and 3-layer
+  logging. Zero external dependencies (Matter bridge lives in the example app).
+dependencies:
+  idf: ">=5.0"

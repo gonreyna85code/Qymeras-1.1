@@ -1,0 +1,12 @@
+menu "Qymera example application"
+
+config QYMERA_MATTER_ENABLE
+    bool "Build the Matter bridge (ESP-Matter SDK required)"
+    default n
+    help
+        Exposes Qymera relays as Matter OnOff endpoints and dimmers as
+        LevelControl endpoints. Requires the espressif/esp_matter dependency
+        declared in main/idf_component.yml. Keep disabled for a plain Qymera
+        build.
+
+endmenu

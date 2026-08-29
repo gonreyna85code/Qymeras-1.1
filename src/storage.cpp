@@ -1,8 +1,5 @@
 #include "storage.h"
-#include <EEPROM.h>
-#ifdef ESP32
-#include <Preferences.h>
-#endif
+#include <nvs_flash.h>
 #include "automations.h"
 #include "core.h"
 #include "log.h"
@@ -11,46 +8,72 @@
 
 namespace storage {
 
-#if defined(ESP32)
-static Preferences prefs;
-static bool prefs_ready = false;
+/* =========================
+   PERSISTENCE BACKEND (native NVS)
+   The historical byte-addressed EEPROM (4 KiB) is kept as layout truth; the
+   whole 4 KiB image lives in RAM (shadow) and is flushed to NVS as one blob on
+   commit(). Unwritten bytes read 0xFF, matching classic EEPROM semantics.
+   ========================= */
+
+static nvs_handle_t nvs_h = 0;
+static bool nvs_ready = false;
+static uint8_t eeprom_img[EEPROM_SIZE];
 
 void begin() {
-  if (!prefs_ready) {
-    prefs_ready = prefs.begin("eeprom", false);
-    if (!prefs_ready) logger::error("Preferences begin FAILED - defaults will be used");
+  if (nvs_ready) return;
+  nvs_ready = true;
+  if (nvs_open("qymera", NVS_READWRITE, &nvs_h) == ESP_OK) {
+    size_t sz = EEPROM_SIZE;
+    esp_err_t err = nvs_get_blob(nvs_h, "eedata", eeprom_img, &sz);
+    if (err == ESP_OK && sz == EEPROM_SIZE) return;
+  }
+  memset(eeprom_img, 0xFF, sizeof(eeprom_img));
+}
+
+uint8_t read(int addr) {
+  begin();
+  if (addr < 0 || addr >= EEPROM_SIZE) return 0xFF;
+  return eeprom_img[addr];
+}
+
+void write(int addr, uint8_t val) {
+  begin();
+  if (addr < 0 || addr >= EEPROM_SIZE) return;
+  eeprom_img[addr] = val;
+}
+
+template <typename T> bool get(int addr, T &obj) {
+  begin();
+  if (addr < 0 || (size_t)addr + sizeof(T) > EEPROM_SIZE) {
+    memset(&obj, 0, sizeof(T));
+    return false;
+  }
+  memcpy(&obj, eeprom_img + addr, sizeof(T));
+  return true;
+}
+
+template <typename T> bool put(int addr, const T &obj) {
+  begin();
+  if (addr < 0 || (size_t)addr + sizeof(T) > EEPROM_SIZE) return false;
+  memcpy(eeprom_img + addr, &obj, sizeof(T));
+  return true;
+}
+
+void commit() {
+  begin();
+  if (!nvs_h) return;
+  if (nvs_set_blob(nvs_h, "eedata", eeprom_img, EEPROM_SIZE) == ESP_OK) {
+    nvs_commit(nvs_h);
   }
 }
-uint8_t read(int addr) { return prefs.getUChar(String(addr).c_str(), 0); }
-void write(int addr, uint8_t val) { prefs.putUChar(String(addr).c_str(), val); }
-template<typename T> bool get(int addr, T &obj) {
-  // IMPORTANT: prefs.getBytes() leaves the buffer untouched when the key is
-  // missing or corrupted. Zero-fill first so unprovisioned slots never expose
-  // stack garbage (this was the "random fade on every sensor" bug).
-  memset(&obj, 0, sizeof(T));
-  size_t n = prefs.getBytes(String(addr).c_str(), &obj, sizeof(T));
-  return n == sizeof(T);
-}
-template<typename T> bool put(int addr, const T &obj) {
-  return prefs.putBytes(String(addr).c_str(), &obj, sizeof(T)) == sizeof(T);
-}
-void commit() {}
-void clearAll() { prefs.clear(); }
 
-#else
-void begin() { EEPROM.begin(EEPROM_SIZE); }
-uint8_t read(int addr) { return EEPROM.read(addr); }
-void write(int addr, uint8_t val) { EEPROM.write(addr, val); }
-template<typename T> bool get(int addr, T &obj) { EEPROM.get(addr, obj); return true; }
-template<typename T> bool put(int addr, const T &obj) { EEPROM.put(addr, obj); return true; }
-void commit() { EEPROM.commit(); }
 void clearAll() {
-  memset(EEPROM.getDataPtr() + EEPROM_RELAY_STATE_START, 0, EEPROM_RELAY_STATE_SIZE);
-  memset(EEPROM.getDataPtr() + EEPROM_CRED_START, 0, EEPROM_CRED_SIZE);
-  memset(EEPROM.getDataPtr() + EEPROM_GENSET_START + 12, 0, EEPROM_SIZE - EEPROM_GENSET_START - 12);
+  begin();
+  memset(eeprom_img + EEPROM_RELAY_STATE_START, 0, EEPROM_RELAY_STATE_SIZE);
+  memset(eeprom_img + EEPROM_CRED_START, 0, EEPROM_CRED_SIZE);
+  memset(eeprom_img + EEPROM_GENSET_START + 12, 0,
+         EEPROM_SIZE - EEPROM_GENSET_START - 12);
 }
-
-#endif
 
 /* Persisted calibration slot.
    magic/version validate the slot is provisioned and current; uid ties the
@@ -89,10 +112,9 @@ static bool ota_integrity_verified = false;
 
 static uint32_t calculateFirmwareHash() {
   // Not a full-image hash: a prior `(uint8_t*)0x0000` deref here caused
-  // Exception 28 (LOAD Prohibited) on every OTA enable -- the reported crash.
-  // Use the chip-unique MAC token (GET_CHIP_ID in config.h) instead: no flash
-  // deref (cannot fault) and stable across firmware updates, so with no
-  // ArduinoOTA.onEnd() re-provisioning the gate cannot self-disable OTA after
+  // Exception 28 (LOAD Prohibited) on every OTA enable. Use the chip-unique MAC
+  // token (GET_CHIP_ID in config.h) instead: no flash deref (cannot fault) and
+  // stable across firmware updates, so the gate cannot self-disable OTA after
   // an update. Best-effort / detection-only (no SHA-256), per design.
   return GET_CHIP_ID();
 }
@@ -105,7 +127,6 @@ bool verifyOtaIntegrity() {
   bool provisioned = (expected != 0xFFFFFFFFu && expected != 0u);
   uint32_t actual = calculateFirmwareHash();
   if (!provisioned) {
-    begin();
     put(EEPROM_OTA_HASH_ADDR, actual);
     commit();
     ota_integrity_verified = true;
@@ -127,7 +148,6 @@ uint8_t loadOtaFlag() {
 }
 
 void saveOtaFlag(uint8_t flag) {
-  begin();
   write(EEPROM_OTA_FLAG_ADDR, (flag == 1) ? 1 : 0);
   commit();
 }
@@ -158,12 +178,11 @@ void loadCredentials(String &ssid, String &password) {
 }
 
 void saveCredentials(const String &ssid, const String &password) {
-  begin();
-  write(EEPROM_CRED_START, ssid.length());
-  for (int i = 0; i < ssid.length(); i++) write(EEPROM_CRED_START + 1 + i, ssid[i]);
-  int offset = EEPROM_CRED_START + 1 + ssid.length();
-  write(offset, password.length());
-  for (int i = 0; i < password.length(); i++) write(offset + 1 + i, password[i]);
+  write(EEPROM_CRED_START, (uint8_t)ssid.length());
+  for (int i = 0; i < (int)ssid.length(); i++) write(EEPROM_CRED_START + 1 + i, (uint8_t)ssid[i]);
+  int offset = EEPROM_CRED_START + 1 + (int)ssid.length();
+  write(offset, (uint8_t)password.length());
+  for (int i = 0; i < (int)password.length(); i++) write(offset + 1 + i, (uint8_t)password[i]);
   commit();
 }
 
@@ -192,9 +211,6 @@ void saveGeneralSettings(uint16_t broadcast_port, uint16_t command_port, uint32_
 
 void factoryReset() {
   begin();
-#if defined(ESP32)
-  prefs.clear();
-#else
   clearAll();
   uint16_t def_broadcast = BROADCAST_PORT;
   uint16_t def_command = COMMAND_PORT;
@@ -203,7 +219,6 @@ void factoryReset() {
   put(addr, def_broadcast); addr += sizeof(uint16_t);
   put(addr, def_command); addr += sizeof(uint16_t);
   put(addr, def_interval);
-#endif
   commit();
   delay(100);
   RESET_MCU();
@@ -264,7 +279,6 @@ void saveCalibrationSlot(int index) {
 }
 
 void saveCalibration() {
-  begin();
   for (int i = 0; i < MAX_PERSISTED_SENSORS; i++) saveCalibrationSlot(i);
 }
 

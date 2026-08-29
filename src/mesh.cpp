@@ -16,26 +16,33 @@ static_assert(sizeof(PacketV4) == 47, "PacketV4 must be 47 bytes");
 static_assert(sizeof(Packet) == 58, "Packet must be 58 bytes");
 static_assert(sizeof(LogPacket) == 66, "LogPacket must be 66 bytes");
 
-WiFiUDP udp;
+Qudp udp;
 ReportEntry reports[MAX_SENSORS];
 float MIN_VAL = -50.0f;
 float MAX_VAL = 150.0f;
 static RemoteDevice remote_devices[MAX_SENSORS];
 static int remote_device_count = 0;
 static unsigned long last_cleanup = 0;
-static WiFiUDP mesh_udp;
-static WiFiUDP cmd_udp;
+static Qudp mesh_udp;
+static Qudp cmd_udp;
 static SensorDiscoveryCallback sensor_callback = nullptr;
 static CommandCallback command_cb = nullptr;
 
 // ================= TRANSPORT =================
+// Native ESP-IDF port carries mesh traffic exclusively over UDP. The historical
+// ESP-NOW transport and espnow_p2p.* live on the 'main' (Arduino) branch and
+// are not built here. TRANSPORT_ESPNOW is kept in the enum only for source
+// compatibility; selecting it is a no-op with a warning.
 static Transport transport = TRANSPORT_UDP;
 
 void setTransport(Transport t) {
   if (t == transport) return;
+  if (t != TRANSPORT_UDP) {
+    logger::warnf("Mesh transport %u not available on ESP-IDF; keeping UDP", (uint8_t)t);
+    return;
+  }
   transport = t;
-  espnow_set_enabled(t == TRANSPORT_ESPNOW);
-  logger::coref("Mesh transport: %s", t == TRANSPORT_ESPNOW ? "ESP-NOW" : "UDP");
+  logger::coref("Mesh transport: UDP");
 }
 
 Transport getTransport() {
@@ -45,15 +52,11 @@ Transport getTransport() {
 void init() {
   mesh_udp.begin(core::genset.broadcast_port);
   udp.begin(core::genset.command_port);
-  espnow_init();
 }
 
 static bool udpTxReady() {
-#if defined(ESP32)
-  return WiFi.getMode() != WIFI_MODE_NULL;
-#else
-  return true;
-#endif
+  return qhal_wifi_init_done() &&
+         (qhal_wifi_ap_active() || qhal_wifi_sta_connected());
 }
 
 void setSensorDiscoveryCallback(SensorDiscoveryCallback cb) {
@@ -207,7 +210,7 @@ static void parseBuffer(const uint8_t *buf, uint16_t len, const char *remote_ip,
 
 // ================= UDP PARSER =================
 
-static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
+static void parseUDPPacket(Qudp &socket, uint32_t now_ms) {
   // RX buffer must hold the largest configured discovery batch.
   static uint8_t buf[DISCOVERY_MAX_UDP_PACKET];
   int processed = 0;
@@ -231,14 +234,12 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
       while (socket.available()) socket.read();
       break;
     }
-    char remote_ip[16];
-    IPAddress rip = socket.remoteIP();
-    snprintf(remote_ip, sizeof(remote_ip), "%d.%d.%d.%d", rip[0], rip[1], rip[2], rip[3]);
-    parseBuffer(buf, len, remote_ip, now_ms);
-    // Guarantee the datagram is fully dequeued. On ESP32 a socket can re-yield
-    // the same datagram across ticks if the leading read() does not consume it
-    // entirely, which would spin loop() at full speed (log flood + stale mesh).
-    // available()==0 here in the normal case (no-op); this just closes the gap.
+    const char *rip = socket.remoteIPStr();
+    parseBuffer(buf, len, rip ? rip : "0.0.0.0", now_ms);
+    // Guarantee the datagram is fully dequeued. On legacy Arduino a socket can
+    // re-yield the same datagram across ticks if the leading read() does not
+    // consume it entirely, which would spin loop() at full speed. lwIP sockets
+    // drain atomically per recvfrom(), but the drain is kept as a cheap guard.
     while (socket.available()) socket.read();
     processed++;
   }
@@ -247,20 +248,8 @@ static void parseUDPPacket(WiFiUDP &socket, uint32_t now_ms) {
 // ================= TICK =================
 
 void tick(uint32_t now_ms) {
-  if (transport == TRANSPORT_UDP) {
-    parseUDPPacket(mesh_udp, now_ms);
-    parseUDPPacket(udp, now_ms);
-  } else if (transport == TRANSPORT_ESPNOW) {
-    uint8_t buf[250];
-    uint16_t len;
-    uint8_t src[6];
-    while (espnow_recv(buf, &len, src)) {
-      char mac_str[24];
-      snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-        src[0], src[1], src[2], src[3], src[4], src[5]);
-      parseBuffer(buf, len, mac_str, now_ms);
-    }
-  }
+  parseUDPPacket(mesh_udp, now_ms);
+  parseUDPPacket(udp, now_ms);
 }
 
 // ================= DEVICES =================
@@ -322,8 +311,6 @@ void sendCommand(uint32_t remote_uid, const char *remote_ip, uint32_t sensor_id,
     cmd_udp.beginPacket(remote_ip, core::genset.command_port);
     cmd_udp.write(buf, sizeof(buf));
     cmd_udp.endPacket();
-  } else if (espnow_is_enabled()) {
-    espnow_send_broadcast(buf, sizeof(buf));
   }
 }
 
@@ -368,45 +355,25 @@ static void sendUdpBatch(uint8_t *buf, int sensor_count) {
 }
 
 void sendBinaryReport() {
-  if (transport == TRANSPORT_UDP) {
-    // Batching: group local entities into datagrams of up to
-    // DISCOVERY_MAX_UDP_PACKET bytes. Only local entities are announced.
-    static uint8_t batch[DISCOVERY_MAX_UDP_PACKET];
-    int sensor_count = 0;
-    const int header_size = sizeof(PacketHeaderV4);
-    for (int i = 0; i < MAX_SENSORS; i++) {
-      auto &c = sensors::calibrations[i];
-      if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
-      if (sensor_count > 0 &&
-          header_size + (sensor_count + 1) * sizeof(Packet) > DISCOVERY_MAX_UDP_PACKET) {
-        sendUdpBatch(batch, sensor_count);
-        sensor_count = 0;
-      }
-      Packet pkt;
-      fillPacket(c, pkt);
-      memcpy(batch + header_size + sensor_count * sizeof(Packet), &pkt, sizeof(pkt));
-      sensor_count++;
+  // Batching: group local entities into datagrams of up to
+  // DISCOVERY_MAX_UDP_PACKET bytes. Only local entities are announced.
+  static uint8_t batch[DISCOVERY_MAX_UDP_PACKET];
+  int sensor_count = 0;
+  const int header_size = sizeof(PacketHeaderV4);
+  for (int i = 0; i < MAX_SENSORS; i++) {
+    auto &c = sensors::calibrations[i];
+    if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
+    if (sensor_count > 0 &&
+        header_size + (sensor_count + 1) * sizeof(Packet) > DISCOVERY_MAX_UDP_PACKET) {
+      sendUdpBatch(batch, sensor_count);
+      sensor_count = 0;
     }
-    sendUdpBatch(batch, sensor_count);
-  } else if (espnow_is_enabled()) {
-    // ESP-NOW: one entity per broadcast (RX side uses a 250-byte buffer).
-    for (int i = 0; i < MAX_SENSORS; i++) {
-      auto &c = sensors::calibrations[i];
-      if (!c.local || c.type == sensors::SENSOR_NONE || c.uid == 0) continue;
-      PacketHeaderV4 hdr;
-      hdr.magic = 0xA5;
-      hdr.version = PACKET_VERSION;
-      hdr.uid = GET_CHIP_ID();
-      hdr.kind = PACKET_SENSOR;
-      hdr.size = sizeof(PacketHeaderV4) + sizeof(Packet);
-      Packet pkt;
-      fillPacket(c, pkt);
-      uint8_t buf[sizeof(PacketHeaderV4) + sizeof(Packet)];
-      memcpy(buf, &hdr, sizeof(hdr));
-      memcpy(buf + sizeof(hdr), &pkt, sizeof(pkt));
-      espnow_send_broadcast(buf, sizeof(buf));
-    }
+    Packet pkt;
+    fillPacket(c, pkt);
+    memcpy(batch + header_size + sensor_count * sizeof(Packet), &pkt, sizeof(pkt));
+    sensor_count++;
   }
+  sendUdpBatch(batch, sensor_count);
 }
 
 void sendLog(uint8_t layer, uint8_t level, const char *message) {
@@ -433,8 +400,6 @@ void sendLog(uint8_t layer, uint8_t level, const char *message) {
       udp.write(buf, sizeof(buf));
       udp.endPacket();
     }
-  } else if (espnow_is_enabled()) {
-    espnow_send_broadcast(buf, sizeof(buf));
   }
 }
 

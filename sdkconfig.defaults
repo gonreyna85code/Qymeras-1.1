@@ -1,0 +1,18 @@
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_qymera.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_qymera.csv"
+
+# WiFi requires flash encryption / NVS
+CONFIG_IDF_TARGET_ESP32=y
+
+# Console / stdout
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Stack for the Qymera main loop task (HTTP parsing + rules use depth)
+CONFIG_QYMERA_LOOP_STACK_SIZE=8192
+
+# ===================== Matter bridge (opt-in) =====================
+# Enable only when the ESP-Matter SDK dependency is available
+# (main/idf_component.yml). Leave disabled for a plain Qymera build.
+CONFIG_QYMERA_MATTER_ENABLE=n

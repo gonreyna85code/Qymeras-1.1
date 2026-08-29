@@ -98,7 +98,7 @@ static void output(Layer layer, Level level, const char *msg) {
 
   // --- Serial ---
   if (serial_enabled) {
-    Serial.printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
+    printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
   }
 
   // --- GUI buffer (per-layer) ---
@@ -116,7 +116,7 @@ void logRemote(Layer layer, Level level, const char *msg) {
   if (!layer_enabled[layer]) return;
 
   if (serial_enabled) {
-    Serial.printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
+    printf("[%lu][%s][%s] %s\n", millis(), layer_name(layer), level_name(level), msg);
   }
 
   store_to_buffer(layer, level, msg);

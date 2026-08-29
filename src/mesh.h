@@ -1,8 +1,6 @@
 #pragma once
-#include <WiFiUdp.h>
-#include <Arduino.h>
 #include "config.h"
-#include "espnow_p2p.h"
+#include "hal/qudp.h"
 
 namespace mesh {
 
@@ -68,7 +66,7 @@ struct ReportEntry {
 };
 
 extern ReportEntry reports[MAX_SENSORS];
-extern WiFiUDP udp;
+extern Qudp udp;
 
 // ============================================================================
 // Protocolo
