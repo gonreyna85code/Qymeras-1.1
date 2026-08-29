@@ -871,7 +871,6 @@ const TYPE_RENDERERS = {
   [SensorType.SENSOR_LEVEL]: cardRenderers.LEVE,
   [SensorType.SENSOR_GENERIC]: cardRenderers.GENERIC,
   [SensorType.SENSOR_CONTACT]: cardRenderers.CONTACT,
-  [SensorType.SENSOR_TIME]: cardRenderers.TIME,
   [SensorType.SENSOR_HUMI]: cardRenderers.HUMI
 };
 
@@ -945,7 +944,7 @@ async function updateSettingsValues() {
       else if (s.type === SensorType.SENSOR_CONTACT)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? t('yn.closed') : t('yn.open');
       else if (s.type === SensorType.SENSOR_TIME)
-        el.innerHTML = formatTime(s);
+        el.innerHTML = s ? formatTime(s) : 'N/A';
       else
         el.innerText = s.value ?? '-';
     });
