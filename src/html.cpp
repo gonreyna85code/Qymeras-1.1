@@ -79,6 +79,10 @@ button{font-family:var(--font)}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
 .chip.ok{background:rgba(34,197,94,.14);color:var(--success);border-color:rgba(34,197,94,.35)}
 .chip.danger{background:rgba(239,68,68,.14);color:var(--danger);border-color:rgba(239,68,68,.35)}
+button.chip{cursor:pointer}
+button.chip:hover{background:var(--surface-hover);color:var(--text)}
+button.chip.ok:hover{background:rgba(34,197,94,.22);color:var(--success)}
+button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--text-muted);flex:0 0 auto}
 .dot.ok{background:var(--success)}.dot.warn{background:var(--warning)}.dot.bad{background:var(--danger)}.dot.info{background:var(--info)}
@@ -101,10 +105,10 @@ select option{background:var(--surface)}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 0}
 .kv{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0}
 .kv span{color:var(--text-muted)}
-.switchbtn{width:100%;padding:9px;border-radius:var(--radius-sm);border:1px solid var(--border);font-weight:700;font-size:12px;letter-spacing:.5px;cursor:pointer;background:var(--surface-2);color:var(--text-muted);transition:background .15s,color .15s,border-color .15s}
-.switchbtn.on{background:rgba(34,197,94,.14);color:var(--success);border-color:rgba(34,197,94,.4)}
-.switchbtn.off{background:var(--surface-2);color:var(--text-muted)}
-.switchbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+
+
+
 .switch{position:relative;display:inline-flex;align-items:center;width:46px;height:26px;flex:0 0 auto;cursor:pointer;border-radius:999px;background:var(--border);border:1px solid var(--border);padding:0;transition:background .2s}
 .switch .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--text-muted);transition:transform .2s,background .2s;pointer-events:none}
 .switch.on{background:var(--accent);border-color:var(--accent)}
@@ -139,7 +143,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
 .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:16px;display:flex;flex-direction:column;gap:12px}
 .settings-card h3{margin:2px 0 0;font-size:15px}
-.settings-card .switchbtn{margin-top:auto}
+
 .settings-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .rule-list{display:flex;flex-direction:column;gap:12px}
 .rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
@@ -499,7 +503,7 @@ function sensorCalibCard(s, i, cfg) {
   return `<div class="settings-card">
     <div class="settings-card-head">
       <div><span class="eyebrow">${cfg.label}</span><h3>${s.name}</h3></div>
-      <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+      <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
     </div>
     <div class="metric" id="v${i}">${cfg.format(s.value)}</div>
     <div class="field-row">
@@ -510,7 +514,7 @@ function sensorCalibCard(s, i, cfg) {
     <div class="btn-row">
       <button class="btn ghost sm" onclick='setCalib(${i},"res","${s.name}")'>${t('cal.btn.reset')}</button>
     </div>
-    <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+    
   </div>`;
 }
 
@@ -531,54 +535,54 @@ GENERIC: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (
 AIRQ: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A'}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  
 </div>`,
 
 RAIN: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value ? t('yn.yes') : t('yn.no')}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  
 </div>`,
 
 CONTACT: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.state ? t('yn.closed') : t('yn.open')}</div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  
 </div>`,
 
 DIMM: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade}</b></div>
   <div class="field-row">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.fade')}" style="min-width:120px">
     <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>${t('cal.btn.fade')}</button>
   </div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  
 </div>`,
 
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <span class="chip ${s.avail?'ok':''}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</span>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <label class="check"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i},"${s.name}")'>${t('cal.check.persist')}</label>
   <label class="check"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'>${t('cal.check.pulse')}</label>
   <div class="field-row">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)' style="min-width:120px;${s.pulse ? '' : 'display:none;'}">
   </div>
-  <button onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="switchbtn ${s.avail ? 'on' : 'off'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  
 </div>`,
 
 TIME: (s, i) => `<div class="settings-card">
@@ -995,9 +999,10 @@ async function isVirtual(id, path, body = null) {
 
 async function toggleMatterSwitch(i, id, name) {
   const btn = document.getElementById(`matterBtn${i}`);
-  const wasOn = btn.classList.contains('on');
-  const on = btn.classList.toggle('on');
-  btn.classList.toggle('off', !on);
+  const wasOn = btn.classList.contains('ok');
+  const on = !wasOn;
+  btn.classList.toggle('ok', on);
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   btn.textContent = on ? t('chip.enabled') : t('chip.disabled');
   const body =
     `id=${encodeURIComponent(id)}` +
@@ -1006,8 +1011,8 @@ async function toggleMatterSwitch(i, id, name) {
   const r = await isVirtual(id, '/calib/set', body);
   if (r.handled) {
     if (!r.ok) {
-      btn.classList.toggle('on', wasOn);
-      btn.classList.toggle('off', !wasOn);
+      btn.classList.toggle('ok', wasOn);
+      btn.setAttribute('aria-pressed', wasOn ? 'true' : 'false');
       btn.textContent = wasOn ? t('chip.enabled') : t('chip.disabled');
     }
     return;
