@@ -585,12 +585,14 @@ DIMM: (s, i) => `<div class="settings-card">
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" class="switch ${s.avail?'on':''}" role="switch" aria-checked="${s.avail?'true':'false'}" aria-label="Alternar relé ${s.name}" onclick="toggleMatterSwitch(${i},'${s.id}','${s.name}')"><span class="knob"></span></button>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
   <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b><span class="unit"> ms</span></div>
   <div class="field-row">
-    <label class="switch"><input type="checkbox" id="pulseChk${i}" ${s.pulse ? 'checked' : ''} onchange='togglePulse(${i},"${s.name}")'><span class="knob"></span>${t('cal.check.pulse')}</label>
-    <label class="switch"><input type="checkbox" id="persistChk${i}" ${s.persist ? 'checked' : ''} onchange='togglePersist(${i})'><span class="knob"></span>${t('cal.check.persist')}</label>
+    <span>${t('cal.check.pulse')}</span>
+    <button type="button" class="switch ${s.pulse?'on':''}" role="switch" aria-checked="${s.pulse?'true':'false'}" aria-label="Modo pulso ${s.name}" onclick="togglePulse(${i})"><span class="knob"></span></button>
+    <span>${t('cal.check.persist')}</span>
+    <button type="button" class="switch ${s.persist?'on':''}" role="switch" aria-checked="${s.persist?'true':'false'}" aria-label="Persistencia ${s.name}" onclick="togglePersist(${i})"><span class="knob"></span></button>
   </div>
   <div class="field-row">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
@@ -1157,39 +1159,16 @@ async function setCalib(i, type, name, refOverride = null) {
   }
 }
 
-function togglePersist(i, name) {
-  const persist = document.getElementById(`persistChk${i}`);
-  const pulse   = document.getElementById(`pulseChk${i}`);
-  const input   = document.getElementById(`ref${i}`);
-  const wasPersist = persist.checked;
-  
-  if (pulse && pulse.checked) {
-    // Pulse is active, cannot enable persistence
-    persist.checked = false;
-    return;
-  }
-  
-  const val = persist.checked ? 1 : 0;
-  setCalib(i, 'persist', name, val).then(ok => {
-    if (!ok) {
-      persist.checked = wasPersist;
-    }
-  });
+function togglePersist(i) {
+  setCalib(i, 'persist', null, '1').then(ok => {
+    if (!ok) showToast(t('alert.failed'), 'error');
+  }).catch(() => showToast(t('alert.failed'), 'error'));
 }
 
-function togglePulse(i, name) {
-  const pulse   = document.getElementById(`pulseChk${i}`);
-  const persist = document.getElementById(`persistChk${i}`);
-  const wasPulse = pulse.checked;
-  
-  if (pulse.checked) {
-    // Activate pulse, disable persistence
-    if (persist) persist.checked = false;
-    setCalib(i, 'persist', 0);
-  } else {
-    // Deactivate pulse
-    setCalib(i, 'persist', 0);
-  }
+function togglePulse(i) {
+  setCalib(i, 'pulse', null, '1').then(ok => {
+    if (!ok) showToast(t('alert.failed'), 'error');
+  }).catch(() => showToast(t('alert.failed'), 'error'));
 }
 
 async function toggleDevice(id) {
