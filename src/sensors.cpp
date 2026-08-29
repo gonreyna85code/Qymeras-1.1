@@ -152,6 +152,15 @@ void checkPulses() {
       digitalWrite(activePulses[i].pin,
         (false ^ activePulses[i].inverted) ? HIGH : LOW);
       activePulses[i].active = false;
+      // Sincronizar estado lógico y reportar
+      auto &c = calibrations[i];
+      c.state = false;
+      if (c.persist && c.pers_state != c.state) {
+        c.pers_state = c.state;
+        web::saveCalibrationSlot(i);
+      }
+      logger::sensorsf("Relay %s -> OFF", c.name.c_str());
+      mesh::setReport(i, c.uid, c.value, c.value, c.state);
     }
   }
 }
@@ -194,16 +203,29 @@ void setRelay(const String &key, bool target) {
   }
 
   // ---- Actuador LOCAL: operar GPIO ----
-  if (c.pulse && target) {
-    digitalWrite(c.pin, (true  ^ c.inverted) ? HIGH : LOW);
-    activePulses[idx].pin = c.pin;
-    activePulses[idx].inverted = c.inverted;
-    activePulses[idx].start_ms = millis();
-    activePulses[idx].pulse_ms = c.pulse_ms;
-    activePulses[idx].active = true;
-    c.state = false;
+  if (c.pulse) {
+    if (target) {
+      // ---- Activar modo pulse ----
+      digitalWrite(c.pin, (true  ^ c.inverted) ? HIGH : LOW);
+      activePulses[idx].pin = c.pin;
+      activePulses[idx].inverted = c.inverted;
+      activePulses[idx].start_ms = millis();
+      activePulses[idx].pulse_ms = c.pulse_ms;
+      activePulses[idx].active = true;
+      c.state = true;  // Relay IS ON while pulse is active
+    } else {
+      // ---- Desactivar modo pulse (apagar relay y detener timer) ----
+      activePulses[idx].active = false;  // Detener timer de pulse
+      digitalWrite(c.pin, (false ^ c.inverted) ? HIGH : LOW);
+      c.state = false;
+    }
   } else {
-    digitalWrite(c.pin, (target ^ c.inverted) ? HIGH : LOW);
+    // Normal ON/OFF mode (sin pulse)
+    if (target) {
+      digitalWrite(c.pin, (true ^ c.inverted) ? HIGH : LOW);
+    } else {
+      digitalWrite(c.pin, (false ^ c.inverted) ? HIGH : LOW);
+    }
     c.state = target;
   }
 
@@ -257,7 +279,12 @@ void handleToggle(uint32_t uid) {
   if (idx < 0) return;
   auto &c = calibrations[idx];
   if (c.type == TYPE_RELAY) {
+    // Cuando se hace toggle, enviar el estado contrario
+    // Si pulse está activo, esto lo desactivará
+    // Si pulse no está activo, toggla ON/OFF normal
     setRelay(c.name, !c.state);
+    // Forzar re-carga de dispositivos después
+    // (esto provocará que loadDevices() lea el nuevo c.state)
   } else if (c.type == TYPE_DIMMER) {
     c.state = !c.state;
     int pwm_val = map(c.value, 0, 100, 0, PWM_MAX_OUT);
