@@ -222,12 +222,30 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
     server.send(405, "text/plain", "POST required");
     return;
   }
-  if (server.hasArg("broadcast"))
-    core::genset.broadcast_port = server.arg("broadcast").toInt();
-  if (server.hasArg("command"))
-    core::genset.command_port = server.arg("command").toInt();
-  if (server.hasArg("interval"))
-    core::genset.report_interval = server.arg("interval").toInt();
+  unsigned long v = 0;
+  // Empty/absent fields keep the current value; malformed or out-of-range
+  // values are rejected (never silently applied as 0).
+  if (server.hasArg("broadcast") && server.arg("broadcast").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("broadcast"), v) || v < 1024 || v > 65500) {
+      server.send(400, "text/plain", "invalid broadcast port (1024-65500)");
+      return;
+    }
+    core::genset.broadcast_port = (uint16_t)v;
+  }
+  if (server.hasArg("command") && server.arg("command").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("command"), v) || v < 1024 || v > 65500) {
+      server.send(400, "text/plain", "invalid command port (1024-65500)");
+      return;
+    }
+    core::genset.command_port = (uint16_t)v;
+  }
+  if (server.hasArg("interval") && server.arg("interval").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("interval"), v) || v < 5000 || v > 600000) {
+      server.send(400, "text/plain", "invalid report interval (5000-600000)");
+      return;
+    }
+    core::genset.report_interval = (uint32_t)v;
+  }
   saveGeneralSettings();
   logger::coref("Genset saved (bc:%u,cmd:%u,int:%u)",
     core::genset.broadcast_port,

@@ -136,9 +136,10 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .time-value{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
 .settings-general{grid-column:1/-1}
-.settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
+.settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
 .settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:16px;display:flex;flex-direction:column;gap:12px}
 .settings-card h3{margin:2px 0 0;font-size:15px}
+.settings-card .switchbtn{margin-top:auto}
 .settings-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .rule-list{display:flex;flex-direction:column;gap:12px}
 .rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
@@ -417,10 +418,23 @@ const SENSOR_LABEL = {
 let LANG = 'es';
 try { LANG = localStorage.getItem('lang') || 'es'; } catch(e) {}
 
+const I18N_FLAT = (() => {
+  const flat = (d, prefix, out) => {
+    for (const k of Object.keys(d)) {
+      const key = prefix ? prefix + '.' + k : k;
+      const v = d[k];
+      if (v && typeof v === 'object') flat(v, key, out);
+      else out[key] = v;
+    }
+    return out;
+  };
+  return { es: flat(I18N.es, '', {}), en: flat(I18N.en, '', {}) };
+})();
+
 function t(k) {
-  const d = I18N[LANG] || I18N.es;
-  let v = k.split('.').reduce((o, p) => (o == null ? o : o[p]), d);
-  if (v == null) v = k.split('.').reduce((o, p) => (o == null ? o : o[p]), I18N.es);
+  const d = I18N_FLAT[LANG] || I18N_FLAT.es;
+  let v = d[k];
+  if (v == null) v = I18N_FLAT.es[k];
   return v == null ? k : v;
 }
 
@@ -877,10 +891,6 @@ async function loadCalib() {
     html += `
       <div class="settings-general">
         <div class="settings-row">
-          ${cardRenderers.DEFAULT(
-            { value: 0, min: 0, max: 0 },
-            data.length
-          )}
           <div class="settings-card">
             <div class="settings-card-head">
               <div><span class="eyebrow">NETWORK</span><h3>${t('net.title')}</h3></div>
@@ -898,6 +908,10 @@ async function loadCalib() {
             </form>
             <p class="small-note" style="margin:12px 0 0">${t('net.note')}</p>
           </div>
+          ${cardRenderers.DEFAULT(
+            { value: 0, min: 0, max: 0 },
+            data.length
+          )}
         </div>
       </div>
     `;
@@ -1006,13 +1020,17 @@ async function toggleMatterSwitch(i, id, name) {
 }
 
 async function setPort(i) {
-  const b = document.getElementById('broadcast_port').value;
-  const c = document.getElementById('command_port').value;
-  const r = document.getElementById(`ref${i}`).value;
+  const params = new URLSearchParams();
+  const b = document.getElementById('broadcast_port').value.trim();
+  const c = document.getElementById('command_port').value.trim();
+  const r = document.getElementById(`ref${i}`).value.trim();
+  if (b) params.append('broadcast', b);
+  if (c) params.append('command', c);
+  if (r) params.append('interval', r);
   await fetch('/genset/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `broadcast=${b}&command=${c}&interval=${r}`
+    body: params.toString()
   });
   alert(t('alert.saved'));
 }
@@ -1414,9 +1432,9 @@ function showStep(n){
               s.type === SensorType.SENSOR_PRESS ? s.value.toFixed(0) + ' kPa' :
               s.type === SensorType.SENSOR_LEVEL ? s.value.toFixed(0) + ' %' :
               s.type === SensorType.SENSOR_LUMI  ? (s.value * 108.9432 / 7074).toFixed(0) + ' lx' :
-              s.type === SensorType.SENSOR_AIRQ  ? (s.value==0?'GOOD':s.value==1?'WARN':s.value==2?'BAD':'N/A') :
-              s.type === SensorType.SENSOR_RAIN  ? (s.value ? 'YES' : 'NO') :
-              s.type === SensorType.SENSOR_CONTACT  ? (s.state ? 'CLOSED' : 'OPEN') :
+              s.type === SensorType.SENSOR_AIRQ  ? (s.value==0?t('air.good'):s.value==1?t('air.warn'):s.value==2?t('air.bad'):'N/A') :
+              s.type === SensorType.SENSOR_RAIN  ? (s.value ? t('yn.yes') : t('yn.no')) :
+              s.type === SensorType.SENSOR_CONTACT  ? (s.state ? t('yn.closed') : t('yn.open')) :
               s.type === SensorType.SENSOR_GENERIC  ? Number(s.value).toFixed(2) :
               s.value
             );
@@ -1689,7 +1707,7 @@ function validateStep(stepNum) {
       if(action === 3 && levelInput) {
         const level = parseInt(levelInput.value);
         if(isNaN(level) || level < 0 || level > 100) {
-          alert('El level debe estar entre 0 y 100');
+          alert(t('wiz.levelRange'));
           return false;
         }
       }
@@ -1706,19 +1724,19 @@ function validateStep(stepNum) {
     const cooldown = parseInt(cooldownEl.value) || 0;
 
     if(delay < 0 || delay > 60000) {
-      alert('El delay debe estar entre 0 y 60000 ms');
+      alert(t('wiz.delayRange'));
       return false;
     }
 
     if(cooldown < 0 || cooldown > 3600000) {
-      alert('El cooldown debe estar entre 0 y 3600000 ms');
+      alert(t('wiz.cooldownRange'));
       return false;
     }
 
     if(wizard.data.type === 3) {
       const interval = parseInt(intervalEl.value) || 0;
       if(interval < 1000 || interval > 3600000) {
-        alert('El intervalo debe estar entre 1000 y 3600000 ms');
+        alert(t('wiz.intervalRange'));
         return false;
       }
     }
@@ -2034,15 +2052,15 @@ async function finishWizard(){
     });
 
     if(res.ok) {
-      alert('Regla guardada correctamente');
+      alert(t('wiz.saved'));
       closeRule();
       loadRules();
     } else {
       const errMsg = await res.text();
-      alert(`Error al guardar: ${errMsg}`);
+      alert(t('wiz.saveError') + ' ' + errMsg);
     }
   } catch(e) {
-    alert(`Error de conexión: ${e.message}`);
+    alert(t('wiz.connError') + ' ' + e.message);
   }
 }
 
