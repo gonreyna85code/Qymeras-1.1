@@ -65,6 +65,8 @@ button{font-family:var(--font)}
 .nav-sep{height:1px;background:var(--border);margin:6px 4px}
 .main{padding:22px;width:100%;max-width:1280px}
 .pages{}
+.content{display:none}
+.content.active{display:block}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
 .page-head h1{font-size:20px}
 .page-sub{color:var(--text-muted);font-size:13px;margin:2px 0 0}
@@ -175,6 +177,19 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 @keyframes modalIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeOut{from{opacity:1}to{opacity:0}}
+.modal{
+    position:fixed;
+    inset:0;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    background:rgba(0,0,0,.55);
+    z-index:1000;
+}
+.modal.open{
+    display:flex;
+}
 .modal-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:18px;box-shadow:var(--shadow-lg)}
 
 /* Toast notifications */
@@ -254,7 +269,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
       <div id="devices_cards"></div>
     </div>
   </section>
-  <section id="auto" class="view content" style="display:none">
+  <section id="auto" class="view content">
     <div class="pages">
       <div class="page-head">
         <div><h1 data-i18n="page.auto">Automations</h1><p class="page-sub" data-i18n="page.auto.sub">Automation rules</p></div>
@@ -264,12 +279,12 @@ const char Tabs[] PROGMEM = R"rawliteral(
       <div class="empty" id="auto_empty" class="d-none"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
     </div>
   </section>
-  <section id="config" class="view content" style="display:none">
+  <section id="config" class="view content">
     <div class="pages">
       <div class="page-head">
         <div><h1 data-i18n="page.config">Settings</h1><p class="page-sub" data-i18n="page.config.sub">Calibration, persistence and node configuration</p></div>
       </div>
-      <div id="savedNotice" class="notice success" style="display:none" data-i18n="saved.notice">Settings saved. The device is restarting...</div>
+      <div id="savedNotice" class="notice success" data-i18n="saved.notice">Settings saved. The device is restarting...</div>
       <div id="cards"></div>
     </div>
   </section>
@@ -1238,57 +1253,49 @@ function toggleAccordion(btn) {
 }
 
 function togglePersist(i) {
-  // If pulse is active, disable it first (mutual exclusion)
-  const pulseBtn = document.querySelector(`#pulseRow${i}`);
-  if (pulseBtn && pulseBtn.style.display !== 'none') {
-    // Pulse is active, disable it first
+  const sensor = sensors[i];
+  if (!sensor) return;
+  
+  // Mutual exclusion: if pulse is active, disable it first
+  if (sensor.pulse) {
     setCalib(i, 'pulse', null, '0').then(pulseOk => {
       if (pulseOk) {
         // Now toggle persist
-        setCalib(i, 'persist', null, '1').then(ok => {
-          if (!ok) showToast('error', t('alert.failed'));
-        }).catch(() => showToast('error', t('alert.failed')));
+        setPersistence(i, !sensor.persist);
       }
-    });
+    }).catch(() => showToast('error', t('alert.failed')));
     return;
   }
+  
   // Pulse not active, just toggle persist
-  setCalib(i, 'persist', null, '1').then(ok => {
-    if (!ok) showToast('error', t('alert.failed'));
-  }).catch(() => showToast('error', t('alert.failed')));
+  setPersistence(i, !sensor.persist);
+}
+
+function setPersistence(i, value) {
+  return setCalib(i, 'persist', null, value ? '1' : '0');
 }
 
 function togglePulse(i) {
-  const pulseBtn = document.querySelector(`#pulseRow${i}`);
-  const isPulseActive = pulseBtn && pulseBtn.style.display !== 'none';
+  const sensor = sensors[i];
+  if (!sensor) return;
   
-  if (isPulseActive) {
-    // Pulse is active, turn it off
-    setCalib(i, 'pulse', null, '0').then(ok => {
-      if (!ok) showToast('error', t('alert.failed'));
+  // Mutual exclusion: if persist is active, disable it first
+  if (sensor.persist) {
+    setPersistence(i, false).then(persistOk => {
+      if (persistOk) {
+        // Now enable pulse
+        setCalib(i, 'pulse', null, '1').then(ok => {
+          if (!ok) showToast('error', t('alert.failed'));
+        }).catch(() => showToast('error', t('alert.failed')));
+      }
     }).catch(() => showToast('error', t('alert.failed')));
-  } else {
-    // Pulse is inactive, check if persist is active
-    const persistBtn = document.querySelector(`button[onclick*="togglePersist(${i})"]`);
-    const isPersistActive = persistBtn && persistBtn.classList.contains('on');
-    
-    if (isPersistActive) {
-      // Persist is active, disable it first (mutual exclusion)
-      setCalib(i, 'persist', null, '0').then(persistOk => {
-        if (persistOk) {
-          // Now enable pulse
-          setCalib(i, 'pulse', null, '1').then(ok => {
-            if (!ok) showToast('error', t('alert.failed'));
-          }).catch(() => showToast('error', t('alert.failed')));
-        }
-      }).catch(() => showToast('error', t('alert.failed')));
-    } else {
-      // Persist not active, just enable pulse
-      setCalib(i, 'pulse', null, '1').then(ok => {
-        if (!ok) showToast('error', t('alert.failed'));
-      }).catch(() => showToast('error', t('alert.failed')));
-    }
+    return;
   }
+  
+  // Pulse not active, just enable pulse (persist remains unchanged)
+  setCalib(i, 'pulse', null, '1').then(ok => {
+    if (!ok) showToast('error', t('alert.failed'));
+  }).catch(() => showToast('error', t('alert.failed')));
 }
 
 function toggleRelayAvail(i) {
@@ -1352,7 +1359,7 @@ async function sendDimmer(id, value) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch(_) {}
-      alert(tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+      showToast('error', tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
       return;
     }
     setTimeout(loadDevices, 100);
@@ -1464,7 +1471,7 @@ function renderLogs(logs){
     timeEl.className = 't';
     timeEl.textContent = e.t;
     const levelEl = document.createElement('span');
-    levelEl.className = 'l ' + e.v.toLowerCase;
+    levelEl.className = 'l ' + e.v.toLowerCase();
     levelEl.textContent = e.v;
     const msgEl = document.createElement('span');
     msgEl.textContent = e.m;
@@ -2182,21 +2189,30 @@ async function finishWizard(){
   wizard.data.actuators.forEach((aIdx, aPos) => {
     const level = wizard.data.levels[aPos] || 0;
     if(level < 0 || level > 100) {
-      alert(tf('wiz.levelActuator', { level }));
+      showToast('error', tf('wiz.levelActuator', { level }));
       return;
     }
   });
 
+  if(wizard.data.actuators.some((aIdx, aPos) => {
+    const level = wizard.data.levels[aPos] || 0;
+    return level < 0 || level > 100;
+  })) {
+    return;
+  }
+
+  let invalidAction = false;
   wizard.data.actuators.forEach((aIdx, aPos) => {
     const action = wizard.data.actions[aPos];
     const actuator = sensorByIndex(aIdx);
     if(!actuator) return;
 
     if(action === 3 && actuator.type !== 8) {
-      alert(t('wiz.levelDimmerOnly'));
-      return;
+      showToast('error', t('wiz.levelDimmerOnly'));
+      invalidAction = true;
     }
   });
+  if(invalidAction) return;
 
   let cmps = [], thresholds = [];
   wizard.data.sensors.forEach(sIdx => {
@@ -2389,17 +2405,17 @@ function filterDevices() {
     card.style.display = show ? '' : 'none';
     if (show) visibleCount++;
   });
-  // Update empty state
-  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
+  // Update empty state - scoped to devices section
+  const devicesSection = document.getElementById('devices_cards');
   if (visibleCount === 0) {
-    if (!document.querySelector('.empty.sm')) {
+    if (!devicesSection.querySelector('.empty.sm')) {
       const div = document.createElement('div');
       div.className = 'empty sm';
       div.innerHTML = '<span data-i18n="dev.noSensors">No matching devices</span>';
-      document.querySelector('.devices-desktop-layout')?.prepend(div);
+      devicesSection.prepend(div);
     }
   } else {
-    const existing = document.querySelector('.empty.sm');
+    const existing = devicesSection.querySelector('.empty.sm');
     if (existing) existing.remove();
   }
 }
@@ -2414,17 +2430,17 @@ function filterSettings() {
     card.style.display = show ? '' : 'none';
     if (show) visibleCount++;
   });
-  // Update empty state
-  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
+  // Update empty state - scoped to settings section
+  const settingsSection = document.getElementById('cards');
   if (visibleCount === 0) {
-    if (!document.querySelector('.empty.sm')) {
+    if (!settingsSection.querySelector('.empty.sm')) {
       const div = document.createElement('div');
       div.className = 'empty sm';
-      div.innerHTML = '<span data-i18n="dev.noSettings">No matching settings</span>';
-      document.querySelector('.settings-grid')?.prepend(div);
+      div.innerHTML = '<span data-i18n="settings.noSettings">No matching settings</span>';
+      settingsSection.prepend(div);
     }
   } else {
-    const existing = document.querySelector('.empty.sm');
+    const existing = settingsSection.querySelector('.empty.sm');
     if (existing) existing.remove();
   }
 }
