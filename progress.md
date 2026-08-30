@@ -371,3 +371,13 @@ Saved **7,240 B (6.22 %)**. `html.cpp` file 116,936 → 109,696 B.
   esp8266_generic SUCCESS (flash this round: 2026-08-30). Live `/` 200
   (109,810 B) — single `#devSearch`/`#settingsSearch`, no auto-read of inputs,
   `.input-sm` rule present.
+
+## Audit completion (2026-08-30)
+- `src/mesh.h` reviewed (last unread source file): no GUI dead code.
+  `min`/`max`/`pers_state` are real protocol v5 `Packet`/callback fields used by
+  the firmware — consistent with dropping them from `/calib` JSON only (JS
+  never read them). `PACKET_VERSION=5`, batch/MTU and RX-drain caps documented.
+- All endpoints exercised live at 192.168.1.19: `/rules` 200 empty array,
+  `/ota/status` 200 `{ota}`, `/` 200. `window.genset` confirmed injected by
+  `web.cpp:sendStartupJS()` before the script so the DEFAULT settings card
+  renders its broadcast/command/interval values (no `genset` ReferenceError).
