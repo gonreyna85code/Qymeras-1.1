@@ -381,3 +381,36 @@ Saved **7,240 B (6.22 %)**. `html.cpp` file 116,936 → 109,696 B.
   `/ota/status` 200 `{ota}`, `/` 200. `window.genset` confirmed injected by
   `web.cpp:sendStartupJS()` before the script so the DEFAULT settings card
   renders its broadcast/command/interval values (no `genset` ReferenceError).
+
+## Interactive headless walkthrough (2026-08-30) — ALL PASS
+Drove the live GUI at 192.168.1.19 via Edge `--headless=new` + CDP
+(WebSocket, Node 24). Every check green; **0 uncaught exceptions /
+console.error** across the whole session.
+
+- **Load/control:** 22 device cards, 3 stat cards, health badge "12".
+- **Search focus vs 5 s poll (user-reported bug):** REAL mouse click focuses
+  `#devSearch`; node identity stable across poll (input never recreated);
+  focus still on the input after the poll; partial typing ("abc") intact;
+  `devSearchTerm` stays "" — poll does NOT auto-apply the filter. Apply hides
+  all in a `__NO_MATCH__` query + shows `empty.sm`; clear restores.
+- **Config:** 14 settings cards; DEFAULT kv (ports/interval) renders via
+  injected `window.genset`; accordion toggles block↔none; settings filter
+  hides all + empty state; `updateSettingsValues()` yields live metrics (28),
+  no NaN/undefined; timezone select present.
+- **Automations:** empty state visible (`auto_empty` display:flex); wizard
+  modal opens; step 0 shows the 4 rule types; ALL 6 dynamic steps render
+  without exception; closes.
+- **Wizard selections:** sensors list = 4 for EDGE type (types [7,6,9,12]),
+  actuators = `[9] RELAY0` + `[10] DIMM0`; actions ON/OFF/TOGGLE (+ LEVEL only
+  for the dimmer). NOTE: `showStep(4)` lands on the *actions* step when logic
+  step is skipped for single-sensor rules (`steps=[0,1,2,4,5,6]`) — correct
+  dynamic indexing, not a bug.
+- **Dimmer slider:** `onDimmerInput` updates the value read-only (0→42→0)
+  without sending GPIO writes (test was read-only on purpose).
+- **Logs:** 9 entries across panels on `logs` tab, status "Actualizado…".
+- **Language toggle:** ES→EN→ES; nav relabels and `#devSearch` placeholder
+  becomes "Search..." (`data-i18n-ph` works).
+- **Toasts:** success/error render and auto-dismiss (~3 s).
+
+Conclusion: no remaining functional gaps in the GUI 1.1 final pass on the live
+device. Working tree clean, branch `feature/GUI` up to date.
