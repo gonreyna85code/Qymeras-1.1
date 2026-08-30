@@ -2,10 +2,15 @@
   Base - Minimal Qymera Example (PlatformIO src/main.cpp)
   =======================================================
 
-  The user sketch only needs to implement:
-  1. initSatellite() - initialize hardware libraries (Wire, etc.)
-  2. report()       - read hardware and report values via sensors::xxx()
-  3. onCommandHook() - custom logic for received commands
+  The user sketch only needs to implement three hooks under the Qymera
+  namespace:
+    1. Qymera::init()    - initialize hardware libraries (Wire, etc.)
+    2. Qymera::report()  - read hardware and report values via Qymera::xxx()
+    3. Qymera::onCommand() - custom logic for received commands
+
+  then delegate setup()/loop() to the library:
+    void setup() { Qymera::begin(); }
+    void loop()  { Qymera::loop(); }
 
   The library handles: WiFi, web server, UDP mesh, automations, EEPROM.
 */
@@ -13,18 +18,18 @@
 #include "Qymera.h"
 
 // ================================
-// initSatellite - inicialización de hardware
+// Qymera::init - inicialización de hardware
 // ================================
-void initSatellite() {
+void Qymera::init() {
   // init hardware
 }
 
 // ================================
-// report - leer hardware y reportar valores
+// Qymera::report - leer hardware y reportar valores
 // ================================
-void report() {
+void Qymera::report() {
 
-  // --- Values de ejemplo/demonstración ---
+  // --- Valores de ejemplo/demostración ---
   constexpr float tempF    = 35.2f;
   constexpr float humi    = 35;
   constexpr uint16_t lumi   = 15535;
@@ -35,28 +40,28 @@ void report() {
   constexpr bool contact    = false;
   constexpr float generic   = 105.35f;
 
-  sensors::temperature("TEMP", tempF);
-  sensors::humidity("HUMI", humi);
-  sensors::luminosity("LUMI0", lumi);
-  sensors::airQ("AIRQ0", airQ);
-  sensors::pressure("PRES0", press);
-  sensors::level("LEVE0", level);
-  sensors::rain("RAIN0", rain);
-  sensors::contact("CONTACT", contact);
-  sensors::custom("GENERIC", generic);
-  sensors::relay("RELAY0", 5, true);
-  sensors::dimmer("DIMM0", 2, false);
+  Qymera::temperature("TEMP", tempF);
+  Qymera::humidity("HUMI", humi);
+  Qymera::luminosity("LUMI0", lumi);
+  Qymera::airQ("AIRQ0", airQ);
+  Qymera::pressure("PRES0", press);
+  Qymera::level("LEVE0", level);
+  Qymera::rain("RAIN0", rain);
+  Qymera::contact("CONTACT", contact);
+  Qymera::custom("GENERIC", generic);
+  Qymera::relay("RELAY0", 5, true);
+  Qymera::dimmer("DIMM0", 2, false);
 }
 
 // ================================
-// onCommandHook - lógica personalizada de comandos recibidos
+// Qymera::onCommand - lógica personalizada de comandos recibidos
 // ================================
-void onCommandHook(uint32_t /*uid*/, uint8_t /*type*/, int /*value*/, bool /*state*/) {
-  // custom relay/dimmer logic for recieved commands
+void Qymera::onCommand(uint32_t /*uid*/, uint8_t /*type*/, int /*value*/, bool /*state*/) {
+  // custom relay/dimmer logic for received commands
 }
 
 // ================================
 // Entry points - delega todo a la librería
 // ================================
-void setup()   { core::begin(); }
-void loop()    { core::loop(); }
+void setup()   { Qymera::begin(); }
+void loop()    { Qymera::loop(); }

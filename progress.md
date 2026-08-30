@@ -201,3 +201,38 @@ Code-review-only items are NOT marked PASS.
 | Host sanity suite | PASS | `python tests/host_sanity.py` → 45/45 (timezone UTC conversion, strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow). |
 |
  | Production gate: NOT READY — 24h memory soak, factory-reset hw test, and endurance remain (ESP32 .16 within scope; ESP8266 .19 owned by parallel effort). All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations. Builds + host suite re-verified 2026-08-27 (3 envs green, 45/45).
+## API SIMPLIFICATION — `Qymera::` public facade (2026-08-30)
+
+Moved the whole user-facing API under a single `Qymera` namespace so `main.ino`
+only needs to spell out `Qymera::`. Renames:
+
+| New public API (namespace `Qymera`) | Previous |
+|---|---|
+| `Qymera::init()` (user hook) | `void initSatellite()` |
+| `Qymera::report()` (user hook) | `void report()` |
+| `Qymera::onCommand(uid,type,value,state)` (user hook) | `void onCommandHook(...)` |
+| `Qymera::begin()` / `Qymera::loop()` | `core::begin()` / `core::loop()` |
+| `Qymera::temperature/humidity/luminosity/level/pressure/airQ/rain/custom/contact/relay/dimmer(...)` | `sensors::xxx(...)` |
+| `Qymera::setRelay()`/`handleToggle()`/`handleDimmer()`/`startFade()`/`calibrate()`/`getCalib()`/`rtc()`/`ntp()` | `sensors::xxx(...)` |
+| `Qymera::setSerialEnabled()` / `Qymera::isSerialEnabled()` | global `setSerialEnabled()` / `isSerialEnabled()` |
+
+How it was done (low risk):
+- `Qymera.h` exposes the library-provided facade as **inline wrappers** that
+  forward to the untouched internal `core::`/`sensors::` layers (no behavior
+  change, internal calls unchanged).
+- User hooks are declared in `core.h` under `namespace Qymera` (core is the
+  caller); **implemented by the sketch** (`void Qymera::init() {...}`, etc.).
+- `core.cpp` call sites updated: `Qymera::init()`, `Qymera::report()` (x2),
+  and both `::initSatellite()`/`::report()` globals removed.
+- `log.h`/`log.cpp`: `setSerialEnabled()`/`isSerialEnabled()` moved into
+  `namespace Qymera` (no internal users; only the Base example called it).
+- Sketches updated: `src/main.cpp`, `examples/Base/Base.ino`,
+  `examples/HardwareDemo/HardwareDemo.ino` (minimal helper comments).
+- Docs updated: `README.md` (Quick Start sketch + Supported Sensors table),
+  `structure.md` (module table + integration flow), `docs/architecture-baseline.md`
+  (init order + serial note).
+
+Validation: `pio run` full link green on 3 envs — esp8266_generic RAM 69.6% /
+Flash 42.2%, esp32_devkit, esp32c3_devkit. Host suite unaffected (no API
+reference in `tests/host_sanity.py`). No firmware behavior changed: the facade
+is a compile-time rename; hooks are called at the exact same points.

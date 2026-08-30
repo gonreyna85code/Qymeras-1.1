@@ -15,13 +15,13 @@ Qymeras is an ESP8266/ESP32 firmware for IoT sensor/actuation networks with:
 2. **`Qymera::begin()`** — two-phase init:
    - **Phase 1 (local, no WiFi dependency):** Serial, EEPROM/Preferences storage, credentials/settings load, OTA identity check, sensor subsystem
    - **Phase 1b (device registration, correct order):**
-     1. `sensors::init()` — zero sensor/calibration tables
-     2. `initSatellite()` (user) — register/discover local sensors and actuators
-     3. `automations::init()` — rules (index-based, resolved at eval time)
-     - **Config load deferred to first `report()`** (in `loop()`): entities are only
-       registered when the sketch calls `sensors::xxx()` inside `report()`, so
-       `loadCalibration()`/`applyPersistedStates()` run right after the first
-       `report()` instead of in `begin()`. `sensors::ensureTimeRegistered()` binds
+1. `sensors::init()` — zero sensor/calibration tables
+      2. `Qymera::init()` (user) — register/discover local sensors and actuators
+      3. `automations::init()` — rules (index-based, resolved at eval time)
+      - **Config load deferred to first `Qymera::report()`** (in `loop()`): entities are only
+        registered when the sketch calls `Qymera::xxx()` inside `Qymera::report()`, so
+        `loadCalibration()`/`applyPersistedStates()` run right after the first
+        `Qymera::report()` instead of in `begin()`. `sensors::ensureTimeRegistered()` binds
        the TIME entity before `loadCalibration()` so its persisted
        correction/timezone restores. See *Persistence Fixes* below.
    - **Phase 2 (network startup):** `startWiFi()` (calls `esp_netif_init()` on ESP32 before WiFi ops, non-blocking STA connect or AP mode)
@@ -453,7 +453,7 @@ nodes; every response (including 400/401/429) carries
 - `HTTPClient` with `SECURITY_*` constants
 - `Preferences` library for storage
 - `ESPNow` class for ESP-NOW transport
-- `setSerialEnabled()` for pin reuse (GPIO 0-16)
+- `Qymera::setSerialEnabled()` for pin reuse (GPIO 0-16)
 
 ### Framework Pinning
 - **ESP8266**: espressif8266@3.30102.0 (avoids `raw_address()` bug)

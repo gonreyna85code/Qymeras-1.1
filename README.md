@@ -46,34 +46,39 @@ lib_deps =
 
 Use the built-in [Base example](examples/Base/Base.ino) as a starting point
 (`main.cpp` is the PlatformIO entry point). The library handles WiFi, the web
-server, UDP mesh, and automation logic — your sketch only needs to:
+server, UDP mesh, and automation logic — your sketch only needs to implement
+three hooks under the `Qymera` namespace:
 
-- `initSatellite()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
-- `report()` &mdash; read sensors and report values via `sensors::xxx()` API
-- `onCommandHook(...)` &mdash; handle custom commands from remote devices
+- `Qymera::init()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
+- `Qymera::report()` &mdash; read sensors and report values via `Qymera::xxx()`
+- `Qymera::onCommand(...)` &mdash; handle custom commands from remote devices
 
 ```cpp
 #include <Qymera.h>
 #include <Wire.h>
 
-void initSatellite() {
+void Qymera::init() {
   Wire.begin();
   // initialize your hardware here
 }
 
-void report() {
+void Qymera::report() {
   // read your sensors
-  sensors::temperature("Office", 23.5f);
-  sensors::humidity("Soil", 65);
+  Qymera::temperature("Office", 23.5f);
+  Qymera::humidity("Soil", 65);
 }
 
-void onCommandHook(uint32_t, uint8_t, int, bool) {
+void Qymera::onCommand(uint32_t, uint8_t, int, bool) {
   // optional: react to remote commands
 }
 
-void setup()   { core::begin(); }
-void loop()    { core::loop(); }
+void setup()   { Qymera::begin(); }
+void loop()    { Qymera::loop(); }
 ```
+
+Everything your sketch needs is exposed under `Qymera::` (lifecycle, sensors,
+actuators, `Qymera::setSerialEnabled()`); no other namespace needs to be
+spelled out in `main.ino`.
 
 ### 4. First-Time Setup
 
@@ -99,18 +104,18 @@ options).
 
 | Sensor | API | Typical Hardware |
 |--------|-----|-------------------|
-| Temperature | `sensors::temperature()` | DHT22, DS18B20, NTC |
-| Humidity | `sensors::humidity()` | DHT22, soil moisture |
-| Light | `sensors::luminosity()` | Photoresistor, BH1750 |
-| Pressure | `sensors::pressure()` | BMP280, BME280 |
-| Level | `sensors::level()` | Ultrasonic, float switch |
-| Air Quality | `sensors::airQ()` | MQ135, SDS011 |
-| Rain | `sensors::rain()` | Rain drop sensor |
-| Contact | `sensors::contact()` | Reed switch, door sensor |
-| Generic | `sensors::custom()` | Any analog/digital value |
-| Time | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
-| Relay (actuator) | `sensors::relay()` | Digital relay, latching |
-| Dimmer (actuator) | `sensors::dimmer()` | LED strip, fan, PWM |
+| Temperature | `Qymera::temperature()` | DHT22, DS18B20, NTC |
+| Humidity | `Qymera::humidity()` | DHT22, soil moisture |
+| Light | `Qymera::luminosity()` | Photoresistor, BH1750 |
+| Pressure | `Qymera::pressure()` | BMP280, BME280 |
+| Level | `Qymera::level()` | Ultrasonic, float switch |
+| Air Quality | `Qymera::airQ()` | MQ135, SDS011 |
+| Rain | `Qymera::rain()` | Rain drop sensor |
+| Contact | `Qymera::contact()` | Reed switch, door sensor |
+| Generic | `Qymera::custom()` | Any analog/digital value |
+| Time | `Qymera::rtc()` / `Qymera::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
+| Relay (actuator) | `Qymera::relay()` | Digital relay, latching |
+| Dimmer (actuator) | `Qymera::dimmer()` | LED strip, fan, PWM |
 
 Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
 5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.

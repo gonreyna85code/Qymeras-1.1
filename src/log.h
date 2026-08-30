@@ -72,5 +72,9 @@ void clearBuffer();
 
 }  // namespace logger
 
+// ================= SERIAL CONTROL =================
+// Exposed to the sketch as Qymera::setSerialEnabled() / Qymera::isSerialEnabled().
+namespace Qymera {
 void setSerialEnabled(bool enabled);
 bool isSerialEnabled();
+}
