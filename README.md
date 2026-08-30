@@ -85,9 +85,12 @@ void loop()    { core::loop(); }
 
 ### 5. Configure Sensors and Rules
 
-- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone, fade/pulse/persist
+- **DEVICES** tab &mdash; control relays and dimmers in real time (live sensor
+  cards, search filter)
 - **AUTOMATIONS** tab (Rules) &mdash; create automation rules
-- **DEVICES** tab &mdash; control relays and dimmers in real time
+- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone,
+  fade/pulse/persist
+- **LOGS** tab &mdash; live Core / Events / Sensors log panels (auto-refresh)
 
 ---
 
@@ -166,12 +169,12 @@ operates independently — no internet needed. HTTP server runs on port 80,
 reading all config from EEPROM / Preferences (ESP32).
 
 **Main tabs:** DEVICES (actuators) · AUTOMATIONS (rules) · SETTINGS
-(calibration + remote entities) · LOGS · NETWORK (WiFi, OTA, factory reset)
+(calibration + remote entities + NETWORK card: WiFi, OTA, factory reset) · LOGS
 
 ### Mesh
 
 - **STA mode:** UDP broadcast discovery/announcement (batched datagrams,
-  protocol v4/v5; up to 29 packets per datagram).
+  protocol v4/v5; up to 29 packets per datagram for v4, up to 23 for v5).
 - **AP mode:** ESP-NOW broadcast (bounded RX FIFO, peer management).
 - Remote entities are visible/controllable/calibratable across nodes by
   POSTing to the owning node's IP; remote config is verified over HTTP and never
@@ -295,7 +298,10 @@ python tests/host_sanity.py                    # host test suite (45 checks)
 
 ## Roadmap
 
-MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
+Current development branch: **`feature/GUI`** — the 1.1 GUI passed its final
+freeze audit (builds clean on ESP8266 + ESP32/C3, full interactive walkthrough
+green) and is frozen; no further functional GUI changes are planned. MQTT ·
+Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
 mobile app. An **optional external AI assistant subsystem** is authorized and
 under development on `feature/ai-experiments` (kept out of the 1.1 production
 tree per `AGENTS.md`).

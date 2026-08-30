@@ -64,7 +64,6 @@ button{font-family:var(--font)}
 .navitem svg{flex:0 0 auto}
 .nav-sep{height:1px;background:var(--border);margin:6px 4px}
 .main{padding:22px;width:100%;max-width:1280px}
-.pages{}
 .content{display:none}
 .content.active{display:block}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
@@ -123,7 +122,6 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .stat-value{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
 .stat-value.time{font-size:18px;align-self:center}
 .section-title{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
-.devices-dashboard{}
 .devices-desktop-layout{display:grid;gap:18px;align-items:start;grid-template-columns:1fr}
 .devices-column{min-height:0;border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;background:var(--surface-2);display:flex;flex-direction:column;gap:12px}
 .devices-mobile-list{display:none}

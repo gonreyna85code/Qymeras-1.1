@@ -414,3 +414,34 @@ console.error** across the whole session.
 
 Conclusion: no remaining functional gaps in the GUI 1.1 final pass on the live
 device. Working tree clean, branch `feature/GUI` up to date.
+
+## FINAL FREEZE AUDIT (2026-08-30) — feature/GUI
+- HEAD `978d430` + this audit: working tree clean; existing GUI treated as
+  baseline. Explicitly no redesign / no new features / no refactor.
+- Builds: esp8266_generic PASS (RAM 69.7% / Flash 46.2%), esp32_devkit PASS,
+  esp32c3_devkit PASS (compile-only; ESP32 flash stays with the parallel branch
+  test). Rebuilt + reflashed ESP8266 after the CSS cleanup and re-verified live.
+- JS: `node --check` PASS on the exact served script block.
+- Functional verification (live, Edge headless + CDP, post-cleanup):
+  control renders 22 cards + stats + health; desktop layout `grid` @1280 px /
+  mobile list `grid` @400 px; config renders 14 cards after reload; zero
+  runtime errors. Full interactive walkthrough (search focus vs 5 s poll,
+  wizard, logs, ES/EN, toasts, dimmer read-only) already green this session.
+- CSS audit: `.dot.warn` absent from CSS and never referenced in markup/JS →
+  not needed (warn is conveyed textually and via `.toast.warning`/`l.wrn`).
+  `.l.inf`/`.l.wrn` flagged by a naive scan are runtime-generated
+  (`'l ' + level`) → kept. All `var(--…)` referenced are defined.
+- **Trivial safe fix applied:** removed two empty CSS rules (`.pages{}`,
+  `.devices-dashboard{}`) → no visual effect, payload 109,392 → 109,362 B.
+  (An intermediate edit that briefly dropped the `.devices-desktop-layout`
+  base rule was caught and fully restored; live re-verification confirms the
+  responsive layout grid/none toggling works.)
+- README updated for accuracy: tab list corrected (no standalone NETWORK tab —
+  it is a Settings card; LOGS tab added), mesh datagram counts clarified
+  (v4 ≤29 / v5 ≤23), bilingual UI + freeze status noted.
+- Final `html.cpp`: **109,873 B** file, **109,362 B** payload.
+- Freeze verdict: SAFE TO FREEZE. Remaining known limitations (unchanged):
+  ESP32 hardware/soak tests pending; THRESHOLD without hysteresis (use
+  cooldown); TIME/INTERVAL no catch-up after reboot; HTTP only (no HTTPS/CSRF);
+  `.toast.warning` defined but currently never triggered (no warn paths); Auth
+  gate dormant by design.
