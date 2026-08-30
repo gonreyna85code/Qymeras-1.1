@@ -85,22 +85,21 @@ button.chip{cursor:pointer}
 button.chip:hover{background:var(--surface-hover);color:var(--text)}
 button.chip.ok:hover{background:rgba(34,197,94,.22);color:var(--success)}
 button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--text-muted);flex:0 0 auto}
-.dot.ok{background:var(--success)}.dot.warn{background:var(--warning)}.dot.bad{background:var(--danger)}.dot.info{background:var(--info)}
+.dot.ok{background:var(--success)}.dot.bad{background:var(--danger)}.dot.info{background:var(--info)}
 .status{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.4px;text-transform:uppercase}
 .metric{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;text-align:center}
 .metric.sm{font-size:18px}
 .metric .unit{font-size:15px;font-weight:700;color:var(--text-muted);margin-left:2px}
 .eyebrow{font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--accent);text-transform:uppercase}
-.notice{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;margin-bottom:14px;font-weight:600}
-.notice.success{background:rgba(34,197,94,.12);color:var(--success);border:1px solid rgba(34,197,94,.35)}
 .field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
 .field label{font-size:12px;font-weight:600;color:var(--text)}
 .input,select,input[type=date],input[type=number],input[type=password]{width:100%;padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-2);color:var(--text);font:inherit;font-size:13px}
 .input:focus,select:focus,input[type=date]:focus,input[type=number]:focus,input[type=password]:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
 select option{background:var(--surface)}
 .input.sm{width:auto;min-width:90px;padding:7px 9px}
+.input-sm{min-width:0;padding:8px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-2);color:var(--text);font:inherit;font-size:13px}
+.input-sm:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
 .check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;padding:4px 0}
 .check input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .field-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -118,15 +117,11 @@ select option{background:var(--surface)}
 input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:999px;background:var(--border);outline:none;margin:12px 0;cursor:pointer;border:none}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer}
 input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:none;cursor:pointer}
-.gradient-bg{border:none;appearance:none;width:100%;height:8px;border-radius:999px;background:var(--border);outline:none;margin:12px 0;cursor:pointer}
-.gradient-bg::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer}
-.gradient-bg::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:none;cursor:pointer}
 .dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow-mild)}
 .stat-label{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted)}
 .stat-value{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
 .stat-value.time{font-size:18px;align-self:center}
-.dash-section{margin-bottom:18px}
 .section-title{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
 .devices-dashboard{}
 .devices-desktop-layout{display:grid;gap:18px;align-items:start;grid-template-columns:1fr}
@@ -144,7 +139,6 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .state-text{font-weight:800;font-size:13px;letter-spacing:.5px}
 .state-text.on{color:var(--success)}.state-text.off{color:var(--text-muted)}
 .value-lg{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--accent)}
-.time-value{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}
 .settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
 .settings-general{grid-column:1/-1}
 .settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
@@ -279,7 +273,14 @@ const char Tabs[] PROGMEM = R"rawliteral(
       <div class="page-head">
         <div><h1 data-i18n="page.devices">Devices</h1><p class="page-sub" data-i18n="page.devices.sub">Real-time views of actuators and sensors</p></div>
       </div>
-      <div id="devices_cards"></div>
+      <div id="devices_cards" class="devices-dashboard">
+        <div id="dash_stats"></div>
+        <div class="search-box" style="margin:12px 0;display:flex;gap:8px;">
+          <input type="text" id="devSearch" class="input-sm" placeholder="Buscar..." data-i18n-ph="dev.search" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterDevices();}">
+          <button class="btn ghost sm" data-i18n="btn.filter" onclick="filterDevices()" style="min-width:60px;">Filtrar</button>
+        </div>
+        <div id="dash_lists"></div>
+      </div>
     </div>
   </section>
   <section id="auto" class="view content">
@@ -296,6 +297,10 @@ const char Tabs[] PROGMEM = R"rawliteral(
     <div class="pages">
       <div class="page-head">
         <div><h1 data-i18n="page.config">Settings</h1><p class="page-sub" data-i18n="page.config.sub">Calibration, persistence and node configuration</p></div>
+      </div>
+      <div class="search-box" style="margin:8px 0;display:flex;gap:8px;">
+        <input type="text" id="settingsSearch" class="input-sm" placeholder="Buscar config..." data-i18n-ph="cfg.search" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterSettings();}">
+        <button class="btn ghost sm" data-i18n="btn.filter" onclick="filterSettings()" style="min-width:80px;">Filtrar</button>
       </div>
       <div id="cards"></div>
     </div>
@@ -340,19 +345,18 @@ async function show(tab){
 
 const I18N = {
 es: {
-  title:'Qymeras 1.1', nav:{
+  nav:{
   devices:'Dispositivos', automations:'Automatizaciones', settings:'Ajustes', logs:'Registros'}, page:{
   devices:'Dispositivos', 'devices.sub':'Vistas de actuadores y sensores en tiempo real',
   auto:'Automatizaciones', 'auto.sub':'Reglas de automatización',
   config:'Ajustes', 'config.sub':'Calibración, persistencia y configuración del nodo',
   logs:'Registros', 'logs.sub':'Actualización automática cada 2 s'}, btn:{
-  newRule:'Nueva regla', refresh:'Refrescar', clear:'Limpiar', filter:'Filtrar'}, saved:{
-  notice:'Ajustes guardados. El dispositivo se está reiniciando...'}, log:{
+  newRule:'Nueva regla', refresh:'Refrescar', clear:'Limpiar', filter:'Filtrar'}, log:{
   core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error',
   updated:'Actualizado: {time} · {n} registros', empty:'Sin registros',
   cleared:'Registros borrados', error:'No se pudieron cargar los registros',
   invalid:'Respuesta no válida del servidor', netError:'Error de conexión'}, stat:{
-  actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado', time:'Tiempo'}, chip:{
+  actuators:'Actuadores', sensors:'Sensores', time:'Tiempo'}, chip:{
   enabled:'Habilitado', disabled:'Deshabilitado', online:'En línea'}, status:{
   local:'Local', remote:'Remoto', offline:'Desconectado'}, dev:{
   on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel', search:'Buscar', noMatch:'Sin coincidencias'}, no:{
@@ -369,7 +373,7 @@ es: {
   title:'Red del nodo', ssid:'SSID', 'ssid.ph':'Nombre de la red', pass:'Contraseña',
   'pass.ph':'Contraseña WiFi', save:'Guardar y reiniciar',
   note:'Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.'}, alert:{
-  saved:'Guardado', isVirtualTimeout:'Tiempo de espera agotado: {ip} no respondió',
+  saved:'Guardado', failed:'Fallo al guardar en el nodo', saveError:'No se pudo guardar (HTTP {status}{detail})',
   isVirtualNet:'Error de red: no se pudo contactar a {ip}',
   isVirtualHttp:'Error en {ip} (HTTP {status}{detail})', localError:'Error local (HTTP {status}{detail})',
   localNet:'Error de red al contactar este dispositivo'}, factory:{
@@ -399,24 +403,23 @@ es: {
   levelActuator:'El level del actuador debe estar entre 0 y 100 (actual: {level})',
   saved:'Regla guardada correctamente', saveError:'Error al guardar:', connError:'Error de conexión:',
   deleteConfirm:'¿Eliminar la regla {id}?', edit:'Editar', delete:'Eliminar'}, rule:{
-  sensors:'Sensor(es)', condition:'Condición', logic:'Lógica', actions:'Acciones', actuators:'Actuador(es)',
+  sensors:'Sensor(es)', logic:'Lógica', actions:'Acciones',
   delay:'Delay / Cooldown', title:'Regla', empty:'No hay reglas de automatización.',
   emptyHint:'Crea la primera para empezar.'}
 },
 en: {
-  title:'Qymeras 1.1', nav:{
+  nav:{
   devices:'Devices', automations:'Automations', settings:'Settings', logs:'Logs'}, page:{
   devices:'Devices', 'devices.sub':'Real-time views of actuators and sensors',
   auto:'Automations', 'auto.sub':'Automation rules',
   config:'Settings', 'config.sub':'Calibration, persistence and node configuration',
   logs:'Logs', 'logs.sub':'Auto-refresh every 2 s'}, btn:{
-  newRule:'New rule', refresh:'Refresh', clear:'Clear', filter:'Filter'}, saved:{
-  notice:'Settings saved. The device is restarting...'}, log:{
+  newRule:'New rule', refresh:'Refresh', clear:'Clear', filter:'Filter'}, log:{
   core:'Core', events:'Events', sensors:'Sensors / Warn / Error',
   updated:'Updated: {time} · {n} entries', empty:'No entries',
   cleared:'Logs cleared', error:'Could not load the logs',
   invalid:'Invalid response from the server', netError:'Network error'}, stat:{
-  actuators:'Actuators', sensors:'Sensors', updated:'Updated', time:'Time'}, chip:{
+  actuators:'Actuators', sensors:'Sensors', time:'Time'}, chip:{
   enabled:'Enabled', disabled:'Disabled', online:'Online'}, status:{
   local:'Local', remote:'Remote', offline:'Offline'}, dev:{
   on:'ON', off:'OFF', drag:'Drag to adjust level', search:'Search', noMatch:'No matches'}, no:{
@@ -433,7 +436,7 @@ en: {
   title:'Node network', ssid:'SSID', 'ssid.ph':'Network name', pass:'Password',
   'pass.ph':'WiFi password', save:'Save & restart',
   note:'After saving, the device will restart and connect to the new network.'}, alert:{
-  saved:'Saved', isVirtualTimeout:'Aborted: {ip} did not respond',
+  saved:'Saved', failed:'Failed to save on the node', saveError:'Could not save (HTTP {status}{detail})',
   isVirtualNet:'Network error: could not reach {ip}',
   isVirtualHttp:'Error in {ip} (HTTP {status}{detail})', localError:'Local error (HTTP {status}{detail})',
   localNet:'Network error contacting this device'}, factory:{
@@ -463,7 +466,7 @@ en: {
   levelActuator:'The actuator level must be between 0 and 100 (current: {level})',
   saved:'Rule saved successfully', saveError:'Save error:', connError:'Connection error:',
   deleteConfirm:'Delete rule {id}?', edit:'Edit', delete:'Delete'}, rule:{
-  sensors:'Sensor(s)', condition:'Condition', logic:'Logic', actions:'Actions', actuators:'Actuator(s)',
+  sensors:'Sensor(s)', logic:'Logic', actions:'Actions',
   delay:'Delay / Cooldown', title:'Rule', empty:'There are no automation rules.',
   emptyHint:'Create the first one to get started.'}
 }
@@ -513,33 +516,6 @@ function sLabel(type) {
 
 
 const char Rules[] PROGMEM = R"rawliteral(
-function renderAutomationTable(rules){
-  let html = '<div class="rule-list">';
-  if(!rules || !rules.length){
-    html += '<div class="empty">' + t('rule.empty') + '</div>';
-  } else {
-    rules.forEach((r,i)=>{
-      html += `
-      <div class="rule-card">
-        <div class="rule-head">
-          <span class="chip neutral">${['EDGE','THRESHOLD','TIME','INTERVAL'][r.type] || 'RULE'} #${r.id}</span>
-          <h3>${r.name || t('rule.title')}</h3>
-          <div class="rule-actions"></div>
-        </div>
-        <div class="rule-info"><span>${t('rule.sensors')}</span><b>${r.sensors.join(", ")}</b></div>
-        <div class="rule-info"><span>${t('rule.logic')}</span><b>${r.logical_and?'AND':'OR'}</b></div>
-        <div class="rule-info"><span>${t('rule.actions')}</span><b>${r.actions.join(", ")}</b></div>
-        <div class="rule-info"><span>${t('rule.delay')}</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
-        <div class="rule-actions">
-          <button class="btn ghost sm" onclick="editRule(${i})">${t('wiz.edit')}</button>
-          <button class="btn danger sm" onclick="deleteRule(${i})">${t('wiz.delete')}</button>
-        </div>
-      </div>`;
-    });
-  }
-  html += '</div>';
-  document.getElementById("auto_table").innerHTML = html;
-}
 function newRule(){
   loadSensorsAndActuators().then(()=>{
     document.getElementById('ruleModalTitle').textContent=t('wiz.titleNew');
@@ -551,6 +527,13 @@ function newRule(){
 
 
 const char CardsSettings[] PROGMEM = R"rawliteral(
+function calHead(label, s, i) {
+  return `<div class="settings-card-head">
+    <div><span class="eyebrow">${label}</span><h3>${s.name}</h3></div>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+  </div>`;
+}
+
 function sensorCalibCard(s, i, cfg) {
   const minMaxBtns = cfg.hasMinMax ? `
     <div class="field-row">
@@ -558,10 +541,7 @@ function sensorCalibCard(s, i, cfg) {
       <button class="btn ghost sm" onclick='setCalib(${i},"max","${s.name}")'>${t('cal.btn.set100')}</button>
     </div>` : '';
   return `<div class="settings-card">
-    <div class="settings-card-head">
-      <div><span class="eyebrow">${cfg.label}</span><h3>${s.name}</h3></div>
-      <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-    </div>
+    ${calHead(cfg.label, s, i)}
     <div class="metric" id="v${i}">${cfg.format(s.value)}</div>
     <div class="field-row">
       <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.ref')}">
@@ -590,37 +570,25 @@ PRES: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v =
 GENERIC: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (v === 255 || v == null) ? 'N/A' : Number(v).toFixed(2), hasMinMax: false }),
 
 AIRQ: (s, i) => `<div class="settings-card">
-  <div class="settings-card-head">
-    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-  </div>
+  ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A'}</div>
   
 </div>`,
 
 RAIN: (s, i) => `<div class="settings-card">
-  <div class="settings-card-head">
-    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-  </div>
+  ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value ? t('yn.yes') : t('yn.no')}</div>
   
 </div>`,
 
 CONTACT: (s, i) => `<div class="settings-card">
-  <div class="settings-card-head">
-    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-  </div>
+  ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.state ? t('yn.closed') : t('yn.open')}</div>
   
 </div>`,
 
 DIMM: (s, i) => `<div class="settings-card">
-  <div class="settings-card-head">
-    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-  </div>
+  ${calHead(sLabel(s.type), s, i)}
   <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade}</b></div>
   <div class="field-row">
     <input id="ref${i}" class="input sm min-width-120" placeholder="${t('cal.ph.fade')}"">
@@ -630,10 +598,7 @@ DIMM: (s, i) => `<div class="settings-card">
 </div>`,
 
 REL: (s, i) => `<div class="settings-card">
-  <div class="settings-card-head">
-    <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
-  </div>
+  ${calHead(sLabel(s.type), s, i)}
   <div class="field-row">
     <span>${t('cal.check.persist')}</span>
     <button type="button" class="switch ${s.persist?'on':''}" role="switch" aria-checked="${s.persist?'true':'false'}" aria-label="Persistencia ${s.name}" onclick="togglePersist(${i})"><span class="knob"></span></button>
@@ -758,6 +723,22 @@ function formatTime(s) {
   return `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())} - ${t.getUTCFullYear()}-${pad(t.getUTCMonth()+1)}-${pad(t.getUTCDate())}`;
 }
 
+function formatSensorValue(type, value, state){
+  if (value === 255 || value == null) return 'N/A';
+  switch(type){
+    case SensorType.SENSOR_TEMP: return value.toFixed(2) + ' °C';
+    case SensorType.SENSOR_HUMI: return value.toFixed(0) + ' %';
+    case SensorType.SENSOR_PRESS: return value.toFixed(0) + ' kPa';
+    case SensorType.SENSOR_LEVEL: return value.toFixed(0) + ' %';
+    case SensorType.SENSOR_LUMI: return (value * 108.9432 / 7074).toFixed(0) + ' lx';
+    case SensorType.SENSOR_AIRQ: return value == 0 ? t('air.good') : value == 1 ? t('air.warn') : value == 2 ? t('air.bad') : 'N/A';
+    case SensorType.SENSOR_RAIN: return value ? t('yn.yes') : t('yn.no');
+    case SensorType.SENSOR_CONTACT: return state ? t('yn.closed') : t('yn.open');
+    case SensorType.SENSOR_GENERIC: return Number(value).toFixed(2);
+    default: return value ?? '-';
+  }
+}
+
 function devStatus(s) {
   if (!s || s.local) return '<span class="status"><span class="dot ok"></span>' + t('status.local') + '</span>';
   return (s.age_ms != null && s.age_ms <= 30000)
@@ -798,27 +779,15 @@ if (type === SensorType.TYPE_DIMMER) {
         <span class="value-lg"><b id="dev_val_${id}">${displayValue}</b><span class="unit">%</span></span>
         <button type="button" class="switch ${state?'on':''}" role="switch" aria-checked="${state?state:false}" aria-label="Alternar dimmer ${name}" onclick="toggleDevice(${id})"><span class="knob"></span></button>
       </div>
-      <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" class="gradient-bg" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
+      <input type="range" min="0" max="100" name="${name}" value="${displayValue}" id="slider_${id}" oninput="onDimmerInput(${id}, this.value)" onchange="onDimmerChange(${id}, this.value)" aria-label="Nivel ${name}">
       <div class="device-row">${devStatus(sensor)}<span class="small-note">${t('dev.drag')}</span></div>
     </div>`;
   }
-  const SENSOR_DISPLAY = {
-    [SensorType.SENSOR_TEMP]:  { label: () => sLabel(SensorType.SENSOR_TEMP), format: v => v.toFixed(2) + ' °C' },
-    [SensorType.SENSOR_HUMI]:  { label: () => sLabel(SensorType.SENSOR_HUMI), format: v => v.toFixed(0) + ' %' },
-    [SensorType.SENSOR_PRESS]: { label: () => sLabel(SensorType.SENSOR_PRESS), format: v => v.toFixed(0) + ' kPa' },
-    [SensorType.SENSOR_AIRQ]:  { label: () => sLabel(SensorType.SENSOR_AIRQ), format: v => v == 0 ? t('air.good') : v == 1 ? t('air.warn') : v == 2 ? t('air.bad') : 'N/A' },
-    [SensorType.SENSOR_RAIN]:  { label: () => sLabel(SensorType.SENSOR_RAIN), format: v => v ? t('yn.yes') : t('yn.no') },
-    [SensorType.SENSOR_LUMI]:  { label: () => sLabel(SensorType.SENSOR_LUMI), format: v => (v * 108.9432 / 7074).toFixed(0) + ' lx' },
-    [SensorType.SENSOR_LEVEL]: { label: () => sLabel(SensorType.SENSOR_LEVEL), format: v => v.toFixed(0) + ' %' },
-    [SensorType.SENSOR_GENERIC]: { label: () => sLabel(SensorType.SENSOR_GENERIC), format: v => Number(v).toFixed(2) },
-    [SensorType.SENSOR_CONTACT]: { label: () => sLabel(SensorType.SENSOR_CONTACT), format: (v,s) => s ? t('yn.closed') : t('yn.open') },
-  };
-  const cfg = SENSOR_DISPLAY[type];
-  if (cfg) {
-    const dv = (value === 255 || value == null) ? 'N/A' : cfg.format(value, state);
+  if (type >= 1 && type <= 7 || type === 11 || type === 12) {
+    const dv = (value === 255 || value == null) ? 'N/A' : formatSensorValue(type, value, state);
     return `<div class="device-card sensor" data-name="${name}" data-type="${type}">
       <div class="device-head">
-        <span class="chip neutral">${cfg.label()}</span>
+        <span class="chip neutral">${sLabel(type)}</span>
         <span class="device-name">${name}</span>
       </div>
       <div class="metric" id="dev_${id}">${dv}</div>
@@ -897,8 +866,6 @@ let settingsSearchTerm = '';
 
 async function loadDevices() {
   try {
-    const devInput = document.getElementById('devSearch');
-    if (devInput) devSearchTerm = devInput.value || '';
     const data = (await getCalib(true)).filter(isDeviceVisible);
     let mobile = '';
     let actuators = '';
@@ -918,16 +885,25 @@ async function loadDevices() {
     });
     const now = new Date();
     const clock = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0') + ' - ' + String(now.getUTCFullYear()) + '-' + String(now.getUTCMonth() + 1).padStart(2, '0') + '-' + String(now.getUTCDate()).padStart(2, '0');
-    const html = `
+    const healthStatus = document.getElementById('systemHealth');
+    if (healthStatus && sensors && sensors.length > 0) {
+      const visibleSensors = sensors.filter(s => s.local || (!s.local && s.age_ms && s.age_ms <= 30000));
+      if (visibleSensors.length > 0) {
+        healthStatus.title = `${visibleSensors.length} sensors`;
+        healthStatus.innerHTML = `<span class="dot ok"></span>${visibleSensors.length}`;
+      } else {
+        healthStatus.title = 'No sensors';
+        healthStatus.innerHTML = '<span class="dot bad"></span>0';
+      }
+    }
+    document.getElementById('dash_stats').innerHTML = `
       <div class="dash-stats">
         <div class="stat-card"><span class="stat-label">${t('stat.actuators')}</span><span class="stat-value">${actCount}</span></div>
         <div class="stat-card"><span class="stat-label">${t('stat.sensors')}</span><span class="stat-value">${sensCount}</span></div>
         <div class="stat-card"><span class="stat-label">${t('stat.time')}</span><span class="stat-value time">${clock}</span></div>
       </div>
-      <div class="search-box" style="margin:12px 0;display:flex;gap:8px;">
-        <input type="text" id="devSearch" class="input-sm" placeholder="${t('dev.search')}..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterDevices();}">
-        <button class="btn ghost sm" onclick="filterDevices()" style="min-width:60px;">${t('btn.filter')}</button>
-      </div>
+    `;
+    document.getElementById('dash_lists').innerHTML = `
       <div class="devices-mobile-list">${mobile}</div>
       <div class="devices-desktop-layout">
         <div class="devices-column devices-actuators">
@@ -940,14 +916,7 @@ async function loadDevices() {
         </div>
       </div>
     `;
-    const root = document.getElementById('devices_cards');
-    root.className = 'devices-dashboard';
-    root.innerHTML = html;
-    const searchBox = document.getElementById('devSearch');
-    if (searchBox) {
-      searchBox.value = devSearchTerm;
-      if (devSearchTerm.trim() !== '') filterDevices();
-    }
+    if (devSearchTerm.trim() !== '') applyDeviceFilter(devSearchTerm);
   } catch (e) {
     console.log('loadDevices err', e);
   }
@@ -981,8 +950,6 @@ const TYPE_RENDERERS = {
 
 async function loadCalib() {
   try {
-    const setInput = document.getElementById('settingsSearch');
-    if (setInput) settingsSearchTerm = setInput.value || '';
     const data = await getCalib(true);
 
     // Separate local and remote entries
@@ -1006,11 +973,7 @@ async function loadCalib() {
       }
     });
 
-    let html = `<div class='settings-grid'>
-<div class="search-box" style="grid-column:1/-1;margin:8px 0;display:flex;gap:8px;">
-  <input type="text" id="settingsSearch" class="input-sm" placeholder="${t('cfg.search')}..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterSettings();}">
-  <button class="btn ghost sm" onclick="filterSettings()" style="min-width:80px;">${t('btn.filter')}</button>
-</div>`;
+    let html = `<div class='settings-grid'>`;
 
     // LOCAL section
     if (localEntries.length > 0) {
@@ -1099,11 +1062,7 @@ async function loadCalib() {
     `;
     html += "</div>";
     document.getElementById('cards').innerHTML = html;
-    const searchBox = document.getElementById('settingsSearch');
-    if (searchBox) {
-      searchBox.value = settingsSearchTerm;
-      if (settingsSearchTerm.trim() !== '') filterSettings();
-    }
+    if (settingsSearchTerm.trim() !== '') applySettingsFilter(settingsSearchTerm);
 
     // Initialize accordions
     document.querySelectorAll('.accordion-header').forEach(btn => {
@@ -1121,32 +1080,10 @@ async function updateSettingsValues() {
     data.forEach((s, i) => {
       const el = document.getElementById(`v${i}`);
       if (!el) return;
-      if (s.type === SensorType.SENSOR_TEMP)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(2) + ' °C';
-      else if (s.type === SensorType.SENSOR_HUMI)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
-      else if (s.type === SensorType.SENSOR_PRESS)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' kPa';
-      else if (s.type === SensorType.SENSOR_RAIN)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value ? t('yn.yes') : t('yn.no');
-      else if (s.type === SensorType.SENSOR_AIRQ)
-        el.innerText = s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A';
-      else if (s.type === SensorType.SENSOR_LEVEL)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
-      else if (s.type === SensorType.TYPE_DIMMER)
-        el.innerText = s.fade;
-      else if (s.type === SensorType.TYPE_RELAY)
-        el.innerText = s.pulse_ms ?? 0;
-      else if (s.type === SensorType.SENSOR_LUMI)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : (s.value * 108.9432 / 7074).toFixed(0) + ' lx';
-      else if (s.type === SensorType.SENSOR_GENERIC)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : Number(s.value).toFixed(2);
-      else if (s.type === SensorType.SENSOR_CONTACT)
-        el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.state ? t('yn.closed') : t('yn.open');
-      else if (s.type === SensorType.SENSOR_TIME)
-        el.innerHTML = s ? formatTime(s) : 'N/A';
-      else
-        el.innerText = s.value ?? '-';
+      if (s.type === SensorType.TYPE_DIMMER) el.innerText = s.fade;
+      else if (s.type === SensorType.TYPE_RELAY) el.innerText = s.pulse_ms ?? 0;
+      else if (s.type === SensorType.SENSOR_TIME) el.innerHTML = s ? formatTime(s) : 'N/A';
+      else el.innerText = formatSensorValue(s.type, s.value, s.state);
     });
   } catch (e) {
     console.log('updateSettingsValues err', e);
@@ -1643,15 +1580,12 @@ const char AutoWizJS[] PROGMEM = R"rawliteral(
 /*--------------------------------------------------- WIZARD AUTOMATIONS ------------------------------------------------------------------------*/
 
 let wizard={step:0,data:{sensors:[],actuators:[],type:0,logic:1,delay:0,cooldown:0,interval:0,actions:[],levels:[],conditions:{},time_hour:0,time_minute:0,date_start:'',date_end:''}};
-let availableSensors=[];
-
 function sensorByIndex(index){
-  return availableSensors.find(s => s.index === index);
+  return sensors.find(s => s.index === index);
 }
 
 async function loadSensorsAndActuators(){
-  const r = await fetch('/calib');
-  availableSensors = await r.json();
+  await getCalib(false);
 }
 
 function startWizard(edit=-1){
@@ -1713,15 +1647,6 @@ function getRelevantSteps(){
   return steps;
 }
 
-function getTotalSteps(){
-  return getRelevantSteps().length;
-}
-
-function getStepNumber(globalStep){
-  const steps = getRelevantSteps();
-  return steps[globalStep] ?? globalStep;
-}
-
 function showStep(n){
   const steps = getRelevantSteps();
   if(n >= steps.length) return;
@@ -1777,20 +1702,7 @@ function showStep(n){
         if(!s) return;
         const cond = wizard.data.conditions[sIdx] || {cmp:0,threshold:0};
 
-        const val = (s.value === 255 || s.value == null)
-          ? 'N/A'
-          : (
-              s.type === SensorType.SENSOR_TEMP  ? s.value.toFixed(2) + ' °C' :
-              s.type === SensorType.SENSOR_HUMI  ? s.value.toFixed(0) + ' %' :
-              s.type === SensorType.SENSOR_PRESS ? s.value.toFixed(0) + ' kPa' :
-              s.type === SensorType.SENSOR_LEVEL ? s.value.toFixed(0) + ' %' :
-              s.type === SensorType.SENSOR_LUMI  ? (s.value * 108.9432 / 7074).toFixed(0) + ' lx' :
-              s.type === SensorType.SENSOR_AIRQ  ? (s.value==0?t('air.good'):s.value==1?t('air.warn'):s.value==2?t('air.bad'):'N/A') :
-              s.type === SensorType.SENSOR_RAIN  ? (s.value ? t('yn.yes') : t('yn.no')) :
-              s.type === SensorType.SENSOR_CONTACT  ? (s.state ? t('yn.closed') : t('yn.open')) :
-              s.type === SensorType.SENSOR_GENERIC  ? Number(s.value).toFixed(2) :
-              s.value
-            );
+        const val = formatSensorValue(s.type, s.value, s.state);
 
         content += `
         <div class="cond-box">
@@ -2198,12 +2110,12 @@ function prevStep(){
 function populateSensors(){
   const sel = document.getElementById('sensorList');
 
-  let filtered = availableSensors;
+  let filtered = sensors;
 
   if(wizard.data.type === 0) {
-    filtered = availableSensors.filter((s,i) => [7, 6, 9, 12].includes(s.type));
+    filtered = sensors.filter((s,i) => [7, 6, 9, 12].includes(s.type));
   } else if(wizard.data.type === 1) {
-    filtered = availableSensors.filter((s,i) => [1, 2, 3, 4, 5, 11].includes(s.type));
+    filtered = sensors.filter((s,i) => [1, 2, 3, 4, 5, 11].includes(s.type));
   }
 
   sel.innerHTML = filtered.map((s,i)=>{
@@ -2220,7 +2132,7 @@ function populateSensors(){
 
 function populateActuators(){
   const sel = document.getElementById('actuatorList');
-  const actuators = availableSensors.reduce((acc,s,i)=>{
+  const actuators = sensors.reduce((acc,s,i)=>{
     if(s.type===9 || s.type===8) acc.push({...s, idx:s.index});
     return acc;
   },[]);
@@ -2495,27 +2407,14 @@ loadDevices();
 loadCalib();
 let pollIntervalRef = setInterval(() => {
   if(document.visibilityState !== 'hidden') {
-    loadDevices();
-    updateSettingsValues();
-    // Simple health check using cached sensor data
-    const healthStatus = document.getElementById('systemHealth');
-    if (sensors && sensors.length > 0) {
-      const visibleSensors = sensors.filter(s => s.local || (!s.local && s.age_ms && s.age_ms <= 30000));
-      if (visibleSensors.length > 0) {
-        healthStatus.title = `${visibleSensors.length} sensors`;
-        healthStatus.innerHTML = `<span class="dot ok"></span>${visibleSensors.length}`;
-      } else {
-        healthStatus.title = 'No sensors';
-        healthStatus.innerHTML = '<span class="dot bad"></span>0';
-      }
+    const tab = window.activeTab;
+    if (tab === 'config') {
+      updateSettingsValues();
+    } else if (tab === 'control') {
+      loadDevices();
     }
   }
 }, 5000);
-
-if(location.search.indexOf('saved=1') >= 0){
-  const n = document.getElementById('savedNotice');
-  if(n) n.style.display = 'flex';
-}
 
 (function modalInit(){
   const modal = document.getElementById('ruleModal');
@@ -2538,6 +2437,11 @@ document.addEventListener('visibilitychange', () => {
 
 function filterDevices() {
   const term = document.getElementById('devSearch')?.value?.toLowerCase() || '';
+  devSearchTerm = term;
+  applyDeviceFilter(term);
+}
+
+function applyDeviceFilter(term) {
   const cards = document.querySelectorAll('.device-card');
   let visibleCount = 0;
   cards.forEach(card => {
@@ -2564,6 +2468,11 @@ function filterDevices() {
 
 function filterSettings() {
   const term = document.getElementById('settingsSearch')?.value?.toLowerCase() || '';
+  settingsSearchTerm = term;
+  applySettingsFilter(term);
+}
+
+function applySettingsFilter(term) {
   const cards = document.querySelectorAll('.settings-card');
   let visibleCount = 0;
   cards.forEach(card => {
@@ -2595,6 +2504,9 @@ function setLang(l) {
   try { localStorage.setItem('lang', LANG); } catch(e) {}
   document.querySelectorAll('[data-i18n]').forEach(el => {
     el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+    el.placeholder = t(el.getAttribute('data-i18n-ph')) + '...';
   });
 document.querySelectorAll('.langbtn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.lang === LANG);

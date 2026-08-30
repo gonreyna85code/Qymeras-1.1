@@ -793,12 +793,8 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += c.name;
     json += "\",\"value\":";
     json += buf;
-    json += ",\"pers_state\":";
-    json += (c.pers_state ? "true" : "false");
 
     char fb[24];
-    dtostrf(isnan(c.min) || isinf(c.min) ? 0.0f : c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
-    dtostrf(isnan(c.max) || isinf(c.max) ? 0.0f : c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
     dtostrf(isnan(c.correction) || isinf(c.correction) ? 0.0f : c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
 
     json += ",\"avail\":";           json += c.avail;
@@ -808,9 +804,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += ",\"persist\":";         json += (c.persist ? "true" : "false");
     json += ",\"fade\":";            json += c.fade;
     json += ",\"type\":";            json += c.type;
-    json += ",\"pin\":";             json += c.pin;
     json += ",\"local\":";           json += (c.local ? "true" : "false");
-    json += ",\"last_update\":";     json += c.local ? 0 : c.last_update;
     // Elapsed ms since the last remote packet, computed server-side from the
     // same millis() timebase as MESH_TIMEOUT (client Date.now() is epoch-based
     // and cannot be compared directly with the device uptime counter).

@@ -264,3 +264,110 @@ front-end/UI contracts only. All changes verified by 3-env build matrix.
 
 Remaining: hardware flash + on-device UI walkthrough (logs clear/refresh, modal,
 relay toggles, wizards, filters) — not performed in this pass.
+
+---
+
+## Final Fix + Size-Reduction Pass (feature/GUI, 2026-08-30)
+
+Merged final pass on top of the stabilization work above. Goals: close the
+remaining functional bugs (toast i18n), remove confirmed dead code, unify
+duplicated sensor formatting, cut unnecessary network/DOM work, and shrink the
+embedded web payload — all without changing feature behavior or appearance.
+
+### Functional fixes
+- **Toast texts showed raw keys**: `tf('alert.failed')` and `tf('alert.saveError')`
+  were used by `toggleRelayAvail`/`isVirtual`/`updateRelayUI` but the keys did not
+  exist in `I18N` (es/en) → toasts rendered the literal key. Added
+  `alert.failed` and `alert.saveError` in both languages.
+- **Dead `saved` notice**: `location.search` `saved=1` branch targeted a
+  `#savedNotice` element that no longer exists (and `saved.notice` i18n keys).
+  Removed the dead branch + keys.
+- **Health badge duplication**: `loadDevices()` rebulids sensor state every control
+  poll; the poll also re-computed the `#systemHealth` badge → moved badge update
+  into `loadDevices()` (runs on boot + every control poll) and removed the copy.
+
+### Dead code removed (each verified 0-referenced first)
+- `renderAutomationTable()` (`editRule(i)` array-index version) — `loadRules()`
+  renders `#auto_table`; `newRule()` kept.
+- `getTotalSteps()` / `getStepNumber()` (wizard) — the wizard indexes via
+  `getRelevantSteps()` directly in `showStep()`/`nextStep()`.
+- `availableSensors` duplicate of `sensors`. `sensorByIndex()` now reads the
+  shared `sensors` cache; `loadSensorsAndActuators()` calls `getCalib(false)`
+  (no per-wizard-open `/calib` fetch when cached).
+- CSS: `.card`, `.notice`+`.notice.success`, `.dash-section`, `.time-value`,
+  `.gradient-bg` (3 rules — `input[type=range]` already styles sliders),
+  `.dot.warn`; unused slider `class="gradient-bg"` attr.
+- i18n keys (es+en): `title`, `stat.updated`, `rule.condition`,
+  `rule.actuators`, `alert.isVirtualTimeout`, `saved.notice`.
+
+### Consolidations (no behavior/appearance change)
+- New shared `formatSensorValue(type, value, state)` used by `deviceCard`,
+  `updateSettingsValues` and the wizard step-2 condition list, replacing three
+  byte-identical TEMP/HUMI/PRESS/LEVEL/LUMI/AIRQ/RAIN/CONTACT/GENERIC chains
+  (removed `SENSOR_DISPLAY` map).
+- New `calHead(label, s, i)` settings-card header helper; 6 duplicated
+  `settings-card-head` blocks (AIRQ/RAIN/CONTACT/DIMM/REL + `sensorCalibCard`)
+  now render via the shared helper.
+
+### Reduced runtime work
+- 5s poll now tab-gated: `config` → `updateSettingsValues()` (cached); `control`
+  → `loadDevices()` (fresh); `auto/logs` → nothing. Previously every 5s while
+  visible the GUI rebuilt the (possibly hidden) device DOM and fetched `/calib`
+  regardless of tab.
+
+### Server trim (verified: 0 GUI references)
+- `/calib` response no longer emits unused `pers_state`, `min`, `max`, `pin`,
+  `last_update` per sensor (smaller JSON on every poll; `age_ms`/`correction`
+  retained — both are read by the GUI).
+
+### Size results
+Embedded web payload in `src/html.cpp` (PROGMEM chunks):
+
+| Chunk | Before | After |
+|-------|--------|-------|
+| Styles | 19,889 | 18,845 |
+| Tabs | 18,293 | 18,035 |
+| Rules | 1,495 | 228 |
+| CardsSettings | 9,819 | 8,159 |
+| DeviceCards | 5,805 | 5,496 |
+| JS | 27,261 | 26,369 |
+| AutoWizJS | 33,863 | 32,053 |
+| **Total** | **116,425** | **109,185** |
+
+Saved **7,240 B (6.22 %)**. `html.cpp` file 116,936 → 109,696 B.
+
+### Verification
+- Extracted GUI JS syntax-checked with `node --check` (PASS, incl. `°C` UTF-8
+  integrity) and leftover-grep scan for every removed symbol (0 hits).
+- Build matrix (no ESP32 flash — in use by a parallel branch test):
+  esp8266_generic PASS (RAM 69.7% / Flash 46.2%); esp32_devkit + esp32c3_devkit
+  compile+link PASS (not flashed).
+- **Hardware verification (ESP8266, 2026-08-30):** flashed COM9 (`pio run
+  --target upload`, 486,816 B, hash verified) → clean boot, WiFi 192.168.1.19,
+  heap 18,384 B. Live checks: `/` HTTP 200 (page 109,535 B; new helpers
+  `formatSensorValue`/`calHead` present, dead symbols `renderAutomationTable`,
+  `availableSensors`, `SENSOR_DISPLAY`, `gradient-bg`, `getTotalSteps`,
+  `savedNotice` absent; `alert.failed`/`alert.saveError` keys live in es/en);
+  `/calib` 12 sensors with `age_ms`+`correction` and NO
+  `pers_state/min/max/pin/last_update`; `/logs` returns boot entries normally.
+## Search inputs: fix + styling (2026-08-30)
+- Root cause: `loadDevices()` (5 s tab poll) and `loadCalib()` rebuilt their
+  whole container `innerHTML`, recreating the `#devSearch` / `#settingsSearch`
+  inputs every time → cursor/focus loss and an auto-applied filter on each poll
+  ("solo enters" themselves).
+- Fix: inputs moved OUT of the rebuilt containers into static markup
+  (`#devices_cards` gains static `#dash_stats`, `.search-box`, `#dash_lists`;
+  config gains a static `.search-box` before `#cards`). Because they are never
+  re-rendered, focus/cursor persist across polls.
+- Filtering split: `filterDevices()`/`filterSettings()` read the input and
+  store the APPLIED term; `applyDeviceFilter()`/`applySettingsFilter(term)`
+  re-apply the applied term after a list re-render. Polls no longer read the
+  input value, so a half-typed query is never auto-triggered.
+- Placeholder i18n: inputs use `data-i18n-ph` extended in `setLang()` (es/en).
+- Styling: added `.input-sm` rule (border-radius `var(--radius-sm)`, border
+  `var(--border)`, bg `var(--bg-2)`, focus ring) — the class previously had no
+  CSS at all, hence inputs had square unstyled corners.
+- Payload 109,185 → 109,392 B (+207 B). `node --check` PASS. Build + flash
+  esp8266_generic SUCCESS (flash this round: 2026-08-30). Live `/` 200
+  (109,810 B) — single `#devSearch`/`#settingsSearch`, no auto-read of inputs,
+  `.input-sm` rule present.
