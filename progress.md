@@ -1,13 +1,15 @@
 # Qymeras 1.1 Progress Tracker
 
-## Current State (2026-08-27)
+## Current State (updated 2026-08-30)
 
-- **Branch `main` = production 1.1 tree.** HEAD `5e46e12` carries NO AI code
+- **Branch `main` = production 1.1 tree.** HEAD `c8daf16` carries NO AI code
   (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM block all removed).
   Deterministic core intact, builds green on 3 envs, host suite 45/45.
-- **Fleet:** ESP32 = 192.168.1.16 (device_uid 183646728) — in-hardware-scope;
-  ESP8266 = 192.168.1.19 (device_uid 12014147) — owned by a parallel feature
-  effort (no flash/reconfig without owner approval). OTA flag off on both.
+- **Fleet (2026-08-30):** ESP8266 = **192.168.1.16** (device_uid 12014147;
+  DHCP drifted from .19 after the reflash, taking the ESP32's old lease) —
+  reflashed by owner with the unified `Qymera::` API build (HEAD `c8daf16`);
+  all 12 Base entities registered, `/calib` healthy. ESP32 (device_uid
+  183646728) currently **offline** / not on the network. OTA flag off.
 - **Remaining before the production gate (all hardware-required):** 24h memory
   soak, factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hw validation.
 - **AI subsystem:** authorized (see `AGENTS.md` "Scope Change Authorization
@@ -195,8 +197,8 @@ Code-review-only items are NOT marked PASS.
 | ESP8266 fleet IP (previous) | (superseded 2026-08-27) | .19/.27/.25 — DHCP drift; ESP8266 is the stable node; see current row below |
 | Phase 11 (storage endurance @ ESP8266) | PASS | 100 write/read-back cycles (DIMM0 fade 0..99000): 0 mismatches, final=99000, no corruption |
 | ESP32 board health | NOTE | ESP32 (192.168.1.27) now STABLE with drain-fix build: clean boot, HTTP 200, no storm, 11-remote discovery, healthy. (Earlier instability was the drain-fix-less HEAD firmware storming; resolved by flashing the fix build.) |
-| ESP32 fleet IP (current) | 192.168.1.16 | 2026-08-27: verified via /calib (device_uid 183646728, local:true). DHCP drift (history .28/.26/.24/.27). HTTP 200; /logs shows clean discovery: 11 ESP8266 remotes re-acquired, 10 stale slots reclaimed, no storm lines. |
-| ESP8266 fleet IP (current) | 192.168.1.19 | 2026-08-27: verified via /calib (device_uid 12014147, local:true). DHCP drift (history .27/.25). Matches turn2_real.json entity uids (1201414x). |
+| ESP32 fleet IP (current) | 192.168.1.16 | 2026-08-30: lease taken over by the ESP8266 after its reflash; ESP32 currently offline. Last confirmed ESP32 sighting 2026-08-27 (device_uid 183646728). See fleet line under Current State. |
+| ESP8266 fleet IP (current) | 192.168.1.16 | 2026-08-30: verified via /calib (device_uid 12014147, local:true) after reflash with HEAD c8daf16 (Qymera:: API). DHCP drift history .19/.27/.25. All 12 Base entities registered. |
 | Build matrix (2026-08-27) | PASS | `pio run` full link green on esp8266_generic (RAM 69.6% / Flash 42.2%), esp32_devkit (RAM 22.6% / Flash 73.7%), esp32c3_devkit (RAM 20.9% / Flash 72.8%). Header maps still produced (extra_scripts). |
 | Host sanity suite | PASS | `python tests/host_sanity.py` → 45/45 (timezone UTC conversion, strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow). |
 |
