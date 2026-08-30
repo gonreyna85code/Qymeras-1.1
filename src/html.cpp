@@ -150,36 +150,41 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .settings-card h3{margin:2px 0 0;font-size:15px}
 
 .settings-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+
+/* Settings sections with accordions */
+.settings-section{margin-bottom:12px}
+.accordion-header{display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;font-weight:600;font-size:14px;color:var(--text);transition:background .15s}
+.accordion-header:hover{background:var(--surface-hover)}
+.accordion-header:focus{outline:2px solid var(--accent);outline-offset:2px}
+.accordion-chevron{font-size:10px;transition:transform .2s;color:var(--text-muted);margin-right:8px;flex-shrink:0}
+.accordion-header[aria-expanded="true"] .accordion-chevron{transform:rotate(180deg)}
+.accordion-title{font-weight:600;color:var(--text)}
+.accordion-count{font-size:12px;color:var(--text-muted);background:var(--bg-2);padding:2px 8px;border-radius:999px;font-weight:500}
+.accordion-content{padding:8px 4px;overflow:hidden}
+.settings-section .settings-grid{gap:10px;margin-top:4px}
+
+/* Remote device groups */
+.remote-device-group{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;margin-bottom:8px}
+.remote-device-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.remote-device-name{font-weight:600;font-size:14px;color:var(--text);font-family:var(--mono)}
+.remote-gui-link{flex-shrink:0;white-space:nowrap}
+.remote-gui-disabled{font-size:12px;color:var(--text-muted);opacity:.6}
+.remote-device-content{padding-top:4px}
+
 .rule-list{display:flex;flex-direction:column;gap:12px}
-.rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px 16px;display:flex;flex-direction:column;gap:8px}
-.rule-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.rule-head h3{font-size:14px}
-.rule-actions{display:flex;gap:6px}
-.rule-info{display:flex;justify-content:space-between;gap:12px;font-size:13px}
-.rule-info span{color:var(--text-muted);font-size:12px}
-.rule-info b{font-weight:600}
-.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:var(--text-muted);padding:40px 16px;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius-md);font-size:14px}
-.empty.sm{padding:18px}
-.d-none{display:none}
-.d-block{display:block}
-.input-full{flex:1}
-.gradient-bg{background:linear-gradient(to right,var(--accent) var(--bg),var(--border) var(--bg))}
-.small-text{font-size:12px;color:var(--text-muted)}
-.log-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
-.log-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;min-height:260px;max-height:56vh;overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.5}
-.log-panel h3{margin:0 0 10px;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);padding-bottom:8px;text-align:center}
-.log-header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.log-entry{margin-bottom:5px;padding:4px 8px;border-radius:4px;background:var(--bg-2);word-break:break-all;border-left:3px solid transparent}
-.log-entry.core{border-left-color:var(--info)}
-.log-entry.evnt{border-left-color:var(--warning)}
-.log-entry.sens{border-left-color:var(--success)}
-.log-entry .t{color:var(--text-muted);font-size:10px;margin-right:4px}
-.log-entry .l{font-weight:700;margin:0 4px;font-size:10px}
-.log-entry .l.inf{color:var(--success)}.log-entry .l.wrn{color:var(--warning)}.log-entry .l.err{color:var(--danger)}
-.auto-actions{display:flex;gap:8px}
-.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55);z-index:1000;animation:modalIn .15s ease}
 @keyframes modalIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
 .modal-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:18px;box-shadow:var(--shadow-lg)}
+
+/* Toast notifications */
+#toast-container{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:4px}
+.toast{padding:8px 12px;border-radius:var(--radius-sm);min-width:200px;box-shadow:var(--shadow-mild);animation:fadeIn .3s ease}
+.toast.success{background:var(--success);color:var(--on-accent)}
+.toast.error{background:var(--danger);color:var(--on-accent)}
+.toast.warning{background:var(--warning);color:var(--on-accent)}
+.toast.info{background:var(--info);color:var(--on-accent)}
+.toast.fade-out{animation:fadeOut .3s ease forwards}
 .modal-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
 .modal-head h2{margin:0;font-size:17px}
 .icon-btn{border:none;background:var(--surface-2);color:var(--text-muted);width:30px;height:30px;border-radius:var(--radius-sm);cursor:pointer;font-size:16px;line-height:1}
@@ -286,10 +291,12 @@ const char Tabs[] PROGMEM = R"rawliteral(
 <script>
 async function show(tab){
   window.activeTab = tab;
-  document.querySelectorAll('.content').forEach(c=>c.style.display='none');
+  document.querySelectorAll('.content').forEach(c=>c.classList.remove('active'));
   document.querySelectorAll('.navitem').forEach(t=>t.classList.remove('active'));
-  document.getElementById(tab).style.display='block';
-  document.getElementById('t_'+tab).classList.add('active');
+  const target = document.getElementById(tab);
+  const navItem = document.getElementById('t_'+tab);
+  if (target) target.classList.add('active');
+  if (navItem) navItem.classList.add('active');
   localStorage.setItem('tab',tab);
   if(tab==='control') loadDevices();
   if(tab==='auto') loadRules();
@@ -323,7 +330,8 @@ es: {
   title:'Zona horaria'}, cfg:{
   title:'Configuración del nodo', broadcast:'Puerto broadcast', command:'Puerto comando',
   interval:'Intervalo de reporte', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
-  'ph.interval':'Intervalo (ms)', ota:'Arduino OTA', save:'Guardar', factory:'Restablecer a fábrica'}, net:{
+  'ph.interval':'Intervalo (ms)', ota:'Arduino OTA', save:'Guardar', factory:'Restablecer a fábrica',
+  local:'LOCAL', remote:'REMOTE', openGui:'Abrir GUI ↗'}, net:{
   title:'Red del nodo', ssid:'SSID', 'ssid.ph':'Nombre de la red', pass:'Contraseña',
   'pass.ph':'Contraseña WiFi', save:'Guardar y reiniciar',
   note:'Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.'}, alert:{
@@ -383,7 +391,8 @@ en: {
   title:'Time zone'}, cfg:{
   title:'Node configuration', broadcast:'Broadcast port', command:'Command port',
   interval:'Report interval', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
-  'ph.interval':'Interval (ms)', ota:'Arduino OTA', save:'Save', factory:'Factory reset'}, net:{
+  'ph.interval':'Interval (ms)', ota:'Arduino OTA', save:'Save', factory:'Factory reset',
+  local:'LOCAL', remote:'REMOTE', openGui:'Open GUI ↗'}, net:{
   title:'Node network', ssid:'SSID', 'ssid.ph':'Network name', pass:'Password',
   'pass.ph':'WiFi password', save:'Save & restart',
   note:'After saving, the device will restart and connect to the new network.'}, alert:{
@@ -498,7 +507,7 @@ function newRule(){
   loadSensorsAndActuators().then(()=>{
     document.getElementById('ruleModalTitle').textContent=t('wiz.titleNew');
     startWizard();
-    document.getElementById('ruleModal').style.display='flex';
+    document.getElementById('ruleModal').classList.add('open');
   });
 }
 )rawliteral";
@@ -586,18 +595,16 @@ DIMM: (s, i) => `<div class="settings-card">
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
+    <button type="button" class="switch ${s.avail?'on':''}" role="switch" aria-checked="${s.avail?'true':'false'}" aria-label="Alternar relé ${s.name}" onclick="toggleRelayAvail(${i})"><span class="knob"></span></button>
   </div>
-  <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b><span class="unit"> ms</span></div>
+  <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade ?? 0}</b></div>
   <div class="field-row">
     <span>${t('cal.check.persist')}</span>
     <button type="button" class="switch ${s.persist?'on':''}" role="switch" aria-checked="${s.persist?'true':'false'}" aria-label="Persistencia ${s.name}" onclick="togglePersist(${i})"><span class="knob"></span></button>
-  </div>
-  <div class="field-row">
     <span>${t('cal.check.pulse')}</span>
     <button type="button" class="switch ${s.pulse?'on':''}" role="switch" aria-checked="${s.pulse?'true':'false'}" aria-label="Modo pulso ${s.name}" onclick="togglePulse(${i})"><span class="knob"></span></button>
   </div>
-  <div class="field-row">
+  <div class="field-row" id="pulseRow${i}" style="${s.pulse ? '' : 'display:none'}">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
     <button class="btn ghost sm" onclick='setCalib(${i},"pulse","${s.name}")'>${t('cal.btn.pulse')}</button>
   </div>
@@ -799,55 +806,23 @@ let sensors = [];
 
 // Toast notifications
 function showToast(type, message, duration = 3000) {
-  const container = document.getElementById('toast-container');
+  let container = document.getElementById('toast-container');
   if (!container) {
-    const toasts = document.createElement('div');
-    toasts.id = 'toast-container';
-    toasts.style.position = 'fixed';
-    toasts.style.bottom = '20px';
-    toasts.style.left = '50%';
-    toasts.style.transform = 'translateX(-50%)';
-    toasts.style.zIndex = '9999';
-    toasts.style.display = 'flex';
-    toasts.style.flexDirection = 'column';
-    toasts.style.gap = '4px';
-    document.body.appendChild(toasts);
-    container = toasts;
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
   }
   const toast = document.createElement('div');
-  toast.style.background = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--info)';
-  toast.style.color = 'var(--on-accent)';
-  toast.style.padding = '8px 12px';
-  toast.style.borderRadius = 'var(--radius-sm)';
-  toast.style.minWidth = '200px';
-  toast.style.boxShadow = 'var(--shadow-mild)';
-  toast.style.animation = 'fadeIn .3s ease';
+  toast.className = 'toast ' + type;
   toast.textContent = message;
   container.appendChild(toast);
   setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity .3s';
-    setTimeout(() => container.removeChild(toast), 300);
+    toast.classList.add('fade-out');
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
   }, duration);
 }
-
-// Initialize toast container on page load
-document.addEventListener('DOMContentLoaded', () => {
-  const existing = document.getElementById('toast-container');
-  if (!existing) {
-    const toasts = document.createElement('div');
-    toasts.id = 'toast-container';
-    toasts.style.position = 'fixed';
-    toasts.style.bottom = '20px';
-    toasts.style.left = '50%';
-    toasts.style.transform = 'translateX(-50%)';
-    toasts.style.zIndex = '9999';
-    toasts.style.display = 'flex';
-    toasts.style.flexDirection = 'column';
-    toasts.style.gap = '4px';
-    document.body.appendChild(toasts);
-  }
-});
 
 /* -------------------- DEVICES -------------------- */
 
@@ -954,22 +929,99 @@ const TYPE_RENDERERS = {
   [SensorType.SENSOR_LEVEL]: cardRenderers.LEVE,
   [SensorType.SENSOR_GENERIC]: cardRenderers.GENERIC,
   [SensorType.SENSOR_CONTACT]: cardRenderers.CONTACT,
-  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI
+  [SensorType.SENSOR_HUMI]: cardRenderers.HUMI,
+  [SensorType.SENSOR_TIME]: cardRenderers.TIME
 };
 
 async function loadCalib() {
   try {
     const data = await getCalib(true);
+
+    // Separate local and remote entries
+    const localEntries = [];
+    const remoteByDevice = {};
+
+    data.forEach((s, i) => {
+      if (s.local) {
+        localEntries.push({ s, i });
+      } else {
+        const duid = s.device_uid;
+        if (!remoteByDevice[duid]) {
+          remoteByDevice[duid] = {
+            device_uid: duid,
+            device_ip: s.ip,
+            name: s.name,
+            entries: []
+          };
+        }
+        remoteByDevice[duid].entries.push({ s, i });
+      }
+    });
+
     let html = `<div class='settings-grid'>
 <div class="search-box" style="grid-column:1/-1;margin:8px 0;display:flex;gap:8px;">
   <input type="text" id="settingsSearch" class="input-sm" placeholder="Buscar configuración..." style="flex:1;">
   <button class="btn ghost sm" onclick="filterSettings()" style="min-width:80px;">Filtrar</button>
 </div>`;
-    data.forEach((s, i) => {
-      const render = sensorCardRenderer(s);
-      if (!render) return;
-      html += render(s, i);
-    });
+
+    // LOCAL section
+    if (localEntries.length > 0) {
+      html += `
+<div class="settings-section">
+  <button type="button" class="accordion-header" onclick="toggleAccordion(this)">
+    <span class="accordion-chevron">▼</span>
+    <span class="accordion-title">${t('cfg.local')}</span>
+    <span class="accordion-count">${localEntries.length}</span>
+  </button>
+  <div class="accordion-content">
+    <div class="settings-grid">`;
+      localEntries.forEach(({ s, i }) => {
+        const render = sensorCardRenderer(s);
+        if (render) html += render(s, i);
+      });
+      html += `</div></div></div>`;
+    }
+
+    // REMOTE section
+    const remoteDevices = Object.values(remoteByDevice);
+    if (remoteDevices.length > 0) {
+      html += `
+<div class="settings-section">
+  <button type="button" class="accordion-header" onclick="toggleAccordion(this)">
+    <span class="accordion-chevron">▼</span>
+    <span class="accordion-title">${t('cfg.remote')}</span>
+    <span class="accordion-count">${remoteDevices.length}</span>
+  </button>
+  <div class="accordion-content">`;
+
+      remoteDevices.forEach(device => {
+        const ip = device.device_ip;
+        const hasIp = ip && ip !== '0.0.0.0';
+        const openGuiLink = hasIp
+          ? `<a href="http://${device.device_ip}/" target="_blank" rel="noopener noreferrer" class="btn ghost sm remote-gui-link">${t('cfg.openGui')}</a>`
+          : `<span class="remote-gui-disabled">${t('cfg.openGui')}</span>`;
+
+        html += `
+<div class="remote-device-group">
+  <div class="remote-device-header">
+    <span class="remote-device-name">Qymera ${device.device_uid.toString(16).toUpperCase().padStart(8, '0')}</span>
+    ${openGuiLink}
+  </div>
+  <div class="remote-device-content">
+    <div class="settings-grid">`;
+
+        device.entries.forEach(({ s, i }) => {
+          const render = sensorCardRenderer(s);
+          if (render) html += render(s, i);
+        });
+
+        html += `</div></div></div>`;
+      });
+
+      html += `</div></div>`;
+    }
+
+    // General settings (network, etc.)
     html += `
       <div class="settings-general">
         <div class="settings-row">
@@ -999,6 +1051,12 @@ async function loadCalib() {
     `;
     html += "</div>";
     document.getElementById('cards').innerHTML = html;
+
+    // Initialize accordions
+    document.querySelectorAll('.accordion-header').forEach(btn => {
+      const content = btn.nextElementSibling;
+      if (content) content.style.display = 'none';
+    });
   } catch (e) {
     console.log('loadCalib err', e);
   }
@@ -1158,26 +1216,88 @@ async function setCalib(i, type, name, refOverride = null) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch(_) {}
-      alert(tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+      showToast('error', tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
       return false;
     }
     return true;
   } catch (e) {
-    alert(t('alert.localNet'));
+    showToast('error', t('alert.localNet'));
     return false;
   }
 }
 
+function toggleAccordion(btn) {
+  const content = btn.nextElementSibling;
+  const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+  btn.setAttribute('aria-expanded', !isExpanded);
+  if (isExpanded) {
+    content.style.display = 'none';
+  } else {
+    content.style.display = 'block';
+  }
+}
+
 function togglePersist(i) {
+  // If pulse is active, disable it first (mutual exclusion)
+  const pulseBtn = document.querySelector(`#pulseRow${i}`);
+  if (pulseBtn && pulseBtn.style.display !== 'none') {
+    // Pulse is active, disable it first
+    setCalib(i, 'pulse', null, '0').then(pulseOk => {
+      if (pulseOk) {
+        // Now toggle persist
+        setCalib(i, 'persist', null, '1').then(ok => {
+          if (!ok) showToast('error', t('alert.failed'));
+        }).catch(() => showToast('error', t('alert.failed')));
+      }
+    });
+    return;
+  }
+  // Pulse not active, just toggle persist
   setCalib(i, 'persist', null, '1').then(ok => {
-    if (!ok) showToast(t('alert.failed'), 'error');
-  }).catch(() => showToast(t('alert.failed'), 'error'));
+    if (!ok) showToast('error', t('alert.failed'));
+  }).catch(() => showToast('error', t('alert.failed')));
 }
 
 function togglePulse(i) {
-  setCalib(i, 'pulse', null, '1').then(ok => {
-    if (!ok) showToast(t('alert.failed'), 'error');
-  }).catch(() => showToast(t('alert.failed'), 'error'));
+  const pulseBtn = document.querySelector(`#pulseRow${i}`);
+  const isPulseActive = pulseBtn && pulseBtn.style.display !== 'none';
+  
+  if (isPulseActive) {
+    // Pulse is active, turn it off
+    setCalib(i, 'pulse', null, '0').then(ok => {
+      if (!ok) showToast('error', t('alert.failed'));
+    }).catch(() => showToast('error', t('alert.failed')));
+  } else {
+    // Pulse is inactive, check if persist is active
+    const persistBtn = document.querySelector(`button[onclick*="togglePersist(${i})"]`);
+    const isPersistActive = persistBtn && persistBtn.classList.contains('on');
+    
+    if (isPersistActive) {
+      // Persist is active, disable it first (mutual exclusion)
+      setCalib(i, 'persist', null, '0').then(persistOk => {
+        if (persistOk) {
+          // Now enable pulse
+          setCalib(i, 'pulse', null, '1').then(ok => {
+            if (!ok) showToast('error', t('alert.failed'));
+          }).catch(() => showToast('error', t('alert.failed')));
+        }
+      }).catch(() => showToast('error', t('alert.failed')));
+    } else {
+      // Persist not active, just enable pulse
+      setCalib(i, 'pulse', null, '1').then(ok => {
+        if (!ok) showToast('error', t('alert.failed'));
+      }).catch(() => showToast('error', t('alert.failed')));
+    }
+  }
+}
+
+function toggleRelayAvail(i) {
+  const sensor = sensors[i];
+  if (!sensor) return;
+  const newAvail = !sensor.avail;
+  setCalib(i, 'avail', null, newAvail ? '1' : '0').then(ok => {
+    if (!ok) showToast('error', t('alert.failed'));
+  }).catch(() => showToast('error', t('alert.failed')));
 }
 
 async function toggleDevice(id) {
@@ -1244,16 +1364,17 @@ async function sendDimmer(id, value) {
 function factoryReset() {
   if (!confirm(t('factory.confirm'))) return;
   fetch('/factory', { method: 'POST' })
-    .then(() => alert(t('factory.doing')))
-    .catch(() => alert(t('factory.err')));
+    .then(() => showToast('success', t('factory.doing')))
+    .catch(() => showToast('error', t('factory.err')));
 }
 
 async function toggleOta(enabled) {
   if (!confirm(tf(enabled ? 'ota.enableMsg' : 'ota.disableMsg'))) return;
   try {
     await fetch('/ota/toggle?enabled=' + (enabled ? 1 : 0));
+    showToast('success', t(enabled ? 'ota.enableMsg' : 'ota.disableMsg'));
   } catch(e) {
-    console.log('toggleOta err', e);
+    showToast('error', t('alert.localNet'));
   }
 }
 
@@ -1306,10 +1427,23 @@ var logTimer = null;
 
 async function refreshLogs(){
   try {
+    const coreEl = document.getElementById('log-core');
+    const evntEl = document.getElementById('log-events');
+    const sensEl = document.getElementById('log-sensors');
+    // Save scroll positions before refresh
+    const scrollPositions = {
+      core: coreEl ? coreEl.scrollTop : 0,
+      evnt: evntEl ? evntEl.scrollTop : 0,
+      sens: sensEl ? sensEl.scrollTop : 0
+    };
     const r = await fetch('/logs');
     if(!r.ok) return;
     const logs = await r.json();
     renderLogs(logs);
+    // Restore scroll positions
+    if (coreEl) coreEl.scrollTop = scrollPositions.core;
+    if (evntEl) evntEl.scrollTop = scrollPositions.evnt;
+    if (sensEl) sensEl.scrollTop = scrollPositions.sens;
   } catch(e){
     console.log('refreshLogs err', e);
   }
@@ -1324,24 +1458,29 @@ function renderLogs(logs){
   sensEl.innerHTML = '<h3>' + t('log.sensors') + '</h3>';
   logs.forEach(e => {
     const el = document.createElement('div');
-    el.className = 'log-entry ' + (e.l === 'CORE' ? 'core' : e.l === 'EVNT' ? 'evnt' : 'sens');
-    el.innerHTML = `<span class="t">${e.t}</span><span class="l ${e.v.toLowerCase()}">${e.v}</span>${e.m}`;
+    const baseClass = e.l === 'CORE' ? 'core' : e.l === 'EVNT' ? 'evnt' : 'sens';
+    el.className = 'log-entry ' + baseClass;
+    const timeEl = document.createElement('span');
+    timeEl.className = 't';
+    timeEl.textContent = e.t;
+    const levelEl = document.createElement('span');
+    levelEl.className = 'l ' + e.v.toLowerCase;
+    levelEl.textContent = e.v;
+    const msgEl = document.createElement('span');
+    msgEl.textContent = e.m;
+    el.appendChild(timeEl);
+    el.appendChild(levelEl);
+    el.appendChild(msgEl);
     if(e.l === 'CORE') coreEl.appendChild(el);
     else if(e.l === 'EVNT') evntEl.appendChild(el);
     else sensEl.appendChild(el);
-  });
-  logs.forEach(e => {
-    if(e.v === 'WRN' || e.v === 'ERR'){
-      const el = document.createElement('div');
-      el.className = 'log-entry sens';
-      el.innerHTML = `<span class="t">${e.t}</span><span class="l ${e.v.toLowerCase()}">${e.v}</span><span class="l">${e.l}</span> ${e.m}`;
-      sensEl.appendChild(el);
-    }
   });
 }
 
 function startLogAutoRefresh(){
   if(logTimer) clearInterval(logTimer);
+  if (document.visibilityState === 'hidden') return;
+  if (window.activeTab !== 'logs') return;
   logTimer = setInterval(refreshLogs, 2000);
 }
 
@@ -1678,7 +1817,7 @@ function validateStep(stepNum) {
   if(stepNum === 0) {
     const typeRadio = document.querySelector('input[name="type"]:checked');
     if(!typeRadio) {
-      alert(t('wiz.selectType'));
+      showToast('error', t('wiz.selectType'));
       return false;
     }
     return true;
@@ -1686,7 +1825,7 @@ function validateStep(stepNum) {
 
   if(stepNum === 1) {
     if((wizard.data.type === 0 || wizard.data.type === 1) && wizard.data.sensors.length === 0) {
-      alert(t('wiz.needSensor'));
+      showToast('error', t('wiz.needSensor'));
       return false;
     }
     return true;
@@ -1700,12 +1839,12 @@ function validateStep(stepNum) {
 
         if(wizard.data.type === 1) { // THRESHOLD
           if(!threshInput || threshInput.value === '') {
-            alert(t('wiz.needThreshold'));
+            showToast('error', t('wiz.needThreshold'));
             return false;
           }
           const threshVal = parseFloat(threshInput.value);
           if(isNaN(threshVal) || threshVal < -1000 || threshVal > 10000) {
-            alert(t('wiz.threshRange'));
+            showToast('error', t('wiz.threshRange'));
             return false;
           }
         }
@@ -1725,7 +1864,7 @@ function validateStep(stepNum) {
       const min = parseInt(timeMinEl.value) || 0;
 
       if(hour < 0 || hour > 23 || min < 0 || min > 59) {
-        alert(t('wiz.timeRange'));
+        showToast('error', t('wiz.timeRange'));
         return false;
       }
 
@@ -1733,7 +1872,7 @@ function validateStep(stepNum) {
         const start = new Date(dateStartEl.value);
         const end = new Date(dateEndEl.value);
         if(start > end) {
-          alert(t('wiz.dateOrder'));
+          showToast('error', t('wiz.dateOrder'));
           return false;
         }
       }
@@ -1743,7 +1882,7 @@ function validateStep(stepNum) {
 
   if(stepNum === 4) {
     if(wizard.data.actuators.length === 0) {
-      alert(t('wiz.needActuator'));
+      showToast('error', t('wiz.needActuator'));
       return false;
     }
     return true;
@@ -1755,7 +1894,7 @@ function validateStep(stepNum) {
       const levelInput = document.getElementById(`level_${aPos}`);
 
       if(!actionSelect) {
-        alert(t('wiz.loadActions'));
+        showToast('error', t('wiz.loadActions'));
         return false;
       }
 
@@ -1763,19 +1902,19 @@ function validateStep(stepNum) {
       const aIdx = wizard.data.actuators[aPos];
       const actuator = sensorByIndex(aIdx);
       if(!actuator) {
-        alert(t('wiz.loadActuator'));
+        showToast('error', t('wiz.loadActuator'));
         return false;
       }
 
       if(action === 3 && actuator.type !== 8) {
-        alert(t('wiz.levelDimmerOnly'));
+        showToast('error', t('wiz.levelDimmerOnly'));
         return false;
       }
 
       if(action === 3 && levelInput) {
         const level = parseInt(levelInput.value);
         if(isNaN(level) || level < 0 || level > 100) {
-          alert(t('wiz.levelRange'));
+          showToast('error', t('wiz.levelRange'));
           return false;
         }
       }
@@ -1792,19 +1931,19 @@ function validateStep(stepNum) {
     const cooldown = parseInt(cooldownEl.value) || 0;
 
     if(delay < 0 || delay > 60000) {
-      alert(t('wiz.delayRange'));
+      showToast('error', t('wiz.delayRange'));
       return false;
     }
 
     if(cooldown < 0 || cooldown > 3600000) {
-      alert(t('wiz.cooldownRange'));
+      showToast('error', t('wiz.cooldownRange'));
       return false;
     }
 
     if(wizard.data.type === 3) {
       const interval = parseInt(intervalEl.value) || 0;
       if(interval < 1000 || interval > 3600000) {
-        alert(t('wiz.intervalRange'));
+        showToast('error', t('wiz.intervalRange'));
         return false;
       }
     }
@@ -1992,22 +2131,22 @@ async function finishWizard(){
   // ========== VALIDACIONES FRONTEND ==========
 
   if(wizard.data.actuators.length === 0) {
-    alert(t('wiz.needActuator'));
+    showToast('error', t('wiz.needActuator'));
     return;
   }
 
   if((wizard.data.type === 0 || wizard.data.type === 1) && wizard.data.sensors.length === 0) {
-    alert(t('wiz.needSensor'));
+    showToast('error', t('wiz.needSensor'));
     return;
   }
 
   if(wizard.data.type === 2) {
     if(wizard.data.time_hour < 0 || wizard.data.time_hour > 23) {
-      alert(t('wiz.hourRange'));
+      showToast('error', t('wiz.hourRange'));
       return;
     }
     if(wizard.data.time_minute < 0 || wizard.data.time_minute > 59) {
-      alert(t('wiz.minRange'));
+      showToast('error', t('wiz.minRange'));
       return;
     }
   }
@@ -2017,25 +2156,25 @@ async function finishWizard(){
       const dateStart = new Date(wizard.data.date_start);
       const dateEnd = new Date(wizard.data.date_end);
       if(dateStart > dateEnd) {
-        alert(t('wiz.dateOrder'));
+        showToast('error', t('wiz.dateOrder'));
         return;
       }
     }
   }
 
   if(wizard.data.delay < 0 || wizard.data.delay > 60000) {
-    alert(t('wiz.delayRange'));
+    showToast('error', t('wiz.delayRange'));
     return;
   }
 
   if(wizard.data.cooldown < 0 || wizard.data.cooldown > 3600000) {
-    alert(t('wiz.cooldownRange'));
+    showToast('error', t('wiz.cooldownRange'));
     return;
   }
 
   if(wizard.data.type === 3) {
     if(wizard.data.interval < 1000 || wizard.data.interval > 3600000) {
-      alert(t('wiz.intervalRange'));
+      showToast('error', t('wiz.intervalRange'));
       return;
     }
   }
@@ -2120,15 +2259,15 @@ async function finishWizard(){
     });
 
     if(res.ok) {
-      alert(t('wiz.saved'));
+      showToast('success', t('wiz.saved'));
       closeRule();
       loadRules();
     } else {
       const errMsg = await res.text();
-      alert(t('wiz.saveError') + ' ' + errMsg);
+      showToast('error', t('wiz.saveError') + ' ' + errMsg);
     }
   } catch(e) {
-    alert(t('wiz.connError') + ' ' + e.message);
+    showToast('error', t('wiz.connError') + ' ' + e.message);
   }
 }
 
@@ -2136,12 +2275,13 @@ function editRule(i){
   loadSensorsAndActuators().then(()=>{
     document.getElementById('ruleModalTitle').textContent=t('wiz.titleEdit');
     startWizard(i);
-    document.getElementById('ruleModal').style.display='flex';
+    document.getElementById('ruleModal').classList.add('open');
   });
 }
 
 function closeRule(){
-  document.getElementById('ruleModal').style.display='none';
+  const modal = document.getElementById('ruleModal');
+  if (modal) modal.classList.remove('open');
 }
 
 async function deleteRule(i){
@@ -2226,9 +2366,17 @@ if(location.search.indexOf('saved=1') >= 0){
     if(e.target === modal) closeRule();
   });
   document.addEventListener('keydown', e => {
-    if(e.key === 'Escape' && modal.style.display === 'flex') closeRule();
+    if(e.key === 'Escape' && modal.classList.contains('open')) closeRule();
   });
 })
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    stopLogAutoRefresh();
+  } else if (window.activeTab === 'logs') {
+    startLogAutoRefresh();
+  }
+});
 
 function filterDevices() {
   const term = document.getElementById('devSearch')?.value?.toLowerCase() || '';
