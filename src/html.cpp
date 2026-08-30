@@ -346,7 +346,7 @@ es: {
   auto:'Automatizaciones', 'auto.sub':'Reglas de automatización',
   config:'Ajustes', 'config.sub':'Calibración, persistencia y configuración del nodo',
   logs:'Registros', 'logs.sub':'Actualización automática cada 2 s'}, btn:{
-  newRule:'Nueva regla', refresh:'Refrescar', clear:'Limpiar'}, saved:{
+  newRule:'Nueva regla', refresh:'Refrescar', clear:'Limpiar', filter:'Filtrar'}, saved:{
   notice:'Ajustes guardados. El dispositivo se está reiniciando...'}, log:{
   core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error',
   updated:'Actualizado: {time} · {n} registros', empty:'Sin registros',
@@ -355,7 +355,7 @@ es: {
   actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado', time:'Tiempo'}, chip:{
   enabled:'Habilitado', disabled:'Deshabilitado', online:'En línea'}, status:{
   local:'Local', remote:'Remoto', offline:'Desconectado'}, dev:{
-  on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel', noMatch:'Sin coincidencias'}, no:{
+  on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel', search:'Buscar', noMatch:'Sin coincidencias'}, no:{
   actuators:'No hay actuadores', sensors:'No hay sensores'}, air:{
   good:'Bueno', warn:'Aviso', bad:'Malo'}, yn:{ yes:'Sí', no:'No', closed:'Cerrado', open:'Abierto'}, cal:{
   'btn.set0':'Fijar 0%', 'btn.set100':'Fijar 100%', 'btn.ref':'Fijar valor', 'btn.reset':'Resetear',
@@ -365,7 +365,7 @@ es: {
   title:'Configuración del nodo', broadcast:'Puerto broadcast', command:'Puerto comando',
   interval:'Intervalo de reporte', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
   'ph.interval':'Intervalo (ms)', ota:'Arduino OTA', save:'Guardar', factory:'Restablecer a fábrica',
-  local:'LOCAL', remote:'REMOTE', openGui:'Abrir GUI ↗', noMatch:'Sin coincidencias'}, net:{
+  local:'LOCAL', remote:'REMOTE', openGui:'Abrir GUI ↗', search:'Buscar configuración', noMatch:'Sin coincidencias'}, net:{
   title:'Red del nodo', ssid:'SSID', 'ssid.ph':'Nombre de la red', pass:'Contraseña',
   'pass.ph':'Contraseña WiFi', save:'Guardar y reiniciar',
   note:'Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.'}, alert:{
@@ -410,7 +410,7 @@ en: {
   auto:'Automations', 'auto.sub':'Automation rules',
   config:'Settings', 'config.sub':'Calibration, persistence and node configuration',
   logs:'Logs', 'logs.sub':'Auto-refresh every 2 s'}, btn:{
-  newRule:'New rule', refresh:'Refresh', clear:'Clear'}, saved:{
+  newRule:'New rule', refresh:'Refresh', clear:'Clear', filter:'Filter'}, saved:{
   notice:'Settings saved. The device is restarting...'}, log:{
   core:'Core', events:'Events', sensors:'Sensors / Warn / Error',
   updated:'Updated: {time} · {n} entries', empty:'No entries',
@@ -419,7 +419,7 @@ en: {
   actuators:'Actuators', sensors:'Sensors', updated:'Updated', time:'Time'}, chip:{
   enabled:'Enabled', disabled:'Disabled', online:'Online'}, status:{
   local:'Local', remote:'Remote', offline:'Offline'}, dev:{
-  on:'ON', off:'OFF', drag:'Drag to adjust level', noMatch:'No matches'}, no:{
+  on:'ON', off:'OFF', drag:'Drag to adjust level', search:'Search', noMatch:'No matches'}, no:{
   actuators:'No actuators', sensors:'No sensors'}, air:{
   good:'Good', warn:'Warn', bad:'Bad'}, yn:{ yes:'Yes', no:'No', closed:'Closed', open:'Open'}, cal:{
   'btn.set0':'Set 0%', 'btn.set100':'Set 100%', 'btn.ref':'Set ref value', 'btn.reset':'Reset',
@@ -429,7 +429,7 @@ en: {
   title:'Node configuration', broadcast:'Broadcast port', command:'Command port',
   interval:'Report interval', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
   'ph.interval':'Interval (ms)', ota:'Arduino OTA', save:'Save', factory:'Factory reset',
-  local:'LOCAL', remote:'REMOTE', openGui:'Open GUI ↗', noMatch:'No matches'}, net:{
+  local:'LOCAL', remote:'REMOTE', openGui:'Open GUI ↗', search:'Search configuration', noMatch:'No matches'}, net:{
   title:'Node network', ssid:'SSID', 'ssid.ph':'Network name', pass:'Password',
   'pass.ph':'WiFi password', save:'Save & restart',
   note:'After saving, the device will restart and connect to the new network.'}, alert:{
@@ -632,18 +632,17 @@ DIMM: (s, i) => `<div class="settings-card">
 REL: (s, i) => `<div class="settings-card">
   <div class="settings-card-head">
     <div><span class="eyebrow">${sLabel(s.type)}</span><h3>${s.name}</h3></div>
-    <button type="button" class="switch ${s.avail?'on':''}" role="switch" aria-checked="${s.avail?'true':'false'}" aria-label="Alternar relé ${s.name}" onclick="toggleRelayAvail(${i})"><span class="knob"></span></button>
+    <button type="button" onclick='toggleMatterSwitch(${i},"${s.id}","${s.name}")' id="matterBtn${i}" data-name="${s.id}" class="chip ${s.avail?'ok':''}" aria-pressed="${s.avail?'true':'false'}">${s.avail ? t('chip.enabled') : t('chip.disabled')}</button>
   </div>
-  <div class="kv"><span>${t('cal.ph.fade')}</span><b id="v${i}">${s.fade ?? 0}</b></div>
   <div class="field-row">
     <span>${t('cal.check.persist')}</span>
     <button type="button" class="switch ${s.persist?'on':''}" role="switch" aria-checked="${s.persist?'true':'false'}" aria-label="Persistencia ${s.name}" onclick="togglePersist(${i})"><span class="knob"></span></button>
     <span>${t('cal.check.pulse')}</span>
     <button type="button" class="switch ${s.pulse?'on':''}" role="switch" aria-checked="${s.pulse?'true':'false'}" aria-label="Modo pulso ${s.name}" onclick="togglePulse(${i})"><span class="knob"></span></button>
   </div>
+  <div class="kv"><span>${t('cal.ph.pulse')}</span><b id="v${i}">${s.pulse_ms ?? 0}</b></div>
   <div class="field-row" id="pulseRow${i}" style="${s.pulse ? '' : 'display:none'}">
     <input id="ref${i}" class="input sm" placeholder="${t('cal.ph.pulse')}" value="${s.pulse_ms ?? ''}" onchange='setCalib(${i},"pulse","${s.name}",this.value)'>
-    <button class="btn ghost sm" onclick='setCalib(${i},"pulse","${s.name}")'>${t('cal.btn.pulse')}</button>
   </div>
 </div>`,
 
@@ -893,8 +892,13 @@ function isDeviceVisible(s) {
   return typeof s.age_ms === 'number' && s.age_ms <= 30000;
 }
 
+let devSearchTerm = '';
+let settingsSearchTerm = '';
+
 async function loadDevices() {
   try {
+    const devInput = document.getElementById('devSearch');
+    if (devInput) devSearchTerm = devInput.value || '';
     const data = (await getCalib(true)).filter(isDeviceVisible);
     let mobile = '';
     let actuators = '';
@@ -921,8 +925,8 @@ async function loadDevices() {
         <div class="stat-card"><span class="stat-label">${t('stat.time')}</span><span class="stat-value time">${clock}</span></div>
       </div>
       <div class="search-box" style="margin:12px 0;display:flex;gap:8px;">
-        <input type="text" id="devSearch" class="input-sm" placeholder="${t('dev.search')}..." style="flex:1;">
-        <button class="btn ghost sm" onclick="filterDevices()" style="min-width:60px;">${t('dev.filter')}</button>
+        <input type="text" id="devSearch" class="input-sm" placeholder="${t('dev.search')}..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterDevices();}">
+        <button class="btn ghost sm" onclick="filterDevices()" style="min-width:60px;">${t('btn.filter')}</button>
       </div>
       <div class="devices-mobile-list">${mobile}</div>
       <div class="devices-desktop-layout">
@@ -939,6 +943,11 @@ async function loadDevices() {
     const root = document.getElementById('devices_cards');
     root.className = 'devices-dashboard';
     root.innerHTML = html;
+    const searchBox = document.getElementById('devSearch');
+    if (searchBox) {
+      searchBox.value = devSearchTerm;
+      if (devSearchTerm.trim() !== '') filterDevices();
+    }
   } catch (e) {
     console.log('loadDevices err', e);
   }
@@ -972,6 +981,8 @@ const TYPE_RENDERERS = {
 
 async function loadCalib() {
   try {
+    const setInput = document.getElementById('settingsSearch');
+    if (setInput) settingsSearchTerm = setInput.value || '';
     const data = await getCalib(true);
 
     // Separate local and remote entries
@@ -997,8 +1008,8 @@ async function loadCalib() {
 
     let html = `<div class='settings-grid'>
 <div class="search-box" style="grid-column:1/-1;margin:8px 0;display:flex;gap:8px;">
-  <input type="text" id="settingsSearch" class="input-sm" placeholder="Buscar configuración..." style="flex:1;">
-  <button class="btn ghost sm" onclick="filterSettings()" style="min-width:80px;">Filtrar</button>
+  <input type="text" id="settingsSearch" class="input-sm" placeholder="${t('cfg.search')}..." style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();filterSettings();}">
+  <button class="btn ghost sm" onclick="filterSettings()" style="min-width:80px;">${t('btn.filter')}</button>
 </div>`;
 
     // LOCAL section
@@ -1088,6 +1099,11 @@ async function loadCalib() {
     `;
     html += "</div>";
     document.getElementById('cards').innerHTML = html;
+    const searchBox = document.getElementById('settingsSearch');
+    if (searchBox) {
+      searchBox.value = settingsSearchTerm;
+      if (settingsSearchTerm.trim() !== '') filterSettings();
+    }
 
     // Initialize accordions
     document.querySelectorAll('.accordion-header').forEach(btn => {
@@ -1119,6 +1135,8 @@ async function updateSettingsValues() {
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : s.value.toFixed(0) + ' %';
       else if (s.type === SensorType.TYPE_DIMMER)
         el.innerText = s.fade;
+      else if (s.type === SensorType.TYPE_RELAY)
+        el.innerText = s.pulse_ms ?? 0;
       else if (s.type === SensorType.SENSOR_LUMI)
         el.innerText = (s.value == null || s.value === 255) ? 'N/A' : (s.value * 108.9432 / 7074).toFixed(0) + ' lx';
       else if (s.type === SensorType.SENSOR_GENERIC)
@@ -1364,24 +1382,6 @@ function togglePulse(i) {
   }
   // Persist not active, just enable pulse
   setCalib(i, 'pulse', null, '1').then(finish).catch(() => showToast('error', t('alert.failed')));
-}
-
-function toggleRelayAvail(i) {
-  const sensor = sensors[i];
-  if (!sensor) return;
-  const newAvail = !sensor.avail;
-  setCalib(i, 'avail', null, newAvail ? '1' : '0').then(ok => {
-    if (!ok) {
-      showToast('error', t('alert.failed'));
-      return;
-    }
-    sensor.avail = newAvail;
-    const availBtn = document.querySelector(`button[onclick*="toggleRelayAvail(${i})"]`);
-    if(availBtn){
-      availBtn.classList.toggle('on', newAvail);
-      availBtn.setAttribute('aria-checked', newAvail ? 'true' : 'false');
-    }
-  }).catch(() => showToast('error', t('alert.failed')));
 }
 
 async function toggleDevice(id) {
