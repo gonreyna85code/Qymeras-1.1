@@ -1,11 +1,19 @@
 # Qymeras 1.1 - Production Readiness
 
-State as of 2026-08-27 (branch `main`, HEAD `5e46e12`).
+State as of 2026-08-30 (branch `main`, HEAD `c714e37`). **`main` is CODE FREEZE
+/ PRODUCTION BASELINE for Qymera 1.1.** Historical entries below are retained
+as the validation record; branch map: 1.1 = `main` (frozen) · 1.2 =
+`feature/GUI` (web GUI overhaul, not merged) · Dashboard/AI =
+`feature/ai-experiments` + future (separate direction). ESP8266 / ESP-NOW
+remain part of the 1.1 product (nothing removed).
 
 ## Summary
 
 - **No active BLOCKERs.** All critical production defects reported across the
   1.1 cycle have been fixed and hardware-validated on at least one node.
+- **Code is FROZEN.** Builds re-verified 2026-08-30 (clean rebuild, 3 envs
+  green); host suite 45/45; no stale AI code; live node web/API + persistence
+  verified. No code changed during the freeze audit.
 - Remaining items are **validation-only** (long-duration / controlled-hardware
   tests), not code fixes:
   - 24h memory soak.
@@ -33,14 +41,14 @@ State as of 2026-08-27 (branch `main`, HEAD `5e46e12`).
 
 ## Current fleet
 
-| Node | IP (2026-08-27) | device_uid | Build env | Owner |
+| Node | IP (2026-08-30) | device_uid | Build env | Owner |
 |------|-----------------|-----------|-----------|-------|
-| ESP32 | 192.168.1.16 | 183646728 | `esp32_devkit` | main hardening scope |
-| ESP8266 | 192.168.1.19 | 12014147 | `esp8266_generic` | parallel feature effort — no flash/reconfig without owner approval |
+| ESP32 | offline (lease .16 taken by ESP8266 reflash) | 183646728 | `esp32_devkit` | main hardening scope (hardware validation pending) |
+| ESP8266 | **192.168.1.16** | 12014147 | `esp8266_generic` | owner (reflashed 2026-08-30, build HEAD c8daf16) |
 
 IPs are DHCP-assigned and drift. Verify before acting via `GET /calib`
-(`device_uid` + `ip` fields). ESP32 `/logs` verified clean 2026-08-27: 11
-remotes re-acquired, 10 stale slots reclaimed, no storm lines.
+(`device_uid` + `ip` fields). ESP8266 `/logs` verified clean 2026-08-30: boot
+loads credentials/settings, 12 entities registered, no error lines.
 
 ## Hardening history (production fixes)
 
@@ -113,15 +121,16 @@ remotes re-acquired, 10 stale slots reclaimed, no storm lines.
 
 ## Next steps before the production gate
 
-1. 24h memory soak on both nodes (sustained mesh traffic + web polling).
-2. Factory reset hardware test on ESP32 (.16): verify `/factory` clears
+1. 24h memory soak on the ESP8266 (.16) and ESP32 (once online) — sustained
+   mesh traffic + web polling.
+2. Factory reset hardware test on ESP32: verify `/factory` clears
    credentials/rules/calibration and returns to `QymeraSetup` AP mode.
-3. ESP8266 (.19) re-verification **requires owner approval** (parallel feature
-   effort owns that unit).
+3. ESP8266 (.16) — owned by the owner; already reflashed 2026-08-30 with the
+   frozen build.
 4. ESP32-C3/S2/S3 hardware validation (build-verified only today).
 5. Environment endurance (>=1000 cycles) on a controlled board.
 
-## Build matrix (2026-08-27)
+## Build matrix (re-verified 2026-08-30)
 
 | Env | Result | Footprint |
 |-----|--------|-----------|

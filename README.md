@@ -2,7 +2,15 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** Qymeras 1.1 production candidate (ESP8266 + ESP32 hardware-validated; final soak/factory-reset hw tests pending) | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `c714e37`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+
+## Versions & Branches
+
+| Version | Where | Status |
+|---------|-------|--------|
+| **Qymera 1.1** | `main` | **CODE FREEZE / PRODUCTION BASELINE** — this tree. ESP8266 + ESP32; UDP + ESP-NOW mesh; web server with basic UI; EEPROM/Preferences persistence; automations. |
+| **Qymera 1.2** | `feature/GUI` | Next milestone: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Not merged into 1.1. |
+| **Dashboard / AI** | `feature/ai-experiments` (+ future) | Separate development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1 production tree. |
 
 ---
 
@@ -291,10 +299,13 @@ python tests/host_sanity.py                    # host test suite (45 checks)
 
 ## Roadmap
 
-MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
-mobile app. An **optional external AI assistant subsystem** is authorized and
-under development on `feature/ai-experiments` (kept out of the 1.1 production
-tree per `AGENTS.md`).
+- **Qymera 1.2** (`feature/GUI`): built-in web GUI overhaul — device cards,
+  automation wizard, bilingual ES/EN UI. Not merged into 1.1.
+- **Dashboard / AI** (`feature/ai-experiments` + future): optional external AI
+  assistant subsystem (authorized per `AGENTS.md`, kept out of the 1.1
+  production tree) and a cloud dashboard.
+- **Future:** MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS
+  notifications · mobile app.
 
 ---
 

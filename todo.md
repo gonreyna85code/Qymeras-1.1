@@ -161,14 +161,14 @@
 | Completed (code + docs) | 9 | 56% |
 | Code applied, hardware test pending | 3 | 19% |
 | Pending (requires hardware) | 4 | 25% |
-
 ## Final validation state
+
 See `progress.md` "FINAL VALIDATION STATUS TABLE". No item is marked PASS without
-hardware evidence. As of 2026-08-27: builds green on 3 envs, host suite 45/45,
-and both nodes hardware-healthy (ESP32 = 192.168.1.16, ESP8266 = 192.168.1.19;
-many P0 hardware PASS recorded). Remaining NOT TESTED: 24h memory soak,
-factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hardware validation —
-production gate stays NOT READY until those physical tests pass.
+hardware evidence. As of 2026-08-30 re-verification: builds green on 3 envs,
+host suite 45/45, live node verified (ESP8266 @ .16 with c8daf16 Qymera:: API,
+12 Base entities; ESP32 offline). CODE FREEZE / PRODUCTION BASELINE. Remaining
+NOT TESTED: 24h memory soak, factory-reset hw test, longer endurance, ESP32-C3/S2/S3
+hw validation — production gate stays NOT READY until those physical tests pass.
 
 ## Next Actions
 

@@ -2,9 +2,13 @@
 
 ## Current State (updated 2026-08-30)
 
-- **Branch `main` = production 1.1 tree.** HEAD `c8daf16` carries NO AI code
-  (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM block all removed).
-  Deterministic core intact, builds green on 3 envs, host suite 45/45.
+- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `c714e37`
+  carries NO AI code (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM
+  block all removed). Deterministic core intact, builds green on 3 envs, host
+  suite 45/45, unified `Qymera::` public API.
+- **Branch map:** 1.1 = `main` (frozen here) · 1.2 = `feature/GUI` (web GUI
+  overhaul, not merged) · Dashboard/AI = `feature/ai-experiments` + future
+  (separate direction, kept out of 1.1).
 - **Fleet (2026-08-30):** ESP8266 = **192.168.1.16** (device_uid 12014147;
   DHCP drifted from .19 after the reflash, taking the ESP32's old lease) —
   reflashed by owner with the unified `Qymera::` API build (HEAD `c8daf16`);
@@ -238,3 +242,39 @@ Validation: `pio run` full link green on 3 envs — esp8266_generic RAM 69.6% /
 Flash 42.2%, esp32_devkit, esp32c3_devkit. Host suite unaffected (no API
 reference in `tests/host_sanity.py`). No firmware behavior changed: the facade
 is a compile-time rename; hooks are called at the exact same points.
+
+## CODE FREEZE / PRODUCTION BASELINE (2026-08-30)
+
+`main` (HEAD `c714e37`) is **frozen as the Qymera 1.1 production baseline**.
+
+Freeze audit results:
+- **Builds (clean, full recompile of the 3 envs):** esp8266_generic ✅ RAM
+  69.6% / Flash 42.2%, esp32_devkit ✅, esp32c3_devkit ✅. Full link SUCCESS
+  on all. ESP8266 revalidated on device after reflash.
+- **Host suite:** `python tests/host_sanity.py` → **45/45 PASS**.
+- **Warnings (project, pre-existing, accepted — no blocker):**
+  `storage.cpp:163/166` sign-compare on `String::length()` (harmless bounded
+  write loops); `web.cpp:20/21` `AUTH_USERNAME`/`AUTH_PASSWORD` unused
+  (dormant auth gate by design, documented limitation). Framework-only
+  warnings (elf2bin.py escapes, ESP32 hal-uart `return`) are out of our build.
+- **No stale AI code in `main`:** verified `src/` has no `ai.*` sources and no
+  `aidig`/`aiana`/`QMAI` references.
+- **Live node (ESP8266 @ 192.168.1.16, build c8daf16):** `/` 200, `/calib` 200
+  (12 entities, UID-slot persistence), `/rules` 200 (`[]`), `/logs` 200
+  (clean boot: Credentials/Settings loaded, WiFi connect, heap 18464 B),
+  `/ota/status` 200 (flag off). Web/API + persistence verified on hardware.
+  (UDP/discovery, automations, OTA upload: hardware PASS already recorded in
+  the FINAL VALIDATION TABLE; no functional code changed since.)
+- **No code changes during this freeze audit** — no blockers found.
+
+Pending (hardware-ONLY, does not block the code freeze):
+1. 24h memory soak (sustained mesh + web polling).
+2. Factory-reset hardware test (`/factory` → credentials/rules/calibration
+   cleared, back to `QymeraSetup` AP).
+3. Longer storage-endurance cycles (100-cycle test passed; ≥1000 pending).
+4. ESP32-C3 / ESP32-S2 / ESP32-S3 hardware validation (build-verified only).
+5. Note: ESP32 (device_uid 183646728) currently offline — its family
+   validation is pending hardware presence.
+
+Verdict: **SAFE TO FREEZE as Qymera 1.1.** Any subsequent GUI work will move
+to `feature/GUI` (1.2); Dashboard/AI stays on `feature/ai-experiments`.
