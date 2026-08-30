@@ -125,15 +125,14 @@ static void handleCorsOptions() {
 
 void sendStartupJS() {
   if (WiFi.getMode() == WIFI_AP) {
-    server.sendContent_P(PSTR("let savedTab='config';show(savedTab);"));
+    server.sendContent_P(PSTR("window.startupTab='config';"));
   } else {
     server.sendContent_P(
-      PSTR("let savedTab=(localStorage.getItem('tab')||'control');"
-           "savedTab=['control','auto','config','logs'].includes(savedTab)?savedTab:'control';"
-           "show(savedTab);"));
+      PSTR("window.startupTab=(localStorage.getItem('tab')||'control');"
+           "window.startupTab=['control','auto','config','logs'].includes(window.startupTab)?window.startupTab:'control';"));
   }
   server.sendContent_P(
-    PSTR("['control','auto','config','logs'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+    PSTR("['control','auto','config','logs'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(''+t);});"));
   server.sendContent_P(
     PSTR("window.genset={broadcast_port:"));
   server.sendContent(String(core::genset.broadcast_port));
@@ -329,6 +328,20 @@ void handleDimmerApi() {
 void handleLogs() {
   addCorsHeaders();
   server.send(200, "application/json", logger::getRecentLogsJson());
+}
+
+void handleLogsClear() {
+  addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "POST required");
+    return;
+  }
+  logger::clearBuffer();
+  server.send(200, "text/plain", "OK");
 }
 
 void handleOtaToggle() {
@@ -1014,6 +1027,7 @@ void init() {
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.on("/logs", handleLogs);
+  server.on("/logs/clear", HTTP_POST, handleLogsClear);
   server.on("/ota/toggle", handleOtaToggle);
   server.on("/ota/status", handleOtaStatus);
   server.begin();

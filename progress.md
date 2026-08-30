@@ -201,3 +201,66 @@ Code-review-only items are NOT marked PASS.
 | Host sanity suite | PASS | `python tests/host_sanity.py` → 45/45 (timezone UTC conversion, strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow). |
 |
  | Production gate: NOT READY — 24h memory soak, factory-reset hw test, and endurance remain (ESP32 .16 within scope; ESP8266 .19 owned by parallel effort). All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations. Builds + host suite re-verified 2026-08-27 (3 envs green, 45/45).
+
+---
+
+## GUI Stabilization Pass (feature/GUI, 2026-08-30)
+
+Target: Qymeras 1.1 web GUI on branch `feature/GUI`. Not firmware logic —
+front-end/UI contracts only. All changes verified by 3-env build matrix.
+
+### Root causes found
+1. **Modal never displays** — `.modal` / `.modal.open` overlay CSS was dropped
+   when `.content` CSS was added (`33a5be2`); only `.modal-content` remained, so the
+   Automation wizard rendered as a plain unstyled block instead of an overlay dialog.
+2. **Logs page unstyled + crash-prone render** — no `.log-grid/.log-panel/.log-entry`
+   CSS; `e.v.toLowerCase` missing `()` so severity classes were never applied and
+   echo'd the function body; no handling for non-array/invalid/missing-field data.
+3. **Double tab init** — `web.cpp sendStartupJS` injected `show(savedTab)` before the
+   later `<script>` blocks were parsed (functions undefined → ReferenceError, unhandled
+   rejection), then the end-of-bundle IIFE ran `show()` a second time.
+4. **Relay persistence UI regressed to DOM state** — `togglePersist`/`togglePulse` read
+   `#pulseRow<i>` `style.display` / `classList.contains('on')` instead of `sensors[i]`;
+   `togglePersist` always sent `persist=1` (could never disable persistence).
+5. **Filter empty states de-scoped** — `document.querySelector('.empty.sm')` global;
+   Devices and Settings filters could remove each other's empty state.
+6. **Wizard save-time validation never aborts** — `forEach(...){ alert(); return; }` returns
+   from the callback only; invalid level/action still POSTed to `/rules/set`.
+7. **`sendDimmer` and wizard still used `alert()`** — task requires toast-only errors.
+8. **Rule list / empty states unstyled** — `.rule-card`, `.rule-info`, `.empty`, `.d-none`
+   CSS missing; `#auto_empty` had a duplicate `class` attribute.
+
+### Files changed
+- `src/html.cpp` — CSS (modal overlay, logs grid/panels/entries + severity colors,
+  rule cards, `.empty`/`.d-none`); Logs markup (Clear button + `#logStatus`); i18n keys
+  (es/en `btn.clear`, `log.*`, `dev.noMatch`, `cfg.noMatch`); rewritten
+  `refreshLogs`/`renderLogs` + new `showLogStatus`/`clearLogs`; single tab-init IIFE;
+  scoped filter empty states; model-driven `togglePersist`/`togglePulse`/`toggleRelayAvail`
+  + `updateRelayUI`/`setPersistence`; model sync in `toggleMatterSwitch`; error handling in
+  `toggleDevice`; `sendDimmer` alert→toast; `finishWizard` validation now aborts correctly
+  (alert→toast); `loadRules` renders readable action strings.
+- `src/web.cpp` — `sendStartupJS` sets `window.startupTab` (single init); new
+  `POST /logs/clear` endpoint → `logger::clearBuffer()`.
+
+### Behavior now
+- `show()` visibility via `.content.active` only; one `show()` on load from
+  `window.startupTab` (AP mode forces `config`).
+- Modal visibility via `.modal.open` only; overlay close + Escape preserved.
+- Log messages rendered with `textContent`, layers CORE/EVNT→panels, level `inf/wrn/err`
+  colors, defensive per-entry parsing, 200-entry cap/panel, empty-state placeholders,
+  `#logStatus` line (updated time+count / HTTP error / invalid JSON / network error),
+  Clear button calling the new endpoint.
+- Relay persist/pulse/avail toggles read `sensors[]`, enforce mutual exclusion,
+  keep DOM in sync from the model.
+- Filter empty states scoped to `#devices_cards` / `#cards`; `textContent` (no i18n HTML).
+- No `alert()` left in the GUI (all toasts).
+
+### Test matrix (builds)
+| Env | Status |
+|-----|--------|
+| esp8266_generic | PASS (RAM 69.8% / Flash 46.9%) |
+| esp32_devkit | PASS |
+| esp32c3_devkit | PASS |
+
+Remaining: hardware flash + on-device UI walkthrough (logs clear/refresh, modal,
+relay toggles, wizards, filters) — not performed in this pass.

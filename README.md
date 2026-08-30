@@ -115,6 +115,15 @@ options).
 Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
 5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.
 
+### New in 1.1: SETTINGS Navigation (Local / Remote)
+
+The **SETTINGS** tab now features collapsible sections:
+- **LOCAL** — entities with `calibration.local == true`
+- **REMOTE** — entities grouped by `device_uid` (one group per remote Qymera node)
+  - Each remote group shows: `Qymera <device_uid>` + **Open GUI ↗** link (`http://<device_ip>/`)
+  - Only visible remotes (`isEntryVisible()`) are shown; stale/offline are hidden
+  - Expandable/collapsible with chevron indicators
+
 ---
 
 ## Automation: Up to 20 Rules

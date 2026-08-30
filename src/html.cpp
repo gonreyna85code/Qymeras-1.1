@@ -174,10 +174,36 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .remote-device-content{padding-top:4px}
 
 .rule-list{display:flex;flex-direction:column;gap:12px}
+.rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px;display:flex;flex-direction:column;gap:8px}
+.rule-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.rule-info{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.rule-info span{color:var(--text-muted)}
+.rule-actions{display:flex;gap:8px}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px;margin:8px 0;color:var(--text-muted);text-align:center;font-size:13px;border:1px dashed var(--border);border-radius:var(--radius-md);background:var(--surface-2)}
+.empty.sm{padding:12px;font-size:12px}
+.d-none{display:none!important}
 @keyframes modalIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeOut{from{opacity:1}to{opacity:0}}
-.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:18px;box-shadow:var(--shadow-lg)}
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55);z-index:1000}
+.modal.open{display:flex}
+.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:18px;box-shadow:var(--shadow-lg);animation:modalIn .15s ease}
+
+/* Logs */
+.log-status{font-size:12px;color:var(--text-muted);margin-bottom:12px;min-height:16px}
+.log-status.ok{color:var(--success)}
+.log-status.error{color:var(--danger)}
+.log-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
+.log-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:12px;font-family:var(--mono);font-size:11px;max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.log-panel h3{font-family:var(--font);font-size:12px;font-weight:700;color:var(--text-muted);letter-spacing:.6px;text-transform:uppercase;margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.log-entry{display:flex;gap:6px;padding:2px 4px;border-radius:4px;line-height:1.4}
+.log-entry .t{color:var(--text-muted);flex:0 0 auto}
+.log-entry .l{font-weight:800;flex:0 0 auto;width:34px}
+.log-entry .l.inf{color:var(--info)}
+.log-entry .l.wrn{color:var(--warning)}
+.log-entry .l.err{color:var(--danger)}
+.log-entry .m{word-break:break-word}
+.log-empty{color:var(--text-muted);font-family:var(--font);font-size:12px;padding:6px 4px}
 
 /* Toast notifications */
 #toast-container{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:4px}
@@ -263,7 +289,7 @@ const char Tabs[] PROGMEM = R"rawliteral(
         <button class="btn primary" onclick="newRule()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span data-i18n="btn.newRule">New rule</span></button>
       </div>
       <div id="auto_table"></div>
-      <div class="empty" id="auto_empty" class="d-none"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
+      <div class="empty d-none" id="auto_empty"><span data-i18n="rule.empty">There are no automation rules.</span><br><span data-i18n="rule.emptyHint">Create the first one to get started.</span></div>
     </div>
   </section>
 <section id="config" class="view content">
@@ -278,8 +304,12 @@ const char Tabs[] PROGMEM = R"rawliteral(
     <div class="pages">
       <div class="page-head">
         <div><h1 data-i18n="page.logs">Logs</h1><p class="page-sub" data-i18n="page.logs.sub">Auto-refresh every 2 s</p></div>
-        <button class="btn ghost" onclick="refreshLogs()"><span data-i18n="btn.refresh">Refresh</span></button>
+        <div class="btn-row">
+          <button class="btn ghost" onclick="refreshLogs()"><span data-i18n="btn.refresh">Refresh</span></button>
+          <button class="btn ghost" onclick="clearLogs()"><span data-i18n="btn.clear">Clear</span></button>
+        </div>
       </div>
+      <div class="log-status" id="logStatus"></div>
       <div class="log-grid">
         <div class="log-panel" id="log-core"><h3 data-i18n="log.core">Core</h3></div>
         <div class="log-panel" id="log-events"><h3 data-i18n="log.events">Events</h3></div>
@@ -316,13 +346,16 @@ es: {
   auto:'Automatizaciones', 'auto.sub':'Reglas de automatización',
   config:'Ajustes', 'config.sub':'Calibración, persistencia y configuración del nodo',
   logs:'Registros', 'logs.sub':'Actualización automática cada 2 s'}, btn:{
-  newRule:'Nueva regla', refresh:'Refrescar'}, saved:{
+  newRule:'Nueva regla', refresh:'Refrescar', clear:'Limpiar'}, saved:{
   notice:'Ajustes guardados. El dispositivo se está reiniciando...'}, log:{
-  core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error'}, stat:{
+  core:'Core', events:'Eventos', sensors:'Sensores / Aviso / Error',
+  updated:'Actualizado: {time} · {n} registros', empty:'Sin registros',
+  cleared:'Registros borrados', error:'No se pudieron cargar los registros',
+  invalid:'Respuesta no válida del servidor', netError:'Error de conexión'}, stat:{
   actuators:'Actuadores', sensors:'Sensores', updated:'Actualizado', time:'Tiempo'}, chip:{
   enabled:'Habilitado', disabled:'Deshabilitado', online:'En línea'}, status:{
   local:'Local', remote:'Remoto', offline:'Desconectado'}, dev:{
-  on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel'}, no:{
+  on:'ON', off:'OFF', drag:'Arrastra para ajustar nivel', noMatch:'Sin coincidencias'}, no:{
   actuators:'No hay actuadores', sensors:'No hay sensores'}, air:{
   good:'Bueno', warn:'Aviso', bad:'Malo'}, yn:{ yes:'Sí', no:'No', closed:'Cerrado', open:'Abierto'}, cal:{
   'btn.set0':'Fijar 0%', 'btn.set100':'Fijar 100%', 'btn.ref':'Fijar valor', 'btn.reset':'Resetear',
@@ -332,7 +365,7 @@ es: {
   title:'Configuración del nodo', broadcast:'Puerto broadcast', command:'Puerto comando',
   interval:'Intervalo de reporte', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
   'ph.interval':'Intervalo (ms)', ota:'Arduino OTA', save:'Guardar', factory:'Restablecer a fábrica',
-  local:'LOCAL', remote:'REMOTE', openGui:'Abrir GUI ↗'}, net:{
+  local:'LOCAL', remote:'REMOTE', openGui:'Abrir GUI ↗', noMatch:'Sin coincidencias'}, net:{
   title:'Red del nodo', ssid:'SSID', 'ssid.ph':'Nombre de la red', pass:'Contraseña',
   'pass.ph':'Contraseña WiFi', save:'Guardar y reiniciar',
   note:'Tras guardar, el dispositivo se reiniciará y se conectará a la nueva red.'}, alert:{
@@ -377,13 +410,16 @@ en: {
   auto:'Automations', 'auto.sub':'Automation rules',
   config:'Settings', 'config.sub':'Calibration, persistence and node configuration',
   logs:'Logs', 'logs.sub':'Auto-refresh every 2 s'}, btn:{
-  newRule:'New rule', refresh:'Refresh'}, saved:{
+  newRule:'New rule', refresh:'Refresh', clear:'Clear'}, saved:{
   notice:'Settings saved. The device is restarting...'}, log:{
-  core:'Core', events:'Events', sensors:'Sensors / Warn / Error'}, stat:{
+  core:'Core', events:'Events', sensors:'Sensors / Warn / Error',
+  updated:'Updated: {time} · {n} entries', empty:'No entries',
+  cleared:'Logs cleared', error:'Could not load the logs',
+  invalid:'Invalid response from the server', netError:'Network error'}, stat:{
   actuators:'Actuators', sensors:'Sensors', updated:'Updated', time:'Time'}, chip:{
   enabled:'Enabled', disabled:'Disabled', online:'Online'}, status:{
   local:'Local', remote:'Remote', offline:'Offline'}, dev:{
-  on:'ON', off:'OFF', drag:'Drag to adjust level'}, no:{
+  on:'ON', off:'OFF', drag:'Drag to adjust level', noMatch:'No matches'}, no:{
   actuators:'No actuators', sensors:'No sensors'}, air:{
   good:'Good', warn:'Warn', bad:'Bad'}, yn:{ yes:'Yes', no:'No', closed:'Closed', open:'Open'}, cal:{
   'btn.set0':'Set 0%', 'btn.set100':'Set 100%', 'btn.ref':'Set ref value', 'btn.reset':'Reset',
@@ -393,7 +429,7 @@ en: {
   title:'Node configuration', broadcast:'Broadcast port', command:'Command port',
   interval:'Report interval', 'ph.broadcast':'Broadcast', 'ph.command':'Command',
   'ph.interval':'Interval (ms)', ota:'Arduino OTA', save:'Save', factory:'Factory reset',
-  local:'LOCAL', remote:'REMOTE', openGui:'Open GUI ↗'}, net:{
+  local:'LOCAL', remote:'REMOTE', openGui:'Open GUI ↗', noMatch:'No matches'}, net:{
   title:'Node network', ssid:'SSID', 'ssid.ph':'Network name', pass:'Password',
   'pass.ph':'WiFi password', save:'Save & restart',
   note:'After saving, the device will restart and connect to the new network.'}, alert:{
@@ -1148,7 +1184,10 @@ async function toggleMatterSwitch(i, id, name) {
       btn.classList.toggle('ok', wasOn);
       btn.setAttribute('aria-pressed', wasOn ? 'true' : 'false');
       btn.textContent = wasOn ? t('chip.enabled') : t('chip.disabled');
+      return;
     }
+    const sensor = sensors.find(s => s.id == id);
+    if (sensor) sensor.avail = on;
     return;
   }
   try {
@@ -1167,6 +1206,8 @@ async function toggleMatterSwitch(i, id, name) {
       return;
     }
     showToast('success', t('chip.enabled'));
+    const sensor = sensors.find(s => s.id == id);
+    if (sensor) sensor.avail = on;
   } catch (e) {
     showToast('error', t('alert.localNet'));
   }
@@ -1238,58 +1279,91 @@ function toggleAccordion(btn) {
   }
 }
 
+function updateRelayUI(i){
+  const s = sensors[i];
+  if(!s) return;
+  const persistBtn = document.querySelector(`button[onclick*="togglePersist(${i})"]`);
+  if(persistBtn){
+    persistBtn.classList.toggle('on', !!s.persist);
+    persistBtn.setAttribute('aria-checked', s.persist ? 'true' : 'false');
+  }
+  const pulseBtn = document.querySelector(`button[onclick*="togglePulse(${i})"]`);
+  if(pulseBtn){
+    pulseBtn.classList.toggle('on', !!s.pulse);
+    pulseBtn.setAttribute('aria-checked', s.pulse ? 'true' : 'false');
+  }
+  const pulseRow = document.getElementById('pulseRow' + i);
+  if(pulseRow) pulseRow.style.display = s.pulse ? '' : 'none';
+}
+
+function setPersistence(i, value) {
+  return setCalib(i, 'persist', null, value ? '1' : '0');
+}
+
 function togglePersist(i) {
+  const sensor = sensors[i];
+  if (!sensor) return;
+  const finish = (ok) => {
+    if (!ok) {
+      showToast('error', t('alert.failed'));
+      return;
+    }
+    sensor.persist = !sensor.persist;
+    if (sensor.persist) sensor.pulse = false;
+    updateRelayUI(i);
+  };
   // If pulse is active, disable it first (mutual exclusion)
-  const pulseBtn = document.querySelector(`#pulseRow${i}`);
-  if (pulseBtn && pulseBtn.style.display !== 'none') {
-    // Pulse is active, disable it first
+  if (sensor.pulse) {
     setCalib(i, 'pulse', null, '0').then(pulseOk => {
-      if (pulseOk) {
-        // Now toggle persist
-        setCalib(i, 'persist', null, '1').then(ok => {
-          if (!ok) showToast('error', t('alert.failed'));
-        }).catch(() => showToast('error', t('alert.failed')));
+      if (!pulseOk) {
+        showToast('error', t('alert.failed'));
+        return;
       }
-    });
+      setPersistence(i, !sensor.persist).then(finish).catch(() => showToast('error', t('alert.failed')));
+    }).catch(() => showToast('error', t('alert.failed')));
     return;
   }
   // Pulse not active, just toggle persist
-  setCalib(i, 'persist', null, '1').then(ok => {
-    if (!ok) showToast('error', t('alert.failed'));
-  }).catch(() => showToast('error', t('alert.failed')));
+  setPersistence(i, !sensor.persist).then(finish).catch(() => showToast('error', t('alert.failed')));
 }
 
 function togglePulse(i) {
-  const pulseBtn = document.querySelector(`#pulseRow${i}`);
-  const isPulseActive = pulseBtn && pulseBtn.style.display !== 'none';
-  
-  if (isPulseActive) {
-    // Pulse is active, turn it off
-    setCalib(i, 'pulse', null, '0').then(ok => {
-      if (!ok) showToast('error', t('alert.failed'));
-    }).catch(() => showToast('error', t('alert.failed')));
-  } else {
-    // Pulse is inactive, check if persist is active
-    const persistBtn = document.querySelector(`button[onclick*="togglePersist(${i})"]`);
-    const isPersistActive = persistBtn && persistBtn.classList.contains('on');
-    
-    if (isPersistActive) {
-      // Persist is active, disable it first (mutual exclusion)
-      setCalib(i, 'persist', null, '0').then(persistOk => {
-        if (persistOk) {
-          // Now enable pulse
-          setCalib(i, 'pulse', null, '1').then(ok => {
-            if (!ok) showToast('error', t('alert.failed'));
-          }).catch(() => showToast('error', t('alert.failed')));
-        }
-      }).catch(() => showToast('error', t('alert.failed')));
-    } else {
-      // Persist not active, just enable pulse
-      setCalib(i, 'pulse', null, '1').then(ok => {
-        if (!ok) showToast('error', t('alert.failed'));
-      }).catch(() => showToast('error', t('alert.failed')));
+  const sensor = sensors[i];
+  if (!sensor) return;
+  const finish = (ok) => {
+    if (!ok) {
+      showToast('error', t('alert.failed'));
+      return;
     }
+    sensor.pulse = true;
+    sensor.persist = false;
+    updateRelayUI(i);
+  };
+  // If pulse is already active, turn it off
+  if (sensor.pulse) {
+    setCalib(i, 'pulse', null, '0').then(ok => {
+      if (!ok) {
+        showToast('error', t('alert.failed'));
+        return;
+      }
+      sensor.pulse = false;
+      updateRelayUI(i);
+    }).catch(() => showToast('error', t('alert.failed')));
+    return;
   }
+  // If persist is active, disable it first (mutual exclusion)
+  if (sensor.persist) {
+    setPersistence(i, false).then(persistOk => {
+      if (!persistOk) {
+        showToast('error', t('alert.failed'));
+        return;
+      }
+      setCalib(i, 'pulse', null, '1').then(finish).catch(() => showToast('error', t('alert.failed')));
+    }).catch(() => showToast('error', t('alert.failed')));
+    return;
+  }
+  // Persist not active, just enable pulse
+  setCalib(i, 'pulse', null, '1').then(finish).catch(() => showToast('error', t('alert.failed')));
 }
 
 function toggleRelayAvail(i) {
@@ -1297,7 +1371,16 @@ function toggleRelayAvail(i) {
   if (!sensor) return;
   const newAvail = !sensor.avail;
   setCalib(i, 'avail', null, newAvail ? '1' : '0').then(ok => {
-    if (!ok) showToast('error', t('alert.failed'));
+    if (!ok) {
+      showToast('error', t('alert.failed'));
+      return;
+    }
+    sensor.avail = newAvail;
+    const availBtn = document.querySelector(`button[onclick*="toggleRelayAvail(${i})"]`);
+    if(availBtn){
+      availBtn.classList.toggle('on', newAvail);
+      availBtn.setAttribute('aria-checked', newAvail ? 'true' : 'false');
+    }
   }).catch(() => showToast('error', t('alert.failed')));
 }
 
@@ -1308,12 +1391,22 @@ async function toggleDevice(id) {
     if (r.ok) setTimeout(loadDevices, 100);
     return;
   }
-  await fetch('/toggle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body
-  });
-  setTimeout(loadDevices, 100);
+  try {
+    const res = await fetch('/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch(_) {}
+      showToast('error', tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+      return;
+    }
+    setTimeout(loadDevices, 100);
+  } catch (e) {
+    showToast('error', t('alert.localNet'));
+  }
 }
 
 function onDimmerInput(id, value) {
@@ -1353,7 +1446,7 @@ async function sendDimmer(id, value) {
     if (!res.ok) {
       let detail = '';
       try { detail = await res.text(); } catch(_) {}
-      alert(tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
+      showToast('error', tf('alert.localError', { status: res.status, detail: detail ? ': ' + detail : '' }));
       return;
     }
     setTimeout(loadDevices, 100);
@@ -1426,55 +1519,108 @@ if(savedBg){
 
 var logTimer = null;
 
+function showLogStatus(kind, msg){
+  const el = document.getElementById('logStatus');
+  if(!el) return;
+  el.className = 'log-status' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+}
+
 async function refreshLogs(){
+  const coreEl = document.getElementById('log-core');
+  const evntEl = document.getElementById('log-events');
+  const sensEl = document.getElementById('log-sensors');
+  const scrollPositions = {
+    core: coreEl ? coreEl.scrollTop : 0,
+    evnt: evntEl ? evntEl.scrollTop : 0,
+    sens: sensEl ? sensEl.scrollTop : 0
+  };
   try {
-    const coreEl = document.getElementById('log-core');
-    const evntEl = document.getElementById('log-events');
-    const sensEl = document.getElementById('log-sensors');
-    // Save scroll positions before refresh
-    const scrollPositions = {
-      core: coreEl ? coreEl.scrollTop : 0,
-      evnt: evntEl ? evntEl.scrollTop : 0,
-      sens: sensEl ? sensEl.scrollTop : 0
-    };
-    const r = await fetch('/logs');
-    if(!r.ok) return;
-    const logs = await r.json();
+    const r = await fetch('/logs', { cache: 'no-store' });
+    if(!r.ok) {
+      showLogStatus('error', t('log.error'));
+      return;
+    }
+    let logs;
+    try {
+      logs = await r.json();
+    } catch(e) {
+      showLogStatus('error', t('log.invalid'));
+      return;
+    }
+    if(!Array.isArray(logs)) logs = [];
     renderLogs(logs);
-    // Restore scroll positions
+    const now = new Date();
+    showLogStatus('ok', tf('log.updated', {
+      time: String(now.getUTCHours()).padStart(2,'0') + ':' +
+            String(now.getUTCMinutes()).padStart(2,'0') + ':' +
+            String(now.getUTCSeconds()).padStart(2,'0'),
+      n: logs.length
+    }));
     if (coreEl) coreEl.scrollTop = scrollPositions.core;
     if (evntEl) evntEl.scrollTop = scrollPositions.evnt;
     if (sensEl) sensEl.scrollTop = scrollPositions.sens;
   } catch(e){
-    console.log('refreshLogs err', e);
+    showLogStatus('error', t('log.netError'));
   }
 }
 
+function clearLogs(){
+  fetch('/logs/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  }).then(r => {
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    showToast('success', t('log.cleared'));
+    refreshLogs();
+  }).catch(() => showToast('error', t('alert.localNet')));
+}
+
+const LOG_PANELS = ['CORE', 'EVNT', 'SENS'];
+
 function renderLogs(logs){
-  const coreEl = document.getElementById('log-core');
-  const evntEl = document.getElementById('log-events');
-  const sensEl = document.getElementById('log-sensors');
-  coreEl.innerHTML = '<h3>' + t('log.core') + '</h3>';
-  evntEl.innerHTML = '<h3>' + t('log.events') + '</h3>';
-  sensEl.innerHTML = '<h3>' + t('log.sensors') + '</h3>';
+  const panelEls = {
+    CORE: document.getElementById('log-core'),
+    EVNT: document.getElementById('log-events'),
+    SENS: document.getElementById('log-sensors')
+  };
+  LOG_PANELS.forEach(k => {
+    const p = panelEls[k];
+    if(!p) return;
+    p.querySelectorAll('.log-entry, .log-empty').forEach(n => n.remove());
+  });
+  const counts = { CORE: 0, EVNT: 0, SENS: 0 };
   logs.forEach(e => {
+    if(!e || typeof e !== 'object') return;
+    const layer = e.l === 'CORE' ? 'CORE' : e.l === 'EVNT' ? 'EVNT' : 'SENS';
+    if (counts[layer] >= 200) return;
+    const panel = panelEls[layer];
+    if(!panel) return;
+    counts[layer]++;
     const el = document.createElement('div');
-    const baseClass = e.l === 'CORE' ? 'core' : e.l === 'EVNT' ? 'evnt' : 'sens';
-    el.className = 'log-entry ' + baseClass;
+    el.className = 'log-entry';
     const timeEl = document.createElement('span');
     timeEl.className = 't';
-    timeEl.textContent = e.t;
+    timeEl.textContent = e.t != null ? String(e.t) : '';
+    const level = e.v != null ? String(e.v) : 'INF';
     const levelEl = document.createElement('span');
-    levelEl.className = 'l ' + e.v.toLowerCase;
-    levelEl.textContent = e.v;
+    levelEl.className = 'l ' + level.toLowerCase();
+    levelEl.textContent = level;
     const msgEl = document.createElement('span');
-    msgEl.textContent = e.m;
+    msgEl.className = 'm';
+    msgEl.textContent = e.m != null ? String(e.m) : '';
     el.appendChild(timeEl);
     el.appendChild(levelEl);
     el.appendChild(msgEl);
-    if(e.l === 'CORE') coreEl.appendChild(el);
-    else if(e.l === 'EVNT') evntEl.appendChild(el);
-    else sensEl.appendChild(el);
+    panel.appendChild(el);
+  });
+  LOG_PANELS.forEach(k => {
+    const p = panelEls[k];
+    if(!p || counts[k] > 0) return;
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'log-empty';
+    emptyEl.textContent = t('log.empty');
+    p.appendChild(emptyEl);
   });
 }
 
@@ -2180,24 +2326,30 @@ async function finishWizard(){
     }
   }
 
+  let wizardValid = true;
   wizard.data.actuators.forEach((aIdx, aPos) => {
+    if(!wizardValid) return;
     const level = wizard.data.levels[aPos] || 0;
     if(level < 0 || level > 100) {
-      alert(tf('wiz.levelActuator', { level }));
-      return;
+      showToast('error', tf('wiz.levelActuator', { level }));
+      wizardValid = false;
     }
   });
 
-  wizard.data.actuators.forEach((aIdx, aPos) => {
-    const action = wizard.data.actions[aPos];
-    const actuator = sensorByIndex(aIdx);
-    if(!actuator) return;
+  if(wizardValid) {
+    wizard.data.actuators.forEach((aIdx, aPos) => {
+      if(!wizardValid) return;
+      const action = wizard.data.actions[aPos];
+      const actuator = sensorByIndex(aIdx);
+      if(!actuator) return;
+      if(action === 3 && actuator.type !== 8) {
+        showToast('error', t('wiz.levelDimmerOnly'));
+        wizardValid = false;
+      }
+    });
+  }
 
-    if(action === 3 && actuator.type !== 8) {
-      alert(t('wiz.levelDimmerOnly'));
-      return;
-    }
-  });
+  if(!wizardValid) return;
 
   let cmps = [], thresholds = [];
   wizard.data.sensors.forEach(sIdx => {
@@ -2313,6 +2465,11 @@ async function loadRules(){
     if(empty) empty.style.display = 'none';
 
     const typeName = ['EDGE','THRESHOLD','TIME','INTERVAL'];
+    const actionName = a => ['ON','OFF','TOGGLE','LEVEL'][a] != null ? ['ON','OFF','TOGGLE','LEVEL'][a] : a;
+    const fmtActions = r => (r.actuators || []).map((a, idx) => {
+      const act = actionName(r.actions && r.actions[idx]);
+      return '#' + a + ': ' + act + (act === 'LEVEL' && (r.levels && r.levels[idx] != null) ? ' ' + r.levels[idx] + '%' : '');
+    }).join(', ') || '-';
     let html = '<div class="rule-list">' + rules.map(r=>`
       <div class="rule-card">
         <div class="rule-head">
@@ -2322,9 +2479,9 @@ async function loadRules(){
             <button class="btn danger sm" onclick="deleteRule(${r.id})">${t('wiz.delete')}</button>
           </div>
         </div>
-        <div class="rule-info"><span>${t('rule.sensors')}</span><b>${r.sensors.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.sensors')}</span><b>${(r.sensors || []).join(", ") || '-'}</b></div>
         <div class="rule-info"><span>${t('rule.logic')}</span><b>${r.logical_and ? 'AND' : 'OR'}</b></div>
-        <div class="rule-info"><span>${t('rule.actions')}</span><b>${r.actuators.join(", ")}</b></div>
+        <div class="rule-info"><span>${t('rule.actions')}</span><b>${fmtActions(r)}</b></div>
         <div class="rule-info"><span>${t('rule.delay')}</span><b>${r.delay_ms} / ${r.cooldown_ms} ms</b></div>
       </div>`).join('') + '</div>';
     table.innerHTML = html;
@@ -2390,17 +2547,17 @@ function filterDevices() {
     card.style.display = show ? '' : 'none';
     if (show) visibleCount++;
   });
-  // Update empty state
-  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
-  if (visibleCount === 0) {
-    if (!document.querySelector('.empty.sm')) {
+  // Update empty state - scoped to devices section
+  const devicesSection = document.getElementById('devices_cards');
+  if (visibleCount === 0 && term) {
+    if (!devicesSection.querySelector('.empty.sm')) {
       const div = document.createElement('div');
       div.className = 'empty sm';
-      div.innerHTML = '<span data-i18n="dev.noSensors">No matching devices</span>';
-      document.querySelector('.devices-desktop-layout')?.prepend(div);
+      div.textContent = t('dev.noMatch');
+      devicesSection.prepend(div);
     }
   } else {
-    const existing = document.querySelector('.empty.sm');
+    const existing = devicesSection.querySelector('.empty.sm');
     if (existing) existing.remove();
   }
 }
@@ -2415,17 +2572,17 @@ function filterSettings() {
     card.style.display = show ? '' : 'none';
     if (show) visibleCount++;
   });
-  // Update empty state
-  const emptyMsg = document.querySelector('.empty.sm') || document.createElement('div');
-  if (visibleCount === 0) {
-    if (!document.querySelector('.empty.sm')) {
+  // Update empty state - scoped to settings section
+  const settingsSection = document.getElementById('cards');
+  if (visibleCount === 0 && term) {
+    if (!settingsSection.querySelector('.empty.sm')) {
       const div = document.createElement('div');
       div.className = 'empty sm';
-      div.innerHTML = '<span data-i18n="dev.noSettings">No matching settings</span>';
-      document.querySelector('.settings-grid')?.prepend(div);
+      div.textContent = t('cfg.noMatch');
+      settingsSection.prepend(div);
     }
   } else {
-    const existing = document.querySelector('.empty.sm');
+    const existing = settingsSection.querySelector('.empty.sm');
     if (existing) existing.remove();
   }
 }
@@ -2455,10 +2612,14 @@ document.querySelectorAll('.langbtn').forEach(btn => {
 
 setLang(LANG);
 })(); /* -------------------- LANGUAGE SELECTOR -------------------- */
-// Initialize active tab on page load from localStorage
+// Initialize active tab once, after all scripts are parsed (single init flow)
 (() => {
-  const savedTab = localStorage.getItem('tab');
-  const tab = savedTab || 'control';
+  const valid = ['control', 'auto', 'config', 'logs'];
+  const tab = valid.indexOf(window.startupTab) !== -1
+    ? window.startupTab
+    : (valid.indexOf(localStorage.getItem('tab')) !== -1
+      ? localStorage.getItem('tab')
+      : 'control');
   show(tab);
 })();
 </script>
