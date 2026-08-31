@@ -549,7 +549,7 @@ function sensorCalibCard(s, i, cfg) {
     <div class="btn-row">
       <button class="btn ghost sm" onclick='setCalib(${i},"res","${s.name}")'>${t('cal.btn.reset')}</button>
     </div>
-    
+
   </div>`;
 }
 
@@ -570,19 +570,19 @@ GENERIC: (s, i) => sensorCalibCard(s, i, { label: sLabel(s.type), format: v => (
 AIRQ: (s, i) => `<div class="settings-card">
   ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value == 0 ? t('air.good') : s.value == 1 ? t('air.warn') : s.value == 2 ? t('air.bad') : 'N/A'}</div>
-  
+
 </div>`,
 
 RAIN: (s, i) => `<div class="settings-card">
   ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.value ? t('yn.yes') : t('yn.no')}</div>
-  
+
 </div>`,
 
 CONTACT: (s, i) => `<div class="settings-card">
   ${calHead(sLabel(s.type), s, i)}
   <div class="metric" id="v${i}">${s.value === 255 || s.value == null ? 'N/A' : s.state ? t('yn.closed') : t('yn.open')}</div>
-  
+
 </div>`,
 
 DIMM: (s, i) => `<div class="settings-card">
@@ -592,7 +592,7 @@ DIMM: (s, i) => `<div class="settings-card">
     <input id="ref${i}" class="input sm min-width-120" placeholder="${t('cal.ph.fade')}"">
     <button class="btn ghost sm" onclick='setCalib(${i},"fad","${s.name}")'>${t('cal.btn.fade')}</button>
   </div>
-  
+
 </div>`,
 
 REL: (s, i) => `<div class="settings-card">
