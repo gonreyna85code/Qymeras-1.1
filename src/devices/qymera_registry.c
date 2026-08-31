@@ -4,6 +4,7 @@
 #include "qymera_registry.h"
 #include "qymera_hal.h"
 #include <string.h>
+#include "qymera_udp.h"
 #include <stdlib.h>
 
 struct qymera_registry_s {
@@ -310,7 +311,7 @@ static bool _control_entity_has_capability(qymera_registry_t *registry, const qy
 }
 
 
-qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
+qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
     // Check entity has relay capability
@@ -350,10 +351,34 @@ qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_
         }
         // else: already in desired state - idempotent no-op, GPIO not re-written
     } else {
-        // Remote device: send UDP control command
-        // TODO: implement UDP remote control using existing protocol
-        (void)entity_ref; (void)state; (void)local_only;
-        return QYMERA_ERR_NOT_IMPLEMENTED;
+        // Remote device: send UDP control command using existing protocol
+        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)core;
+        if (!transport) {
+            return QYMERA_ERR_NETWORK;
+        }
+
+        // Build UDP command payload for relay
+        qymera_payload_command_t cmd = {0};
+        cmd.entity_id = e->entity_id;
+        cmd.opcode = 1;  // Opcode for relay command
+        cmd.flags = 0;
+        cmd.value_f = state ? 1.0f : 0.0f;  // 1.0 = ON, 0.0 = OFF
+        cmd.value_u32 = 0;
+        cmd.cmd_seq = 0;
+
+        // Send the command via UDP (fire-and-report)
+        qymera_err_t udp_err = qymera_udp_transport_send_command(
+            transport, d->ip_addr, entity_ref->entity_id,
+            1, state ? 1.0f : 0.0f, 0, &cmd.cmd_seq);
+
+        // Update registry state to reflect dispatched (fire-and-report)
+        e->value.valid = true;
+        e->value.numeric_value = state ? 1.0f : 0.0f;
+        e->value.bool_value = state;
+        e->value.timestamp = qymera_timestamp_now();
+        e->value.reliability = 0;  // pending remote confirmation
+
+        return udp_err;
     }
 
     // Update registry state AFTER successful control
@@ -365,7 +390,7 @@ qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_
 
     return QYMERA_OK;
 }
-qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
+qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
     // Check entity has dimmer capability
@@ -414,10 +439,34 @@ qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, const qymera
         }
         // else: already at desired level - idempotent no-op
     } else {
-        // Remote device: send UDP control command
-        // TODO: implement UDP remote control using existing protocol
-        (void)entity_ref; (void)level; (void)local_only;
-        return QYMERA_ERR_NOT_IMPLEMENTED;
+        // Remote device: send UDP control command using existing protocol
+        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)core;
+        if (!transport) {
+            return QYMERA_ERR_NETWORK;
+        }
+
+        // Build UDP command payload for dimmer
+        qymera_payload_command_t cmd = {0};
+        cmd.entity_id = e->entity_id;
+        cmd.opcode = 2;  // Opcode for dimmer command
+        cmd.flags = 0;
+        cmd.value_f = (float)level;
+        cmd.value_u32 = 0;
+        cmd.cmd_seq = 0;
+
+        // Send the command via UDP (fire-and-report)
+        qymera_err_t udp_err = qymera_udp_transport_send_command(
+            transport, d->ip_addr, entity_ref->entity_id,
+            2, (float)level, 0, &cmd.cmd_seq);
+
+        // Update registry state to reflect dispatched (fire-and-report)
+        e->value.valid = true;
+        e->value.numeric_value = (float)level;
+        e->value.bool_value = false;
+        e->value.timestamp = qymera_timestamp_now();
+        e->value.reliability = 0;  // pending remote confirmation
+
+        return udp_err;
     }
 
     // Update registry state AFTER successful control
