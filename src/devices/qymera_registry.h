@@ -34,6 +34,9 @@ typedef struct {
     uint32_t pulse_ms;
     uint32_t fade_ms;
     bool protected_actuator;
+    int8_t gpio_pin;  // GPIO pin for actuator control (-1 = not mapped)
+    qymera_entity_value_t value;
+    qymera_timestamp_t last_updated;
 } qymera_entity_t;
 
 /* =========================

@@ -207,6 +207,9 @@ qymera_err_t qymera_core_tick(qymera_core_t *core) {
     
     qymera_event_bus_process(core->event_bus);
     
+    // Evaluate rules against pending events
+    qymera_rule_engine_evaluate(core->rule_engine, NULL);
+    
     qymera_rule_engine_tick(core->rule_engine, now_ms);
     
     if (now_ms - core->last_stale_check >= 10000) {

@@ -202,7 +202,10 @@ qymera_err_t qymera_registry_update_entity_value(qymera_registry_t *registry, ui
     if (entity_idx >= registry->max_entities) return QYMERA_ERR_INVALID_ARG;
     if (registry->entities[entity_idx].entity_id[0] == '\0') return QYMERA_ERR_NOT_FOUND;
     
-    (void)registry->entities[entity_idx];
+    qymera_entity_t *e = &registry->entities[entity_idx];
+    e->value = *value;
+    e->last_updated = qymera_timestamp_now();
+    
     return QYMERA_OK;
 }
 

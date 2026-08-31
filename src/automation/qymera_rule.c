@@ -507,6 +507,16 @@ qymera_err_t qymera_rule_engine_execute_actions(qymera_rule_engine_t *engine, qy
         qymera_event_t act_event;
         qymera_event_make_actuator_changed(&act_event, action->entity.device_id, action->entity.entity_id, &value);
         qymera_event_bus_publish(engine->event_bus, &act_event);
+        // Control GPIO if this is a relay action and pin is mapped
+        // Look up entity in registry by reference
+        uint16_t entity_idx;
+        if (qymera_registry_find_entity(engine->registry, action->entity.device_id, action->entity.entity_id, &entity_idx) == QYMERA_OK) {
+            qymera_entity_t found_entity;
+            qymera_err_t _err = qymera_registry_get_entity(engine->registry, entity_idx, &found_entity);
+            if (_err == QYMERA_OK && found_entity.gpio_pin >= 0) {
+                qymera_gpio_write(found_entity.gpio_pin, action->value_u32 != 0 ? QYMERA_GPIO_HIGH : QYMERA_GPIO_LOW);
+            }
+        }
         
         if (engine->log) {
             qymera_log_action(engine->log, "rule_engine", "Action: %s -> %s = %.2f", 
