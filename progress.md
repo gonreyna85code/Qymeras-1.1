@@ -2,13 +2,14 @@
 
 ## Current State (updated 2026-08-30)
 
-- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `77606f4`
-  carries NO AI code (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM
-  block all removed). Deterministic core intact, builds green on 3 envs, host
-  suite 45/45, unified `Qymera::` public API.
-- **Branch map:** 1.1 = `main` (frozen) · 1.2 = `feature/GUI` → integration
-  candidate on `backup/gui-main-merge-20260830` (override) · Dashboard/AI =
-  `feature/ai-experiments` + future (separate direction, kept out of 1.1/1.2).
+- **Qymera 1.2 = GUI release, becoming `main` on merge.** Built on the frozen
+  1.1 deterministic core (no AI code: `ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`,
+  QMAI EEPROM block all removed). Deterministic core intact, builds green on 3
+  envs, host suite 45/45, unified `Qymera::` public API.
+- **Branch map:** 1.1 = historical frozen `main` baseline · 1.2 = `main`
+  (this tree, GUI release; delivered via `backup/gui-main-merge-20260830`) ·
+  Dashboard/AI = `feature/ai-experiments` + future (separate direction, kept
+  out of 1.1/1.2).
 - **Fleet (2026-08-30):** both boards flashed with the 1.2 integration
   candidate (`fe20e7f`) and live. ESP8266 = **192.168.1.16** (device_uid
   12014147; DHCP drifted from .19 after the GUI reflash, taking the ESP32's old

@@ -2,14 +2,15 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `77606f4`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). **Qymera 1.2** = GUI release candidate, integrated on `backup/gui-main-merge-20260830`. | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+**Status:** **Qymera 1.2 — GUI release** (this tree, `main` after merge). Built-in web GUI overhaul on top of the frozen Qymera 1.1 deterministic core: device cards, automation wizard, bilingual ES/EN UI, logs page. ESP8266 + ESP32 validated on real hardware (12 local + 11 remote entities each). Remaining items are hardware validation-only, inherited from the 1.1 baseline (24h memory soak, factory-reset hw test, longer endurance, extra ESP32-family hardware). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
 
 ## Versions & Branches
 
 | Version | Where | Status |
 |---------|-------|--------|
-| **Qymera 1.1** | `main` | **CODE FREEZE / PRODUCTION BASELINE** — this tree. ESP8266 + ESP32; UDP + ESP-NOW mesh; web server with basic UI; EEPROM/Preferences persistence; automations. |
-| **Qymera 1.2** | `feature/GUI` | GUI release candidate: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Passed final freeze audit; integration candidate validated on `backup/gui-main-merge-20260830`. |
+| **Qymera 1.1** | historical `main` baseline | **FROZEN BASELINE** — deterministic core (deterministic runtime, UDP + ESP-NOW mesh, web server with basic UI, EEPROM/Preferences persistence, automations). Superseded as the active release by Qymera 1.2. |
+| **Qymera 1.2** | `main` (this tree) | **CURRENT RELEASE / GUI** — built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN, logs page) on top of the 1.1 deterministic core. Validated on ESP8266 + ESP32 hardware and full test/build matrix. |
+| **feature/GUI** | upstream GUI branch | Source of the 1.2 GUI work. Historical after this merge; **the deliverable is this main tree, not the branch.** |
 | **Qymera Dashboard** | `feature/ai-experiments` (+ future) | Separate, active development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1/1.2 production trees. |
 | **Qymera Link** | separate direction | Separate, active development direction: companion/link connectivity service. Kept out of the 1.1/1.2 production trees. |
 
