@@ -26,6 +26,8 @@
 #define QYMERA_UDP_PORT_DISCOVERY 13345
 #define QYMERA_UDP_PORT_CONTROL   13346
 
+#define QYMERA_FEEDBACK_GUARD_MS  50   /* Window to ignore a rule's own action echo */
+
 /* =========================
  * Result Codes
  * ========================= */
@@ -38,9 +40,10 @@ typedef enum {
     QYMERA_ERR_BUSY = -4,
     QYMERA_ERR_TIMEOUT = -5,
     QYMERA_ERR_INVALID_STATE = -6,
-    QYMERA_ERR_PROTOCOL = -7,
-    QYMERA_ERR_STORAGE = -8,
-    QYMERA_ERR_NETWORK = -9,
+    QYMERA_ERR_INVALID_CAPABILITY = -7,
+    QYMERA_ERR_PROTOCOL = -8,
+    QYMERA_ERR_STORAGE = -9,
+    QYMERA_ERR_NETWORK = -10,
 } qymera_err_t;
 
 /* =========================

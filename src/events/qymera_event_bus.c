@@ -164,6 +164,18 @@ void qymera_event_make_system_error(qymera_event_t *event, int error_code, const
     if (message) strncpy(event->payload.system_error.message, message, sizeof(event->payload.system_error.message) - 1);
 }
 
+void qymera_event_make_rule_lifecycle(qymera_event_t *event, const char *rule_id, uint8_t lifecycle) {
+    if (!event) return;
+    memset(event, 0, sizeof(qymera_event_t));
+    
+    event->type = QYMERA_EVENT_RULE_LIFECYCLE;
+    event->priority = 0;
+    event->timestamp = qymera_timestamp_now();
+    
+    if (rule_id) strncpy(event->payload.rule_lifecycle.rule_id, rule_id, QYMERA_RULE_ID_LEN - 1);
+    event->payload.rule_lifecycle.lifecycle = lifecycle;
+}
+
 void qymera_event_bus_get_stats(qymera_event_bus_t *bus, qymera_ring_stats_t *stats) {
     if (!bus || !stats) return;
     qymera_ring_get_stats(&bus->event_ring, stats);

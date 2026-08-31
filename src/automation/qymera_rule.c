@@ -85,6 +85,14 @@ static bool evaluate_sustained(const qymera_condition_t *cond, qymera_rule_state
     return false;
 }
 
+/* Event callback from event bus - dispatches sensor changes to rule engine */
+static void _rule_engine_sensor_callback(const qymera_event_t *event, void *context) {
+    qymera_rule_engine_t *engine = (qymera_rule_engine_t *)context;
+    if (engine && event) {
+        qymera_rule_engine_evaluate(engine, event);
+    }
+}
+
 static qymera_err_t fetch_entity_value(qymera_rule_engine_t *engine, const qymera_entity_ref_t *entity_ref, qymera_entity_value_t *out_value) {
     if (!engine || !engine->registry || !entity_ref || !out_value) return QYMERA_ERR_INVALID_ARG;
     
@@ -155,9 +163,15 @@ qymera_err_t qymera_rule_engine_init(qymera_rule_engine_t **engine, const qymera
     qymera_subscription_t sub = {0};
     sub.event_types[0] = QYMERA_EVENT_SENSOR_CHANGED;
     sub.type_count = 1;
-    sub.callback = NULL;  // Would set to internal handler
+    sub.callback = _rule_engine_sensor_callback;
     sub.context = e;
-    qymera_event_bus_subscribe(e->event_bus, &sub, &e->sensor_changed_sub);
+    if (qymera_event_bus_subscribe(e->event_bus, &sub, &e->sensor_changed_sub) != QYMERA_OK) {
+        qymera_log_error(e->log, "rule_engine", "Failed to subscribe to sensor events");
+        free(e->entity_subscribers);
+        free(e);
+        *engine = NULL;
+        return QYMERA_ERR_BUSY;
+    }
     
     sub.type_count = 1;
     sub.event_types[0] = QYMERA_EVENT_DEVICE_ONLINE;
@@ -274,6 +288,14 @@ qymera_err_t qymera_rule_engine_load(qymera_rule_engine_t *engine, const qymera_
     engine->loaded_count++;
     *slot_idx = idx;
     
+    // Emit rule lifecycle event: created
+    if (engine->log) {
+        qymera_event_t lifecycle_event;
+        qymera_event_make_rule_lifecycle(&lifecycle_event, compiled->rule.rule_id, 0 /* created */);
+        qymera_event_bus_publish(engine->event_bus, &lifecycle_event);
+        qymera_log_automation(engine->log, "rule_engine", "Loaded rule %s at slot %d", compiled->rule.rule_id, idx);
+    }
+    
     // Subscribe to trigger entity
     qymera_rule_engine_subscribe_entity(engine, &compiled->rule.trigger.entity, idx);
     
@@ -377,6 +399,14 @@ size_t qymera_rule_engine_evaluate(qymera_rule_engine_t *engine, const qymera_ev
                         }
                     }
                     
+                    // Feedback-loop guard: skip if this event is the echo of this
+                    // rule's own recent action on the same entity.
+                    if (cr->state.feedback_entity_ms != 0 &&
+                        strcmp(cr->state.feedback_entity, event->entity_id) == 0 &&
+                        (now_ms - cr->state.feedback_entity_ms) < QYMERA_FEEDBACK_GUARD_MS) {
+                        continue;
+                    }
+
                     // Evaluate trigger
                     bool triggered = false;
                     
@@ -386,8 +416,10 @@ size_t qymera_rule_engine_evaluate(qymera_rule_engine_t *engine, const qymera_ev
                             
                             qymera_entity_value_t value = event->payload.sensor_changed.value;
                             if (evaluate_condition(&cr->rule.trigger, &value)) {
+                                qymera_log_action(engine->log, "rule_engine", "Trigger condition eval OK");
                                 if (evaluate_sustained(&cr->rule.trigger, &cr->state, now_ms)) {
                                     triggered = true;
+                                    qymera_log_automation(engine->log, "rule_engine", "Rule triggered: %s", cr->rule.rule_id);
                                 }
                             } else {
                                 cr->state.sustained_start = 0;
@@ -411,6 +443,8 @@ size_t qymera_rule_engine_evaluate(qymera_rule_engine_t *engine, const qymera_ev
                                 uint32_t expires_at = qymera_system_get_uptime_ms() + cr->rule.cooldown_ms;
                                 int16_t timer_idx = qymera_timer_wheel_add(&engine->timer_wheel, expires_at, (uint16_t)(cr - engine->rules), 0);
                                 cr->state.cooldown_timer_idx = timer_idx;
+                                qymera_log_automation(engine->log, "rule_engine", "Rule %s entering cooldown %ums", 
+                                                     cr->rule.rule_id, cr->rule.cooldown_ms);
                             }
                             
                             // Emit automation triggered event
@@ -419,7 +453,9 @@ size_t qymera_rule_engine_evaluate(qymera_rule_engine_t *engine, const qymera_ev
                             qymera_event_bus_publish(engine->event_bus, &auto_event);
                             
                             if (engine->log) {
-                                qymera_log_automation(engine->log, "rule_engine", "Rule %s fired", cr->rule.rule_id);
+                                qymera_log_automation(engine->log, "rule_engine", "Rule %s fired (%d/%d actions)",
+                                                     cr->rule.rule_id, cr->state.activation_count,
+                                                     cr->rule.action_count);
                             }
                             
                             evaluated++;
@@ -495,8 +531,13 @@ qymera_err_t qymera_rule_engine_execute_actions(qymera_rule_engine_t *engine, qy
     
     // Execute actions through the control API
     // For now, emit actuator.changed events which will be handled by the control subsystem
+    uint32_t now_ms = qymera_system_get_uptime_ms();
     for (uint8_t i = 0; i < compiled->rule.action_count; i++) {
         const qymera_action_t *action = &compiled->rule.actions[i];
+        
+        // Record feedback-loop guard for the actuated entity
+        strncpy(compiled->state.feedback_entity, action->entity.entity_id, QYMERA_ENTITY_ID_LEN - 1);
+        compiled->state.feedback_entity_ms = now_ms;
         
         qymera_entity_value_t value = {0};
         value.valid = true;
@@ -507,17 +548,6 @@ qymera_err_t qymera_rule_engine_execute_actions(qymera_rule_engine_t *engine, qy
         qymera_event_t act_event;
         qymera_event_make_actuator_changed(&act_event, action->entity.device_id, action->entity.entity_id, &value);
         qymera_event_bus_publish(engine->event_bus, &act_event);
-        // Control GPIO if this is a relay action and pin is mapped
-        // Look up entity in registry by reference
-        uint16_t entity_idx;
-        if (qymera_registry_find_entity(engine->registry, action->entity.device_id, action->entity.entity_id, &entity_idx) == QYMERA_OK) {
-            qymera_entity_t found_entity;
-            qymera_err_t _err = qymera_registry_get_entity(engine->registry, entity_idx, &found_entity);
-            if (_err == QYMERA_OK && found_entity.gpio_pin >= 0) {
-                qymera_gpio_write(found_entity.gpio_pin, action->value_u32 != 0 ? QYMERA_GPIO_HIGH : QYMERA_GPIO_LOW);
-            }
-        }
-        
         if (engine->log) {
             qymera_log_action(engine->log, "rule_engine", "Action: %s -> %s = %.2f", 
                              compiled->rule.rule_id, action->entity.entity_id, action->value_f);

@@ -279,6 +279,102 @@ qymera_err_t qymera_registry_remove_device(qymera_registry_t *registry, uint16_t
     return QYMERA_OK;
 }
 
+/* Control API implementations */
+
+static bool _control_entity_has_capability(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, qymera_capability_t cap) {
+    uint16_t entity_idx;
+    if (qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx) != QYMERA_OK) {
+        return false;
+    }
+    qymera_entity_t entity;
+
+    if (qymera_registry_get_entity(registry, entity_idx, &entity) != QYMERA_OK) {
+
+        return false;
+
+    }
+
+    for (uint8_t i = 0; i < entity.capability_count; i++) {
+
+        if (entity.capabilities[i] == cap) {
+
+            return true;
+
+        }
+
+    }
+
+    return false;
+
+}
+
+
+qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
+
+    if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
+
+    if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_RELAY)) {
+
+        return QYMERA_ERR_INVALID_CAPABILITY;
+
+    }
+
+    uint16_t entity_idx;
+
+    qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
+
+    if (err != QYMERA_OK) return err;
+
+    qymera_entity_t *e = &registry->entities[entity_idx];
+
+    e->value.valid = true;
+
+    e->value.numeric_value = state ? 1.0f : 0.0f;
+
+    e->value.bool_value = state;
+
+    e->value.timestamp = qymera_timestamp_now();
+
+    e->value.reliability = 0;
+
+    return QYMERA_OK;
+
+}
+
+
+qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
+
+    if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
+
+    if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_DIMMER)) {
+
+        return QYMERA_ERR_INVALID_CAPABILITY;
+
+    }
+
+    uint8_t clamped_level = level > 100 ? 100 : level;
+
+    uint16_t entity_idx;
+
+    qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
+
+    if (err != QYMERA_OK) return err;
+
+    qymera_entity_t *e = &registry->entities[entity_idx];
+
+    e->value.valid = true;
+
+    e->value.numeric_value = (float)clamped_level;
+
+    e->value.bool_value = false;
+
+    e->value.timestamp = qymera_timestamp_now();
+
+    e->value.reliability = 0;
+
+    return QYMERA_OK;
+}
+
 size_t qymera_registry_check_stale(qymera_registry_t *registry, uint32_t timeout_ms, qymera_registry_stale_cb_t stale_callback, void *context) {
     if (!registry) return 0;
     

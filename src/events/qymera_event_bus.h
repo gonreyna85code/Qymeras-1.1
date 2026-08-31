@@ -197,6 +197,14 @@ void qymera_event_make_automation_triggered(qymera_event_t *event, const char *r
 void qymera_event_make_system_error(qymera_event_t *event, int error_code, const char *message);
 
 /**
+ * Create a rule.lifecycle event
+ * @param event      Output event
+ * @param rule_id    Rule ID
+ * @param lifecycle  0=created, 1=updated, 2=deleted, 3=enabled, 4=disabled
+ */
+void qymera_event_make_rule_lifecycle(qymera_event_t *event, const char *rule_id, uint8_t lifecycle);
+
+/**
  * Get event ring statistics
  * @param bus   Event bus
  * @param stats Output statistics

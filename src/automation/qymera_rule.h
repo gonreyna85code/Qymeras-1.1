@@ -115,6 +115,12 @@ typedef struct {
     int16_t interval_timer_idx;
     int16_t sustained_timer_idx;
     int16_t delay_timer_idx;
+
+    // Feedback-loop guard: entity this rule last acted on, and when.
+    // Prevents the actuator change caused by this rule's own action from
+    // immediately re-triggering the same rule through the event bus.
+    char feedback_entity[QYMERA_ENTITY_ID_LEN];
+    uint32_t feedback_entity_ms;
 } qymera_rule_state_t;
 
 /* =========================

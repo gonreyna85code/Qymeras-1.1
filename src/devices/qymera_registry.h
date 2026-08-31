@@ -225,6 +225,32 @@ size_t qymera_registry_entity_count(qymera_registry_t *registry);
  */
 qymera_err_t qymera_registry_remove_device(qymera_registry_t *registry, uint16_t device_idx);
 
+/* =========================
+ * Control API
+ * ========================= */
+
+/**
+ * Set relay actuator state
+ * @param registry   Registry handle
+ * @param entity_ref Entity reference (device_id + entity_id)
+ * @param state      true = ON, false = OFF
+ * @param local_only if true, only act on local devices (not remote)
+ * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
+ *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have relay capability
+ */
+qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, bool state, bool local_only);
+
+/**
+ * Set dimmer actuator level
+ * @param registry   Registry handle
+ * @param entity_ref Entity reference (device_id + entity_id)
+ * @param level      duty cycle 0-100
+ * @param local_only if true, only act on local devices (not remote)
+ * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
+ *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have dimmer capability
+ */
+qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only);
+
 /**
  * Check and update stale devices (called periodically)
  * @param registry       Registry handle
