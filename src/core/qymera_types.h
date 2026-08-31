@@ -42,8 +42,9 @@ typedef enum {
     QYMERA_ERR_INVALID_STATE = -6,
     QYMERA_ERR_INVALID_CAPABILITY = -7,
     QYMERA_ERR_PROTOCOL = -8,
-    QYMERA_ERR_STORAGE = -9,
-    QYMERA_ERR_NETWORK = -10,
+    QYMERA_ERR_NOT_IMPLEMENTED = -9,
+    QYMERA_ERR_STORAGE = -10,
+    QYMERA_ERR_NETWORK = -11,
 } qymera_err_t;
 
 /* =========================

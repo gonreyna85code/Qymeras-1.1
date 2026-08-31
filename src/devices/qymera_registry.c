@@ -2,6 +2,7 @@
  * Qymera Dashboard - Device Registry Implementation
  */
 #include "qymera_registry.h"
+#include "qymera_hal.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -310,66 +311,120 @@ static bool _control_entity_has_capability(qymera_registry_t *registry, const qy
 
 
 qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
-
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
+    // Check entity has relay capability
     if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_RELAY)) {
-
         return QYMERA_ERR_INVALID_CAPABILITY;
-
     }
 
+    // Find entity in registry
     uint16_t entity_idx;
-
     qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
-
     if (err != QYMERA_OK) return err;
 
     qymera_entity_t *e = &registry->entities[entity_idx];
 
+    // Check device role for locality
+    uint16_t dev_idx;
+    err = qymera_registry_find_device(registry, entity_ref->device_id, &dev_idx);
+    if (err != QYMERA_OK) return err;
+
+    qymera_device_t *d = &registry->devices[dev_idx];
+    bool is_remote = (d->role == 1);  // role==1 = remote
+
+    // local_only enforcement: reject remote targets when local_only=true
+    if (local_only && is_remote) {
+        return QYMERA_ERR_INVALID_CAPABILITY;
+    }
+
+    // Perform actual GPIO control for local devices
+    if (!is_remote) {
+        // Idempotency check: avoid unnecessary GPIO write if already in desired state
+        if (e->value.bool_value != state) {
+            qymera_err_t gpio_err = qymera_gpio_write(e->gpio_pin,
+                        state ? QYMERA_GPIO_HIGH : QYMERA_GPIO_LOW);
+            if (gpio_err != QYMERA_OK) {
+                return gpio_err;  // GPIO write failed - state not updated
+            }
+        }
+        // else: already in desired state - idempotent no-op, GPIO not re-written
+    } else {
+        // Remote device: send UDP control command
+        // TODO: implement UDP remote control using existing protocol
+        (void)entity_ref; (void)state; (void)local_only;
+        return QYMERA_ERR_NOT_IMPLEMENTED;
+    }
+
+    // Update registry state AFTER successful control
     e->value.valid = true;
-
     e->value.numeric_value = state ? 1.0f : 0.0f;
-
     e->value.bool_value = state;
-
     e->value.timestamp = qymera_timestamp_now();
-
     e->value.reliability = 0;
 
     return QYMERA_OK;
-
 }
-
-
 qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
-
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
+    // Check entity has dimmer capability
     if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_DIMMER)) {
-
         return QYMERA_ERR_INVALID_CAPABILITY;
-
     }
 
-    uint8_t clamped_level = level > 100 ? 100 : level;
+    // Clamp level to valid range (0-100) - return error for invalid instead of clamping
+    if (level > 100) {
+        return QYMERA_ERR_INVALID_ARG;
+    }
 
+    // Find entity in registry
     uint16_t entity_idx;
-
     qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
-
     if (err != QYMERA_OK) return err;
 
     qymera_entity_t *e = &registry->entities[entity_idx];
 
+    // Check device role for locality
+    uint16_t dev_idx;
+    err = qymera_registry_find_device(registry, entity_ref->device_id, &dev_idx);
+    if (err != QYMERA_OK) return err;
+
+    qymera_device_t *d = &registry->devices[dev_idx];
+    bool is_remote = (d->role == 1);  // role==1 = remote
+
+    // local_only enforcement: reject remote targets when local_only=true
+    if (local_only && is_remote) {
+        return QYMERA_ERR_INVALID_CAPABILITY;
+    }
+
+    // Perform actual PWM control for local devices
+    if (!is_remote) {
+        // Idempotency check: avoid unnecessary PWM write if already at desired level
+        if (e->value.numeric_value != (float)level) {
+            // Set PWM duty cycle - use entity's gpio_pin as PWM channel
+            // gpio_pin == -1 means not mapped to PWM
+            if (e->gpio_pin < 0) {
+                return QYMERA_ERR_INVALID_STATE;  // Pin not mapped to PWM
+            }
+            qymera_err_t pwm_err = qymera_pwm_set_duty(e->gpio_pin, level);
+            if (pwm_err != QYMERA_OK) {
+                return pwm_err;  // PWM write failed
+            }
+        }
+        // else: already at desired level - idempotent no-op
+    } else {
+        // Remote device: send UDP control command
+        // TODO: implement UDP remote control using existing protocol
+        (void)entity_ref; (void)level; (void)local_only;
+        return QYMERA_ERR_NOT_IMPLEMENTED;
+    }
+
+    // Update registry state AFTER successful control
     e->value.valid = true;
-
-    e->value.numeric_value = (float)clamped_level;
-
+    e->value.numeric_value = (float)level;
     e->value.bool_value = false;
-
     e->value.timestamp = qymera_timestamp_now();
-
     e->value.reliability = 0;
 
     return QYMERA_OK;
