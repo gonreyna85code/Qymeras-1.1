@@ -2,7 +2,16 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** Qymeras 1.1 production candidate (ESP8266 + ESP32 hardware-validated; final soak/factory-reset hw tests pending) | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `c714e37`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+
+## Versions & Branches
+
+| Version | Where | Status |
+|---------|-------|--------|
+| **Qymera 1.1** | `main` | **CODE FREEZE / PRODUCTION BASELINE** — this tree. ESP8266 + ESP32; UDP + ESP-NOW mesh; web server with basic UI; EEPROM/Preferences persistence; automations. |
+| **Qymera 1.2** | `feature/GUI` | GUI release candidate: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Passed final freeze audit; merge candidate under validation. |
+| **Qymera Dashboard** | `feature/ai-experiments` (+ future) | Separate, active development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1/1.2 production trees. |
+| **Qymera Link** | separate direction | Separate, active development direction: companion/link connectivity service. Kept out of the 1.1/1.2 production trees. |
 
 ---
 
@@ -46,34 +55,39 @@ lib_deps =
 
 Use the built-in [Base example](examples/Base/Base.ino) as a starting point
 (`main.cpp` is the PlatformIO entry point). The library handles WiFi, the web
-server, UDP mesh, and automation logic — your sketch only needs to:
+server, UDP mesh, and automation logic — your sketch only needs to implement
+three hooks under the `Qymera` namespace:
 
-- `initSatellite()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
-- `report()` &mdash; read sensors and report values via `sensors::xxx()` API
-- `onCommandHook(...)` &mdash; handle custom commands from remote devices
+- `Qymera::init()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
+- `Qymera::report()` &mdash; read sensors and report values via `Qymera::xxx()`
+- `Qymera::onCommand(...)` &mdash; handle custom commands from remote devices
 
 ```cpp
 #include <Qymera.h>
 #include <Wire.h>
 
-void initSatellite() {
+void Qymera::init() {
   Wire.begin();
   // initialize your hardware here
 }
 
-void report() {
+void Qymera::report() {
   // read your sensors
-  sensors::temperature("Office", 23.5f);
-  sensors::humidity("Soil", 65);
+  Qymera::temperature("Office", 23.5f);
+  Qymera::humidity("Soil", 65);
 }
 
-void onCommandHook(uint32_t, uint8_t, int, bool) {
+void Qymera::onCommand(uint32_t, uint8_t, int, bool) {
   // optional: react to remote commands
 }
 
-void setup()   { core::begin(); }
-void loop()    { core::loop(); }
+void setup()   { Qymera::begin(); }
+void loop()    { Qymera::loop(); }
 ```
+
+Everything your sketch needs is exposed under `Qymera::` (lifecycle, sensors,
+actuators, `Qymera::setSerialEnabled()`); no other namespace needs to be
+spelled out in `main.ino`.
 
 ### 4. First-Time Setup
 
@@ -102,18 +116,18 @@ options).
 
 | Sensor | API | Typical Hardware |
 |--------|-----|-------------------|
-| Temperature | `sensors::temperature()` | DHT22, DS18B20, NTC |
-| Humidity | `sensors::humidity()` | DHT22, soil moisture |
-| Light | `sensors::luminosity()` | Photoresistor, BH1750 |
-| Pressure | `sensors::pressure()` | BMP280, BME280 |
-| Level | `sensors::level()` | Ultrasonic, float switch |
-| Air Quality | `sensors::airQ()` | MQ135, SDS011 |
-| Rain | `sensors::rain()` | Rain drop sensor |
-| Contact | `sensors::contact()` | Reed switch, door sensor |
-| Generic | `sensors::custom()` | Any analog/digital value |
-| Time | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
-| Relay (actuator) | `sensors::relay()` | Digital relay, latching |
-| Dimmer (actuator) | `sensors::dimmer()` | LED strip, fan, PWM |
+| Temperature | `Qymera::temperature()` | DHT22, DS18B20, NTC |
+| Humidity | `Qymera::humidity()` | DHT22, soil moisture |
+| Light | `Qymera::luminosity()` | Photoresistor, BH1750 |
+| Pressure | `Qymera::pressure()` | BMP280, BME280 |
+| Level | `Qymera::level()` | Ultrasonic, float switch |
+| Air Quality | `Qymera::airQ()` | MQ135, SDS011 |
+| Rain | `Qymera::rain()` | Rain drop sensor |
+| Contact | `Qymera::contact()` | Reed switch, door sensor |
+| Generic | `Qymera::custom()` | Any analog/digital value |
+| Time | `Qymera::rtc()` / `Qymera::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
+| Relay (actuator) | `Qymera::relay()` | Digital relay, latching |
+| Dimmer (actuator) | `Qymera::dimmer()` | LED strip, fan, PWM |
 
 Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
 5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.
@@ -298,13 +312,17 @@ python tests/host_sanity.py                    # host test suite (45 checks)
 
 ## Roadmap
 
-Current development branch: **`feature/GUI`** — the 1.1 GUI passed its final
-freeze audit (builds clean on ESP8266 + ESP32/C3, full interactive walkthrough
-green) and is frozen; no further functional GUI changes are planned. MQTT ·
-Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
-mobile app. An **optional external AI assistant subsystem** is authorized and
-under development on `feature/ai-experiments` (kept out of the 1.1 production
-tree per `AGENTS.md`).
+- **Qymera 1.1** (`main`) — frozen production baseline (code freeze).
+- **Qymera 1.2** (`feature/GUI`) — GUI release candidate: built-in web GUI
+  overhaul (device cards, automation wizard, bilingual ES/EN UI). Passed its
+  final freeze audit and is being prepared for a safe merge into `main`.
+- **Qymera Dashboard** — separate, active development direction (web/cloud
+  dashboard; optional external AI assistant subsystem authorized per
+  `AGENTS.md`, developed on `feature/ai-experiments`, kept out of 1.1/1.2).
+- **Qymera Link** — separate, active development direction (companion/link
+  connectivity service).
+- **Future:** MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS
+  notifications · mobile app.
 
 ---
 

@@ -1,13 +1,19 @@
 # Qymeras 1.1 Progress Tracker
 
-## Current State (2026-08-27)
+## Current State (updated 2026-08-30)
 
-- **Branch `main` = production 1.1 tree.** HEAD `5e46e12` carries NO AI code
-  (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM block all removed).
-  Deterministic core intact, builds green on 3 envs, host suite 45/45.
-- **Fleet:** ESP32 = 192.168.1.16 (device_uid 183646728) — in-hardware-scope;
-  ESP8266 = 192.168.1.19 (device_uid 12014147) — owned by a parallel feature
-  effort (no flash/reconfig without owner approval). OTA flag off on both.
+- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `c714e37`
+  carries NO AI code (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM
+  block all removed). Deterministic core intact, builds green on 3 envs, host
+  suite 45/45, unified `Qymera::` public API.
+- **Branch map:** 1.1 = `main` (frozen here) · 1.2 = `feature/GUI` (web GUI
+  overhaul, not merged) · Dashboard/AI = `feature/ai-experiments` + future
+  (separate direction, kept out of 1.1).
+- **Fleet (2026-08-30):** ESP8266 = **192.168.1.16** (device_uid 12014147;
+  DHCP drifted from .19 after the reflash, taking the ESP32's old lease) —
+  reflashed by owner with the unified `Qymera::` API build (HEAD `c8daf16`);
+  all 12 Base entities registered, `/calib` healthy. ESP32 (device_uid
+  183646728) currently **offline** / not on the network. OTA flag off.
 - **Remaining before the production gate (all hardware-required):** 24h memory
   soak, factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hw validation.
 - **AI subsystem:** authorized (see `AGENTS.md` "Scope Change Authorization
@@ -195,12 +201,13 @@ Code-review-only items are NOT marked PASS.
 | ESP8266 fleet IP (previous) | (superseded 2026-08-27) | .19/.27/.25 — DHCP drift; ESP8266 is the stable node; see current row below |
 | Phase 11 (storage endurance @ ESP8266) | PASS | 100 write/read-back cycles (DIMM0 fade 0..99000): 0 mismatches, final=99000, no corruption |
 | ESP32 board health | NOTE | ESP32 (192.168.1.27) now STABLE with drain-fix build: clean boot, HTTP 200, no storm, 11-remote discovery, healthy. (Earlier instability was the drain-fix-less HEAD firmware storming; resolved by flashing the fix build.) |
-| ESP32 fleet IP (current) | 192.168.1.16 | 2026-08-27: verified via /calib (device_uid 183646728, local:true). DHCP drift (history .28/.26/.24/.27). HTTP 200; /logs shows clean discovery: 11 ESP8266 remotes re-acquired, 10 stale slots reclaimed, no storm lines. |
-| ESP8266 fleet IP (current) | 192.168.1.19 | 2026-08-27: verified via /calib (device_uid 12014147, local:true). DHCP drift (history .27/.25). Matches turn2_real.json entity uids (1201414x). |
+| ESP32 fleet IP (current) | 192.168.1.16 | 2026-08-30: lease taken over by the ESP8266 after its reflash; ESP32 currently offline. Last confirmed ESP32 sighting 2026-08-27 (device_uid 183646728). See fleet line under Current State. |
+| ESP8266 fleet IP (current) | 192.168.1.16 | 2026-08-30: verified via /calib (device_uid 12014147, local:true) after reflash with HEAD c8daf16 (Qymera:: API). DHCP drift history .19/.27/.25. All 12 Base entities registered. |
 | Build matrix (2026-08-27) | PASS | `pio run` full link green on esp8266_generic (RAM 69.6% / Flash 42.2%), esp32_devkit (RAM 22.6% / Flash 73.7%), esp32c3_devkit (RAM 20.9% / Flash 72.8%). Header maps still produced (extra_scripts). |
 | Host sanity suite | PASS | `python tests/host_sanity.py` → 45/45 (timezone UTC conversion, strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow). |
 |
  | Production gate: NOT READY — 24h memory soak, factory-reset hw test, and endurance remain (ESP32 .16 within scope; ESP8266 .19 owned by parallel effort). All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations. Builds + host suite re-verified 2026-08-27 (3 envs green, 45/45).
+
 
 ---
 
@@ -445,3 +452,76 @@ device. Working tree clean, branch `feature/GUI` up to date.
   cooldown); TIME/INTERVAL no catch-up after reboot; HTTP only (no HTTPS/CSRF);
   `.toast.warning` defined but currently never triggered (no warn paths); Auth
   gate dormant by design.
+
+## API SIMPLIFICATION — `Qymera::` public facade (2026-08-30)
+
+Moved the whole user-facing API under a single `Qymera` namespace so `main.ino`
+only needs to spell out `Qymera::`. Renames:
+
+| New public API (namespace `Qymera`) | Previous |
+|---|---|
+| `Qymera::init()` (user hook) | `void initSatellite()` |
+| `Qymera::report()` (user hook) | `void report()` |
+| `Qymera::onCommand(uid,type,value,state)` (user hook) | `void onCommandHook(...)` |
+| `Qymera::begin()` / `Qymera::loop()` | `core::begin()` / `core::loop()` |
+| `Qymera::temperature/humidity/luminosity/level/pressure/airQ/rain/custom/contact/relay/dimmer(...)` | `sensors::xxx(...)` |
+| `Qymera::setRelay()`/`handleToggle()`/`handleDimmer()`/`startFade()`/`calibrate()`/`getCalib()`/`rtc()`/`ntp()` | `sensors::xxx(...)` |
+| `Qymera::setSerialEnabled()` / `Qymera::isSerialEnabled()` | global `setSerialEnabled()` / `isSerialEnabled()` |
+
+How it was done (low risk):
+- `Qymera.h` exposes the library-provided facade as **inline wrappers** that
+  forward to the untouched internal `core::`/`sensors::` layers (no behavior
+  change, internal calls unchanged).
+- User hooks are declared in `core.h` under `namespace Qymera` (core is the
+  caller); **implemented by the sketch** (`void Qymera::init() {...}`, etc.).
+- `core.cpp` call sites updated: `Qymera::init()`, `Qymera::report()` (x2),
+  and both `::initSatellite()`/`::report()` globals removed.
+- `log.h`/`log.cpp`: `setSerialEnabled()`/`isSerialEnabled()` moved into
+  `namespace Qymera` (no internal users; only the Base example called it).
+- Sketches updated: `src/main.cpp`, `examples/Base/Base.ino`,
+  `examples/HardwareDemo/HardwareDemo.ino` (minimal helper comments).
+- Docs updated: `README.md` (Quick Start sketch + Supported Sensors table),
+  `structure.md` (module table + integration flow), `docs/architecture-baseline.md`
+  (init order + serial note).
+
+Validation: `pio run` full link green on 3 envs — esp8266_generic RAM 69.6% /
+Flash 42.2%, esp32_devkit, esp32c3_devkit. Host suite unaffected (no API
+reference in `tests/host_sanity.py`). No firmware behavior changed: the facade
+is a compile-time rename; hooks are called at the exact same points.
+
+## CODE FREEZE / PRODUCTION BASELINE (2026-08-30)
+
+`main` (HEAD `c714e37`) is **frozen as the Qymera 1.1 production baseline**.
+
+Freeze audit results:
+- **Builds (clean, full recompile of the 3 envs):** esp8266_generic ✅ RAM
+  69.6% / Flash 42.2%, esp32_devkit ✅, esp32c3_devkit ✅. Full link SUCCESS
+  on all. ESP8266 revalidated on device after reflash.
+- **Host suite:** `python tests/host_sanity.py` → **45/45 PASS**.
+- **Warnings (project, pre-existing, accepted — no blocker):**
+  `storage.cpp:163/166` sign-compare on `String::length()` (harmless bounded
+  write loops); `web.cpp:20/21` `AUTH_USERNAME`/`AUTH_PASSWORD` unused
+  (dormant auth gate by design, documented limitation). Framework-only
+  warnings (elf2bin.py escapes, ESP32 hal-uart `return`) are out of our build.
+- **No stale AI code in `main`:** verified `src/` has no `ai.*` sources and no
+  `aidig`/`aiana`/`QMAI` references.
+- **Live node (ESP8266 @ 192.168.1.16, build c8daf16):** `/` 200, `/calib` 200
+  (12 entities, UID-slot persistence), `/rules` 200 (`[]`), `/logs` 200
+  (clean boot: Credentials/Settings loaded, WiFi connect, heap 18464 B),
+  `/ota/status` 200 (flag off). Web/API + persistence verified on hardware.
+  (UDP/discovery, automations, OTA upload: hardware PASS already recorded in
+  the FINAL VALIDATION TABLE; no functional code changed since.)
+- **No code changes during this freeze audit** — no blockers found.
+
+Pending (hardware-ONLY, does not block the code freeze):
+1. 24h memory soak (sustained mesh + web polling).
+2. Factory-reset hardware test (`/factory` → credentials/rules/calibration
+   cleared, back to `QymeraSetup` AP).
+3. Longer storage-endurance cycles (100-cycle test passed; ≥1000 pending).
+4. ESP32-C3 / ESP32-S2 / ESP32-S3 hardware validation (build-verified only).
+5. Note: ESP32 (device_uid 183646728) currently offline — its family
+   validation is pending hardware presence.
+
+Verdict: **SAFE TO FREEZE as Qymera 1.1.** Any subsequent GUI work will move
+to `feature/GUI` (1.2); Dashboard/AI stays on `feature/ai-experiments`.
+

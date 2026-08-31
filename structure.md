@@ -1,14 +1,17 @@
 # Qymeras 1.1 Structure & Ownership
 
-Updated 2026-08-27 (branch `main`, HEAD `5e46e12`). Mirrors the actual source
-tree — files not listed here do not exist in `src/`.
+Updated 2026-08-30 (branch `main`, HEAD `c714e37`). `main` is **CODE FREEZE /
+PRODUCTION BASELINE** for Qymera 1.1. Branch map: 1.1 = `main` (frozen) ·
+1.2 = `feature/GUI` (web GUI overhaul, not merged) · Dashboard/AI =
+`feature/ai-experiments` + future (separate direction). Mirrors the actual
+source tree — files not listed here do not exist in `src/`.
 
 ## Source Files (src/)
 
 | File | Purpose | Owner | Status |
 |------|---------|-------|--------|
-| `Qymera.h` | Master library header for Arduino IDE sketches (includes core/sensors/mesh/web/automations/log) | Core team | ✅ Up to date |
-| `main.cpp` | PlatformIO entry point: `setup()`/`loop()` delegate to `core::begin()`/`core::loop()`; provides `initSatellite()`/`report()`/`onCommandHook()` | Platform team | ✅ Working |
+| `Qymera.h` | Master library header for Arduino IDE sketches; public `Qymera::` facade (lifecycle, sensors, actuators, serial control) forwarding to core/sensors | Core team | ✅ Up to date |
+| `main.cpp` | PlatformIO entry point: `setup()`/`loop()` delegate to `Qymera::begin()`/`Qymera::loop()`; provides hooks `Qymera::init()`/`Qymera::report()`/`Qymera::onCommand()` | Platform team | ✅ Working |
 | `config.h` | Platform auto-detection (ESP8266/ESP32/S2/S3/C3), system limits, EEPROM layout offsets, PWM abstraction, network defaults | Platform team | ✅ Up to date |
 | `core.cpp` | MCU init, WiFi, OTA lifecycle, per-`report()` loop scaffolding, memory reporting | Core team | ✅ Working |
 | `core.h` | Core class definition, OTA control | Core team | ✅ Up to date |
@@ -131,16 +134,16 @@ ESP32-C3 RAM 20.9% / Flash 72.8%.
 
 ```
 setup()
-  → core::begin()            Phase 1: serial, storage, creds/settings, OTA identity
-                             Phase 1b: sensors::init() → initSatellite() (register
-                                       entities) → automations::init()
-                             Phase 2: startWiFi() (+esp_netif_init on ESP32)
-                             Deferred: web/mesh/OTA once WiFi/AP operational
+  → Qymera::begin()   Phase 1: serial, storage, creds/settings, OTA identity
+                       Phase 1b: sensors::init() → Qymera::init() (register
+                                 entities) → automations::init()
+                       Phase 2: startWiFi() (+esp_netif_init on ESP32)
+                       Deferred: web/mesh/OTA once WiFi/AP operational
 loop()
-  → core::loop()              first iteration: report() → ensureTimeRegistered()
-                              → loadCalibration() → applyPersistedStates()
-     → Rules::tick()          automations (50 ms)
+  → Qymera::loop()     first iteration: Qymera::report() → ensureTimeRegistered()
+                       → loadCalibration() → applyPersistedStates()
+     → Rules::tick()   automations (50 ms)
      → WebServer::handleClient()
      → Transport::tick()      mesh UDP/ESP-NOW
      → OTA::handle()          only if ota_enabled && initialized
-     → report()               sensor reads via sensors::xxx()
+     → Qymera::report()       sensor reads via Qymera::xxx()

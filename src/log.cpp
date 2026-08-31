@@ -246,6 +246,7 @@ void clearBuffer() {
 
 // ================= SERIAL CONTROL =================
 
+namespace Qymera {
 void setSerialEnabled(bool enabled) {
   serial_enabled = enabled;
 }
@@ -253,4 +254,5 @@ void setSerialEnabled(bool enabled) {
 bool isSerialEnabled() {
   return serial_enabled;
 }
+}  // namespace Qymera
 

@@ -191,14 +191,14 @@ void begin() {
 
   // Correct boot order:
   // 1. init sensor subsystem
-  // 2. register/discover local sensors and actuators (user initSatellite)
+  // 2. register/discover local sensors and actuators (user Qymera::init)
   // 3. automations rules
   // loadCalibration() + applyPersistedStates() are deferred to the first
   // loop() iteration, right after the first report(): entities are only
   // registered at that point, so persisted min/max/correction/persist/
   // pers_state/fade/pulse can be matched by UID and restored.
   sensors::init();
-  ::initSatellite();
+  Qymera::init();
   automations::init();
 
   // Phase 2: Network startup
@@ -272,7 +272,7 @@ void loop() {
   //     Los estados persistentes se aplican justo después del primer reporte
   //     (que registra las entidades) y ANTES de cualquier announce de mesh.
   if (first_report) {
-    ::report();
+    Qymera::report();
     sensors::ensureTimeRegistered();
     storage::loadCalibration();
     sensors::applyPersistedStates();
@@ -291,7 +291,7 @@ void loop() {
   /// 6) Reporte periódico cuando llegue el intervalo configurado.
   if (millis() - last_report >= genset.report_interval) {
     last_report = millis();
-    ::report();
+    Qymera::report();
     mesh::sendBinaryReport();
   }
 

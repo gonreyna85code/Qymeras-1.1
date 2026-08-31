@@ -8,11 +8,11 @@
   - Simulated sensors (temp, light, pressure, etc.)
   - Relay and dimmer actuators
   
-  The user sketch only needs to implement:
-  1. initSatellite() - initialize hardware libraries (Wire, etc.)
-  2. report()       - read hardware and report values via sensors::xxx()
-  3. onCommandHook() - custom logic for received commands
-  
+The user sketch only needs to implement:
+  1. Qymera::init()    - initialize hardware libraries (Wire, etc.)
+  2. Qymera::report()  - read hardware and report values via Qymera::xxx()
+  3. Qymera::onCommand() - custom logic for received commands
+
   The library handles: WiFi, web server, UDP mesh, automations, EEPROM.
 */
 
@@ -96,28 +96,28 @@ float officeTemp{35.2f};
 uint8_t humidChannels[NUM_CHANNELS] = {0, 1, 2, 3}; // soil order index
 
 // ================================
-// initSatellite - inicialización de hardware
+// Qymera::init - inicialización de hardware
 // ================================
-void initSatellite() {
+void Qymera::init() {
   Wire.begin(3, 1);
   Wire.setClock(100000);
 }
 
 // ================================
-// report - leer hardware y reportar valores
+// Qymera::report - leer hardware y reportar valores
 // ================================
-void report() {
+void Qymera::report() {
   if (!readAllSoil()) return;
   for (uint8_t i = 0; i < NUM_CHANNELS; ++i) {
     ain[i] = calibrateSoil(ain[i]);
   }
 
   // --- Sensors locales (auto-registro en sensors.cpp) ---
-  sensors::temperature("office_temp", officeTemp);
-  sensors::humidity("HUMI" + String(humidChannels[0]), ain[0]);
-  sensors::humidity("HUMI" + String(humidChannels[1]), ain[1]);
-  sensors::humidity("HUMI" + String(humidChannels[2]), ain[2]);
-  sensors::humidity("HUMI" + String(humidChannels[3]), ain[3]);
+  Qymera::temperature("office_temp", officeTemp);
+  Qymera::humidity("HUMI" + String(humidChannels[0]), ain[0]);
+  Qymera::humidity("HUMI" + String(humidChannels[1]), ain[1]);
+  Qymera::humidity("HUMI" + String(humidChannels[2]), ain[2]);
+  Qymera::humidity("HUMI" + String(humidChannels[3]), ain[3]);
 
   // --- Values de ejemplo/demonstración ---
   constexpr float tempF    = 35.2f;
@@ -131,27 +131,27 @@ void report() {
   constexpr uint8_t dimmerCh = 4;
   constexpr bool dimmerOn    = false;
 
-  sensors::temperature("TEMP", tempF);
-  sensors::luminosity("LUMI0", lumi);
-  sensors::airQ("AIRQ0", airQ);
-  sensors::pressure("PRES0", press);
-  sensors::level("LEVE0", level);
-  sensors::rain("RAIN0", rain);
-  sensors::contact("CONTACT", contact);
-  sensors::custom("GENERIC", generic);
-  sensors::relay("RELAY0", RELAY_PIN, true);    // actuador local — persiste en EEPROM
-  sensors::dimmer("DIMM0", dimmerCh, dimmerOn);
+  Qymera::temperature("TEMP", tempF);
+  Qymera::luminosity("LUMI0", lumi);
+  Qymera::airQ("AIRQ0", airQ);
+  Qymera::pressure("PRES0", press);
+  Qymera::level("LEVE0", level);
+  Qymera::rain("RAIN0", rain);
+  Qymera::contact("CONTACT", contact);
+  Qymera::custom("GENERIC", generic);
+  Qymera::relay("RELAY0", RELAY_PIN, true);    // actuador local — persiste en EEPROM
+  Qymera::dimmer("DIMM0", dimmerCh, dimmerOn);
 }
 
 // ================================
-// onCommandHook - lógica personalizada de comandos recibidos
+// Qymera::onCommand - lógica personalizada de comandos recibidos
 // ================================
-void onCommandHook(uint32_t /*uid*/, uint8_t /*type*/, int /*value*/, bool /*state*/) {
+void Qymera::onCommand(uint32_t /*uid*/, uint8_t /*type*/, int /*value*/, bool /*state*/) {
   // TODO: custom relay/dimmer logic
 }
 
 // ================================
 // Entry points - delega todo a la librería
 // ================================
-void setup()   { core::begin(); }
-void loop()    { core::loop(); }
+void setup()   { Qymera::begin(); }
+void loop()    { Qymera::loop(); }

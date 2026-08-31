@@ -21,9 +21,13 @@ void setOtaEnabled(bool enabled);
 bool isOtaEnabled();
 }
 
-void initSatellite();
+// ==== USER HOOKS ======================================================
+// The sketch must implement these three functions. They are declared here
+// (not in Qymera.h) because core.cpp is the caller; the skill sketch only
+// ever writes `Qymera::init()`, `Qymera::report()` and
+// `Qymera::onCommand(...)`.
+namespace Qymera {
+void init();
 void report();
-void onCommandHook(uint32_t uid, uint8_t type, int value, bool state);
-
-
-//void onCommand(JsonObject &data);
+void onCommand(uint32_t uid, uint8_t type, int value, bool state);
+}
