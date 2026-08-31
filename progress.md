@@ -526,4 +526,3 @@ Pending (hardware-ONLY, does not block the code freeze):
 
 Verdict: **SAFE TO FREEZE as Qymera 1.1.** Any subsequent GUI work will move
 to `feature/GUI` (1.2); Dashboard/AI stays on `feature/ai-experiments`.
-
