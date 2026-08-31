@@ -2,14 +2,14 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `c714e37`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `77606f4`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). **Qymera 1.2** = GUI release candidate, integrated on `backup/gui-main-merge-20260830`. | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
 
 ## Versions & Branches
 
 | Version | Where | Status |
 |---------|-------|--------|
 | **Qymera 1.1** | `main` | **CODE FREEZE / PRODUCTION BASELINE** — this tree. ESP8266 + ESP32; UDP + ESP-NOW mesh; web server with basic UI; EEPROM/Preferences persistence; automations. |
-| **Qymera 1.2** | `feature/GUI` | GUI release candidate: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Passed final freeze audit; merge candidate under validation. |
+| **Qymera 1.2** | `feature/GUI` | GUI release candidate: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Passed final freeze audit; integration candidate validated on `backup/gui-main-merge-20260830`. |
 | **Qymera Dashboard** | `feature/ai-experiments` (+ future) | Separate, active development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1/1.2 production trees. |
 | **Qymera Link** | separate direction | Separate, active development direction: companion/link connectivity service. Kept out of the 1.1/1.2 production trees. |
 

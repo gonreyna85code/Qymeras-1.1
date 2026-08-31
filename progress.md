@@ -2,18 +2,19 @@
 
 ## Current State (updated 2026-08-30)
 
-- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `c714e37`
+- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `77606f4`
   carries NO AI code (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM
   block all removed). Deterministic core intact, builds green on 3 envs, host
   suite 45/45, unified `Qymera::` public API.
-- **Branch map:** 1.1 = `main` (frozen here) · 1.2 = `feature/GUI` (web GUI
-  overhaul, not merged) · Dashboard/AI = `feature/ai-experiments` + future
-  (separate direction, kept out of 1.1).
-- **Fleet (2026-08-30):** ESP8266 = **192.168.1.16** (device_uid 12014147;
-  DHCP drifted from .19 after the reflash, taking the ESP32's old lease) —
-  reflashed by owner with the unified `Qymera::` API build (HEAD `c8daf16`);
-  all 12 Base entities registered, `/calib` healthy. ESP32 (device_uid
-  183646728) currently **offline** / not on the network. OTA flag off.
+- **Branch map:** 1.1 = `main` (frozen) · 1.2 = `feature/GUI` → integration
+  candidate on `backup/gui-main-merge-20260830` (override) · Dashboard/AI =
+  `feature/ai-experiments` + future (separate direction, kept out of 1.1/1.2).
+- **Fleet (2026-08-30):** both boards flashed with the 1.2 integration
+  candidate (`fe20e7f`) and live. ESP8266 = **192.168.1.16** (device_uid
+  12014147; DHCP drifted from .19 after the GUI reflash, taking the ESP32's old
+  lease) — 12 local entities, all endpoints healthy. ESP32 = **192.168.1.19**
+  (device_uid 183646728) — 12 local entities, healthy. Full mesh cross-visible:
+  each node reports 11 remote entities of the other. OTA flags off.
 - **Remaining before the production gate (all hardware-required):** 24h memory
   soak, factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hw validation.
 - **AI subsystem:** authorized (see `AGENTS.md` "Scope Change Authorization
