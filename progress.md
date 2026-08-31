@@ -2,18 +2,20 @@
 
 ## Current State (updated 2026-08-30)
 
-- **Branch `main` = CODE FREEZE / PRODUCTION BASELINE.** HEAD `c714e37`
-  carries NO AI code (`ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`, QMAI EEPROM
-  block all removed). Deterministic core intact, builds green on 3 envs, host
-  suite 45/45, unified `Qymera::` public API.
-- **Branch map:** 1.1 = `main` (frozen here) · 1.2 = `feature/GUI` (web GUI
-  overhaul, not merged) · Dashboard/AI = `feature/ai-experiments` + future
-  (separate direction, kept out of 1.1).
-- **Fleet (2026-08-30):** ESP8266 = **192.168.1.16** (device_uid 12014147;
-  DHCP drifted from .19 after the reflash, taking the ESP32's old lease) —
-  reflashed by owner with the unified `Qymera::` API build (HEAD `c8daf16`);
-  all 12 Base entities registered, `/calib` healthy. ESP32 (device_uid
-  183646728) currently **offline** / not on the network. OTA flag off.
+- **Qymera 1.2 = GUI release, becoming `main` on merge.** Built on the frozen
+  1.1 deterministic core (no AI code: `ai.cpp`/`ai.h`, `sensors::aidig`/`aiana`,
+  QMAI EEPROM block all removed). Deterministic core intact, builds green on 3
+  envs, host suite 45/45, unified `Qymera::` public API.
+- **Branch map:** 1.1 = historical frozen `main` baseline · 1.2 = `main`
+  (this tree, GUI release; delivered via `backup/gui-main-merge-20260830`) ·
+  Dashboard/AI = `feature/ai-experiments` + future (separate direction, kept
+  out of 1.1/1.2).
+- **Fleet (2026-08-30):** both boards flashed with the 1.2 integration
+  candidate (`fe20e7f`) and live. ESP8266 = **192.168.1.16** (device_uid
+  12014147; DHCP drifted from .19 after the GUI reflash, taking the ESP32's old
+  lease) — 12 local entities, all endpoints healthy. ESP32 = **192.168.1.19**
+  (device_uid 183646728) — 12 local entities, healthy. Full mesh cross-visible:
+  each node reports 11 remote entities of the other. OTA flags off.
 - **Remaining before the production gate (all hardware-required):** 24h memory
   soak, factory-reset hw test, longer endurance, ESP32-C3/S2/S3 hw validation.
 - **AI subsystem:** authorized (see `AGENTS.md` "Scope Change Authorization
@@ -207,6 +209,252 @@ Code-review-only items are NOT marked PASS.
 | Host sanity suite | PASS | `python tests/host_sanity.py` → 45/45 (timezone UTC conversion, strict float parsing + ranges, ESP-NOW bounded RX FIFO incl. wrap/overflow). |
 |
  | Production gate: NOT READY — 24h memory soak, factory-reset hw test, and endurance remain (ESP32 .16 within scope; ESP8266 .19 owned by parallel effort). All critical defects FIXED & validated: PHASE 6 storm (drain fix), PHASE 9 OTA (both nodes), PHASE 4 automations. Builds + host suite re-verified 2026-08-27 (3 envs green, 45/45).
+
+
+---
+
+## GUI Stabilization Pass (feature/GUI, 2026-08-30)
+
+Target: Qymeras 1.1 web GUI on branch `feature/GUI`. Not firmware logic —
+front-end/UI contracts only. All changes verified by 3-env build matrix.
+
+### Root causes found
+1. **Modal never displays** — `.modal` / `.modal.open` overlay CSS was dropped
+   when `.content` CSS was added (`33a5be2`); only `.modal-content` remained, so the
+   Automation wizard rendered as a plain unstyled block instead of an overlay dialog.
+2. **Logs page unstyled + crash-prone render** — no `.log-grid/.log-panel/.log-entry`
+   CSS; `e.v.toLowerCase` missing `()` so severity classes were never applied and
+   echo'd the function body; no handling for non-array/invalid/missing-field data.
+3. **Double tab init** — `web.cpp sendStartupJS` injected `show(savedTab)` before the
+   later `<script>` blocks were parsed (functions undefined → ReferenceError, unhandled
+   rejection), then the end-of-bundle IIFE ran `show()` a second time.
+4. **Relay persistence UI regressed to DOM state** — `togglePersist`/`togglePulse` read
+   `#pulseRow<i>` `style.display` / `classList.contains('on')` instead of `sensors[i]`;
+   `togglePersist` always sent `persist=1` (could never disable persistence).
+5. **Filter empty states de-scoped** — `document.querySelector('.empty.sm')` global;
+   Devices and Settings filters could remove each other's empty state.
+6. **Wizard save-time validation never aborts** — `forEach(...){ alert(); return; }` returns
+   from the callback only; invalid level/action still POSTed to `/rules/set`.
+7. **`sendDimmer` and wizard still used `alert()`** — task requires toast-only errors.
+8. **Rule list / empty states unstyled** — `.rule-card`, `.rule-info`, `.empty`, `.d-none`
+   CSS missing; `#auto_empty` had a duplicate `class` attribute.
+
+### Files changed
+- `src/html.cpp` — CSS (modal overlay, logs grid/panels/entries + severity colors,
+  rule cards, `.empty`/`.d-none`); Logs markup (Clear button + `#logStatus`); i18n keys
+  (es/en `btn.clear`, `log.*`, `dev.noMatch`, `cfg.noMatch`); rewritten
+  `refreshLogs`/`renderLogs` + new `showLogStatus`/`clearLogs`; single tab-init IIFE;
+  scoped filter empty states; model-driven `togglePersist`/`togglePulse`/`toggleRelayAvail`
+  + `updateRelayUI`/`setPersistence`; model sync in `toggleMatterSwitch`; error handling in
+  `toggleDevice`; `sendDimmer` alert→toast; `finishWizard` validation now aborts correctly
+  (alert→toast); `loadRules` renders readable action strings.
+- `src/web.cpp` — `sendStartupJS` sets `window.startupTab` (single init); new
+  `POST /logs/clear` endpoint → `logger::clearBuffer()`.
+
+### Behavior now
+- `show()` visibility via `.content.active` only; one `show()` on load from
+  `window.startupTab` (AP mode forces `config`).
+- Modal visibility via `.modal.open` only; overlay close + Escape preserved.
+- Log messages rendered with `textContent`, layers CORE/EVNT→panels, level `inf/wrn/err`
+  colors, defensive per-entry parsing, 200-entry cap/panel, empty-state placeholders,
+  `#logStatus` line (updated time+count / HTTP error / invalid JSON / network error),
+  Clear button calling the new endpoint.
+- Relay persist/pulse/avail toggles read `sensors[]`, enforce mutual exclusion,
+  keep DOM in sync from the model.
+- Filter empty states scoped to `#devices_cards` / `#cards`; `textContent` (no i18n HTML).
+- No `alert()` left in the GUI (all toasts).
+
+### Test matrix (builds)
+| Env | Status |
+|-----|--------|
+| esp8266_generic | PASS (RAM 69.8% / Flash 46.9%) |
+| esp32_devkit | PASS |
+| esp32c3_devkit | PASS |
+
+Remaining: hardware flash + on-device UI walkthrough (logs clear/refresh, modal,
+relay toggles, wizards, filters) — not performed in this pass.
+
+---
+
+## Final Fix + Size-Reduction Pass (feature/GUI, 2026-08-30)
+
+Merged final pass on top of the stabilization work above. Goals: close the
+remaining functional bugs (toast i18n), remove confirmed dead code, unify
+duplicated sensor formatting, cut unnecessary network/DOM work, and shrink the
+embedded web payload — all without changing feature behavior or appearance.
+
+### Functional fixes
+- **Toast texts showed raw keys**: `tf('alert.failed')` and `tf('alert.saveError')`
+  were used by `toggleRelayAvail`/`isVirtual`/`updateRelayUI` but the keys did not
+  exist in `I18N` (es/en) → toasts rendered the literal key. Added
+  `alert.failed` and `alert.saveError` in both languages.
+- **Dead `saved` notice**: `location.search` `saved=1` branch targeted a
+  `#savedNotice` element that no longer exists (and `saved.notice` i18n keys).
+  Removed the dead branch + keys.
+- **Health badge duplication**: `loadDevices()` rebulids sensor state every control
+  poll; the poll also re-computed the `#systemHealth` badge → moved badge update
+  into `loadDevices()` (runs on boot + every control poll) and removed the copy.
+
+### Dead code removed (each verified 0-referenced first)
+- `renderAutomationTable()` (`editRule(i)` array-index version) — `loadRules()`
+  renders `#auto_table`; `newRule()` kept.
+- `getTotalSteps()` / `getStepNumber()` (wizard) — the wizard indexes via
+  `getRelevantSteps()` directly in `showStep()`/`nextStep()`.
+- `availableSensors` duplicate of `sensors`. `sensorByIndex()` now reads the
+  shared `sensors` cache; `loadSensorsAndActuators()` calls `getCalib(false)`
+  (no per-wizard-open `/calib` fetch when cached).
+- CSS: `.card`, `.notice`+`.notice.success`, `.dash-section`, `.time-value`,
+  `.gradient-bg` (3 rules — `input[type=range]` already styles sliders),
+  `.dot.warn`; unused slider `class="gradient-bg"` attr.
+- i18n keys (es+en): `title`, `stat.updated`, `rule.condition`,
+  `rule.actuators`, `alert.isVirtualTimeout`, `saved.notice`.
+
+### Consolidations (no behavior/appearance change)
+- New shared `formatSensorValue(type, value, state)` used by `deviceCard`,
+  `updateSettingsValues` and the wizard step-2 condition list, replacing three
+  byte-identical TEMP/HUMI/PRESS/LEVEL/LUMI/AIRQ/RAIN/CONTACT/GENERIC chains
+  (removed `SENSOR_DISPLAY` map).
+- New `calHead(label, s, i)` settings-card header helper; 6 duplicated
+  `settings-card-head` blocks (AIRQ/RAIN/CONTACT/DIMM/REL + `sensorCalibCard`)
+  now render via the shared helper.
+
+### Reduced runtime work
+- 5s poll now tab-gated: `config` → `updateSettingsValues()` (cached); `control`
+  → `loadDevices()` (fresh); `auto/logs` → nothing. Previously every 5s while
+  visible the GUI rebuilt the (possibly hidden) device DOM and fetched `/calib`
+  regardless of tab.
+
+### Server trim (verified: 0 GUI references)
+- `/calib` response no longer emits unused `pers_state`, `min`, `max`, `pin`,
+  `last_update` per sensor (smaller JSON on every poll; `age_ms`/`correction`
+  retained — both are read by the GUI).
+
+### Size results
+Embedded web payload in `src/html.cpp` (PROGMEM chunks):
+
+| Chunk | Before | After |
+|-------|--------|-------|
+| Styles | 19,889 | 18,845 |
+| Tabs | 18,293 | 18,035 |
+| Rules | 1,495 | 228 |
+| CardsSettings | 9,819 | 8,159 |
+| DeviceCards | 5,805 | 5,496 |
+| JS | 27,261 | 26,369 |
+| AutoWizJS | 33,863 | 32,053 |
+| **Total** | **116,425** | **109,185** |
+
+Saved **7,240 B (6.22 %)**. `html.cpp` file 116,936 → 109,696 B.
+
+### Verification
+- Extracted GUI JS syntax-checked with `node --check` (PASS, incl. `°C` UTF-8
+  integrity) and leftover-grep scan for every removed symbol (0 hits).
+- Build matrix (no ESP32 flash — in use by a parallel branch test):
+  esp8266_generic PASS (RAM 69.7% / Flash 46.2%); esp32_devkit + esp32c3_devkit
+  compile+link PASS (not flashed).
+- **Hardware verification (ESP8266, 2026-08-30):** flashed COM9 (`pio run
+  --target upload`, 486,816 B, hash verified) → clean boot, WiFi 192.168.1.19,
+  heap 18,384 B. Live checks: `/` HTTP 200 (page 109,535 B; new helpers
+  `formatSensorValue`/`calHead` present, dead symbols `renderAutomationTable`,
+  `availableSensors`, `SENSOR_DISPLAY`, `gradient-bg`, `getTotalSteps`,
+  `savedNotice` absent; `alert.failed`/`alert.saveError` keys live in es/en);
+  `/calib` 12 sensors with `age_ms`+`correction` and NO
+  `pers_state/min/max/pin/last_update`; `/logs` returns boot entries normally.
+## Search inputs: fix + styling (2026-08-30)
+- Root cause: `loadDevices()` (5 s tab poll) and `loadCalib()` rebuilt their
+  whole container `innerHTML`, recreating the `#devSearch` / `#settingsSearch`
+  inputs every time → cursor/focus loss and an auto-applied filter on each poll
+  ("solo enters" themselves).
+- Fix: inputs moved OUT of the rebuilt containers into static markup
+  (`#devices_cards` gains static `#dash_stats`, `.search-box`, `#dash_lists`;
+  config gains a static `.search-box` before `#cards`). Because they are never
+  re-rendered, focus/cursor persist across polls.
+- Filtering split: `filterDevices()`/`filterSettings()` read the input and
+  store the APPLIED term; `applyDeviceFilter()`/`applySettingsFilter(term)`
+  re-apply the applied term after a list re-render. Polls no longer read the
+  input value, so a half-typed query is never auto-triggered.
+- Placeholder i18n: inputs use `data-i18n-ph` extended in `setLang()` (es/en).
+- Styling: added `.input-sm` rule (border-radius `var(--radius-sm)`, border
+  `var(--border)`, bg `var(--bg-2)`, focus ring) — the class previously had no
+  CSS at all, hence inputs had square unstyled corners.
+- Payload 109,185 → 109,392 B (+207 B). `node --check` PASS. Build + flash
+  esp8266_generic SUCCESS (flash this round: 2026-08-30). Live `/` 200
+  (109,810 B) — single `#devSearch`/`#settingsSearch`, no auto-read of inputs,
+  `.input-sm` rule present.
+
+## Audit completion (2026-08-30)
+- `src/mesh.h` reviewed (last unread source file): no GUI dead code.
+  `min`/`max`/`pers_state` are real protocol v5 `Packet`/callback fields used by
+  the firmware — consistent with dropping them from `/calib` JSON only (JS
+  never read them). `PACKET_VERSION=5`, batch/MTU and RX-drain caps documented.
+- All endpoints exercised live at 192.168.1.19: `/rules` 200 empty array,
+  `/ota/status` 200 `{ota}`, `/` 200. `window.genset` confirmed injected by
+  `web.cpp:sendStartupJS()` before the script so the DEFAULT settings card
+  renders its broadcast/command/interval values (no `genset` ReferenceError).
+
+## Interactive headless walkthrough (2026-08-30) — ALL PASS
+Drove the live GUI at 192.168.1.19 via Edge `--headless=new` + CDP
+(WebSocket, Node 24). Every check green; **0 uncaught exceptions /
+console.error** across the whole session.
+
+- **Load/control:** 22 device cards, 3 stat cards, health badge "12".
+- **Search focus vs 5 s poll (user-reported bug):** REAL mouse click focuses
+  `#devSearch`; node identity stable across poll (input never recreated);
+  focus still on the input after the poll; partial typing ("abc") intact;
+  `devSearchTerm` stays "" — poll does NOT auto-apply the filter. Apply hides
+  all in a `__NO_MATCH__` query + shows `empty.sm`; clear restores.
+- **Config:** 14 settings cards; DEFAULT kv (ports/interval) renders via
+  injected `window.genset`; accordion toggles block↔none; settings filter
+  hides all + empty state; `updateSettingsValues()` yields live metrics (28),
+  no NaN/undefined; timezone select present.
+- **Automations:** empty state visible (`auto_empty` display:flex); wizard
+  modal opens; step 0 shows the 4 rule types; ALL 6 dynamic steps render
+  without exception; closes.
+- **Wizard selections:** sensors list = 4 for EDGE type (types [7,6,9,12]),
+  actuators = `[9] RELAY0` + `[10] DIMM0`; actions ON/OFF/TOGGLE (+ LEVEL only
+  for the dimmer). NOTE: `showStep(4)` lands on the *actions* step when logic
+  step is skipped for single-sensor rules (`steps=[0,1,2,4,5,6]`) — correct
+  dynamic indexing, not a bug.
+- **Dimmer slider:** `onDimmerInput` updates the value read-only (0→42→0)
+  without sending GPIO writes (test was read-only on purpose).
+- **Logs:** 9 entries across panels on `logs` tab, status "Actualizado…".
+- **Language toggle:** ES→EN→ES; nav relabels and `#devSearch` placeholder
+  becomes "Search..." (`data-i18n-ph` works).
+- **Toasts:** success/error render and auto-dismiss (~3 s).
+
+Conclusion: no remaining functional gaps in the GUI 1.1 final pass on the live
+device. Working tree clean, branch `feature/GUI` up to date.
+
+## FINAL FREEZE AUDIT (2026-08-30) — feature/GUI
+- HEAD `978d430` + this audit: working tree clean; existing GUI treated as
+  baseline. Explicitly no redesign / no new features / no refactor.
+- Builds: esp8266_generic PASS (RAM 69.7% / Flash 46.2%), esp32_devkit PASS,
+  esp32c3_devkit PASS (compile-only; ESP32 flash stays with the parallel branch
+  test). Rebuilt + reflashed ESP8266 after the CSS cleanup and re-verified live.
+- JS: `node --check` PASS on the exact served script block.
+- Functional verification (live, Edge headless + CDP, post-cleanup):
+  control renders 22 cards + stats + health; desktop layout `grid` @1280 px /
+  mobile list `grid` @400 px; config renders 14 cards after reload; zero
+  runtime errors. Full interactive walkthrough (search focus vs 5 s poll,
+  wizard, logs, ES/EN, toasts, dimmer read-only) already green this session.
+- CSS audit: `.dot.warn` absent from CSS and never referenced in markup/JS →
+  not needed (warn is conveyed textually and via `.toast.warning`/`l.wrn`).
+  `.l.inf`/`.l.wrn` flagged by a naive scan are runtime-generated
+  (`'l ' + level`) → kept. All `var(--…)` referenced are defined.
+- **Trivial safe fix applied:** removed two empty CSS rules (`.pages{}`,
+  `.devices-dashboard{}`) → no visual effect, payload 109,392 → 109,362 B.
+  (An intermediate edit that briefly dropped the `.devices-desktop-layout`
+  base rule was caught and fully restored; live re-verification confirms the
+  responsive layout grid/none toggling works.)
+- README updated for accuracy: tab list corrected (no standalone NETWORK tab —
+  it is a Settings card; LOGS tab added), mesh datagram counts clarified
+  (v4 ≤29 / v5 ≤23), bilingual UI + freeze status noted.
+- Final `html.cpp`: **109,873 B** file, **109,362 B** payload.
+- Freeze verdict: SAFE TO FREEZE. Remaining known limitations (unchanged):
+  ESP32 hardware/soak tests pending; THRESHOLD without hysteresis (use
+  cooldown); TIME/INTERVAL no catch-up after reboot; HTTP only (no HTTPS/CSRF);
+  `.toast.warning` defined but currently never triggered (no warn paths); Auth
+  gate dormant by design.
+
 ## API SIMPLIFICATION — `Qymera::` public facade (2026-08-30)
 
 Moved the whole user-facing API under a single `Qymera` namespace so `main.ino`

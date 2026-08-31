@@ -124,12 +124,15 @@ static void handleCorsOptions() {
 }
 
 void sendStartupJS() {
-  if (WiFi.getMode() == WIFI_AP)
-    server.sendContent_P(PSTR("let savedTab='wifi';show(savedTab);"));
-  else
-    server.sendContent_P(PSTR("let savedTab=(localStorage.getItem('tab')||'control');show(savedTab);"));
+  if (WiFi.getMode() == WIFI_AP) {
+    server.sendContent_P(PSTR("window.startupTab='config';"));
+  } else {
+    server.sendContent_P(
+      PSTR("window.startupTab=(localStorage.getItem('tab')||'control');"
+           "window.startupTab=['control','auto','config','logs'].includes(window.startupTab)?window.startupTab:'control';"));
+  }
   server.sendContent_P(
-    PSTR("['control','auto','config','wifi'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(t);});"));
+    PSTR("['control','auto','config','logs'].forEach(t=>{document.getElementById('t_'+t).onclick=()=>show(''+t);});"));
   server.sendContent_P(
     PSTR("window.genset={broadcast_port:"));
   server.sendContent(String(core::genset.broadcast_port));
@@ -218,12 +221,30 @@ ICACHE_FLASH_ATTR void handleGenSetSave() {
     server.send(405, "text/plain", "POST required");
     return;
   }
-  if (server.hasArg("broadcast"))
-    core::genset.broadcast_port = server.arg("broadcast").toInt();
-  if (server.hasArg("command"))
-    core::genset.command_port = server.arg("command").toInt();
-  if (server.hasArg("interval"))
-    core::genset.report_interval = server.arg("interval").toInt();
+  unsigned long v = 0;
+  // Empty/absent fields keep the current value; malformed or out-of-range
+  // values are rejected (never silently applied as 0).
+  if (server.hasArg("broadcast") && server.arg("broadcast").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("broadcast"), v) || v < 1024 || v > 65500) {
+      server.send(400, "text/plain", "invalid broadcast port (1024-65500)");
+      return;
+    }
+    core::genset.broadcast_port = (uint16_t)v;
+  }
+  if (server.hasArg("command") && server.arg("command").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("command"), v) || v < 1024 || v > 65500) {
+      server.send(400, "text/plain", "invalid command port (1024-65500)");
+      return;
+    }
+    core::genset.command_port = (uint16_t)v;
+  }
+  if (server.hasArg("interval") && server.arg("interval").length() > 0) {
+    if (!parseStrictUnsigned(server.arg("interval"), v) || v < 5000 || v > 600000) {
+      server.send(400, "text/plain", "invalid report interval (5000-600000)");
+      return;
+    }
+    core::genset.report_interval = (uint32_t)v;
+  }
   saveGeneralSettings();
   logger::coref("Genset saved (bc:%u,cmd:%u,int:%u)",
     core::genset.broadcast_port,
@@ -307,6 +328,20 @@ void handleDimmerApi() {
 void handleLogs() {
   addCorsHeaders();
   server.send(200, "application/json", logger::getRecentLogsJson());
+}
+
+void handleLogsClear() {
+  addCorsHeaders();
+  if (!checkAuth()) {
+    server.send(401, "text/plain", "Authentication required");
+    return;
+  }
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "POST required");
+    return;
+  }
+  logger::clearBuffer();
+  server.send(200, "text/plain", "OK");
 }
 
 void handleOtaToggle() {
@@ -758,12 +793,8 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += c.name;
     json += "\",\"value\":";
     json += buf;
-    json += ",\"pers_state\":";
-    json += (c.pers_state ? "true" : "false");
 
     char fb[24];
-    dtostrf(isnan(c.min) || isinf(c.min) ? 0.0f : c.min, 0, 4, fb);        json += ",\"min\":";        json += fb;
-    dtostrf(isnan(c.max) || isinf(c.max) ? 0.0f : c.max, 0, 4, fb);        json += ",\"max\":";        json += fb;
     dtostrf(isnan(c.correction) || isinf(c.correction) ? 0.0f : c.correction, 0, 4, fb); json += ",\"correction\":";  json += fb;
 
     json += ",\"avail\":";           json += c.avail;
@@ -773,9 +804,7 @@ ICACHE_FLASH_ATTR void handleCalib() {
     json += ",\"persist\":";         json += (c.persist ? "true" : "false");
     json += ",\"fade\":";            json += c.fade;
     json += ",\"type\":";            json += c.type;
-    json += ",\"pin\":";             json += c.pin;
     json += ",\"local\":";           json += (c.local ? "true" : "false");
-    json += ",\"last_update\":";     json += c.local ? 0 : c.last_update;
     // Elapsed ms since the last remote packet, computed server-side from the
     // same millis() timebase as MESH_TIMEOUT (client Date.now() is epoch-based
     // and cannot be compared directly with the device uptime counter).
@@ -992,6 +1021,7 @@ void init() {
   server.on("/dimmer", HTTP_POST, handleDimmerApi);
   server.on("/dimmer", HTTP_OPTIONS, handleCorsOptions);
   server.on("/logs", handleLogs);
+  server.on("/logs/clear", HTTP_POST, handleLogsClear);
   server.on("/ota/toggle", handleOtaToggle);
   server.on("/ota/status", handleOtaStatus);
   server.begin();

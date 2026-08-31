@@ -2,15 +2,17 @@
 
 Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
 
-**Status:** **CODE FREEZE / PRODUCTION BASELINE** (`main`, HEAD `c714e37`). Code is frozen for Qymera 1.1; only hardware validation remains (24h memory soak, factory-reset hw test, endurance, additional ESP32-family hardware validation). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+**Status:** **Qymera 1.2 — GUI release** (this tree, `main` after merge). Built-in web GUI overhaul on top of the frozen Qymera 1.1 deterministic core: device cards, automation wizard, bilingual ES/EN UI, logs page. ESP8266 + ESP32 validated on real hardware (12 local + 11 remote entities each). Remaining items are hardware validation-only, inherited from the 1.1 baseline (24h memory soak, factory-reset hw test, longer endurance, extra ESP32-family hardware). | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
 
 ## Versions & Branches
 
 | Version | Where | Status |
 |---------|-------|--------|
-| **Qymera 1.1** | `main` | **CODE FREEZE / PRODUCTION BASELINE** — this tree. ESP8266 + ESP32; UDP + ESP-NOW mesh; web server with basic UI; EEPROM/Preferences persistence; automations. |
-| **Qymera 1.2** | `feature/GUI` | Next milestone: built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN). Not merged into 1.1. |
-| **Dashboard / AI** | `feature/ai-experiments` (+ future) | Separate development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1 production tree. |
+| **Qymera 1.1** | historical `main` baseline | **FROZEN BASELINE** — deterministic core (deterministic runtime, UDP + ESP-NOW mesh, web server with basic UI, EEPROM/Preferences persistence, automations). Superseded as the active release by Qymera 1.2. |
+| **Qymera 1.2** | `main` (this tree) | **CURRENT RELEASE / GUI** — built-in web GUI overhaul (device cards, automation wizard, bilingual ES/EN, logs page) on top of the 1.1 deterministic core. Validated on ESP8266 + ESP32 hardware and full test/build matrix. |
+| **feature/GUI** | upstream GUI branch | Source of the 1.2 GUI work. Historical after this merge; **the deliverable is this main tree, not the branch.** |
+| **Qymera Dashboard** | `feature/ai-experiments` (+ future) | Separate, active development direction: optional external AI assistant + cloud dashboard. Kept out of the 1.1/1.2 production trees. |
+| **Qymera Link** | separate direction | Separate, active development direction: companion/link connectivity service. Kept out of the 1.1/1.2 production trees. |
 
 ---
 
@@ -98,9 +100,12 @@ spelled out in `main.ino`.
 
 ### 5. Configure Sensors and Rules
 
-- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone, fade/pulse/persist
+- **DEVICES** tab &mdash; control relays and dimmers in real time (live sensor
+  cards, search filter)
 - **AUTOMATIONS** tab (Rules) &mdash; create automation rules
-- **DEVICES** tab &mdash; control relays and dimmers in real time
+- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone,
+  fade/pulse/persist
+- **LOGS** tab &mdash; live Core / Events / Sensors log panels (auto-refresh)
 
 ---
 
@@ -127,6 +132,15 @@ options).
 
 Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
 5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.
+
+### New in 1.1: SETTINGS Navigation (Local / Remote)
+
+The **SETTINGS** tab now features collapsible sections:
+- **LOCAL** — entities with `calibration.local == true`
+- **REMOTE** — entities grouped by `device_uid` (one group per remote Qymera node)
+  - Each remote group shows: `Qymera <device_uid>` + **Open GUI ↗** link (`http://<device_ip>/`)
+  - Only visible remotes (`isEntryVisible()`) are shown; stale/offline are hidden
+  - Expandable/collapsible with chevron indicators
 
 ---
 
@@ -170,12 +184,12 @@ operates independently — no internet needed. HTTP server runs on port 80,
 reading all config from EEPROM / Preferences (ESP32).
 
 **Main tabs:** DEVICES (actuators) · AUTOMATIONS (rules) · SETTINGS
-(calibration + remote entities) · LOGS · NETWORK (WiFi, OTA, factory reset)
+(calibration + remote entities + NETWORK card: WiFi, OTA, factory reset) · LOGS
 
 ### Mesh
 
 - **STA mode:** UDP broadcast discovery/announcement (batched datagrams,
-  protocol v4/v5; up to 29 packets per datagram).
+  protocol v4/v5; up to 29 packets per datagram for v4, up to 23 for v5).
 - **AP mode:** ESP-NOW broadcast (bounded RX FIFO, peer management).
 - Remote entities are visible/controllable/calibratable across nodes by
   POSTing to the owning node's IP; remote config is verified over HTTP and never
@@ -299,11 +313,15 @@ python tests/host_sanity.py                    # host test suite (45 checks)
 
 ## Roadmap
 
-- **Qymera 1.2** (`feature/GUI`): built-in web GUI overhaul — device cards,
-  automation wizard, bilingual ES/EN UI. Not merged into 1.1.
-- **Dashboard / AI** (`feature/ai-experiments` + future): optional external AI
-  assistant subsystem (authorized per `AGENTS.md`, kept out of the 1.1
-  production tree) and a cloud dashboard.
+- **Qymera 1.1** (`main`) — frozen production baseline (code freeze).
+- **Qymera 1.2** (`feature/GUI`) — GUI release candidate: built-in web GUI
+  overhaul (device cards, automation wizard, bilingual ES/EN UI). Passed its
+  final freeze audit and is being prepared for a safe merge into `main`.
+- **Qymera Dashboard** — separate, active development direction (web/cloud
+  dashboard; optional external AI assistant subsystem authorized per
+  `AGENTS.md`, developed on `feature/ai-experiments`, kept out of 1.1/1.2).
+- **Qymera Link** — separate, active development direction (companion/link
+  connectivity service).
 - **Future:** MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS
   notifications · mobile app.
 

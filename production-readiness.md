@@ -1,11 +1,11 @@
-# Qymeras 1.1 - Production Readiness
+# Qymeras - Production Readiness
 
-State as of 2026-08-30 (branch `main`, HEAD `c714e37`). **`main` is CODE FREEZE
-/ PRODUCTION BASELINE for Qymera 1.1.** Historical entries below are retained
-as the validation record; branch map: 1.1 = `main` (frozen) · 1.2 =
-`feature/GUI` (web GUI overhaul, not merged) · Dashboard/AI =
-`feature/ai-experiments` + future (separate direction). ESP8266 / ESP-NOW
-remain part of the 1.1 product (nothing removed).
+State as of 2026-08-30 (Qymera 1.2 GUI release, `main` after merge). **`main` is
+the Qymera 1.2 release** (GUI over the frozen 1.1 deterministic core). Historical
+entries below are retained as the validation record; branch map: 1.1 =
+historical frozen `main` baseline · 1.2 = `main` (this tree, GUI release) ·
+Dashboard/AI = `feature/ai-experiments` + future (separate direction). ESP8266 /
+ESP-NOW remain part of the product through 1.2 (nothing removed).
 
 ## Summary
 

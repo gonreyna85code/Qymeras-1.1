@@ -1,10 +1,11 @@
-# Qymeras 1.1 Structure & Ownership
+# Qymeras Structure & Ownership
 
-Updated 2026-08-30 (branch `main`, HEAD `c714e37`). `main` is **CODE FREEZE /
-PRODUCTION BASELINE** for Qymera 1.1. Branch map: 1.1 = `main` (frozen) ·
-1.2 = `feature/GUI` (web GUI overhaul, not merged) · Dashboard/AI =
-`feature/ai-experiments` + future (separate direction). Mirrors the actual
-source tree — files not listed here do not exist in `src/`.
+Updated 2026-08-30 (Qymera 1.2 GUI release, `main` after merge). `main` is the
+**Qymera 1.2 release** (GUI over the frozen 1.1 deterministic core). Branch map:
+1.1 = historical frozen `main` baseline · 1.2 = `main` (this tree, GUI
+release) · Dashboard/AI = `feature/ai-experiments` + future (separate
+direction). Mirrors the actual source tree — files not listed here do not exist
+in `src/`.
 
 ## Source Files (src/)
 
