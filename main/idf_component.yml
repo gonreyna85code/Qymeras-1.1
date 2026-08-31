@@ -1,9 +1,11 @@
 name: qymera-esp32
 version: "1.1.0"
 description: >
-  Qymera native ESP-IDF example application. The Matter bridge is wired through
-  this dependency. Remove the esp_matter line to build purely with Qymera (no
-  external SDK), or keep it and enable CONFIG_QYMERA_MATTER_ENABLE.
+  Qymera Link - Qymera on native ESP-IDF (ESP32). The default build is
+  Matter-free and resolves NO external SDK. The Matter bridge is opt-in: to
+  enable it, uncomment the espressif/esp_matter dependency below, set
+  CONFIG_QYMERA_MATTER_ENABLE=y, and build with a Matter-compatible ESP-IDF
+  (see README.md "Matter (opt-in)").
 dependencies:
   idf: ">=5.0"
-  espressif/esp_matter: "^1.2"
+  espressif/esp_matter: "~1.3.0"

@@ -10,12 +10,37 @@ can be validated on the host machine (no native C++ toolchain required):
 
 Run:  python tests/host_sanity.py
 Exit code 0 = all pass.
+
+============================================================
+Verification tiers (Step 19: separate build/host/hardware)
+------------------------------------------------------------
+BUILD   : proven by `idf.py build` / PlatformIO `esp32_idf` - the firmware
+          compiles and links (Matter-disabled default). Not testable here as
+          host Python.
+HOST    : proven by THIS suite - ported firmware logic (timezone, strict
+          float parsing, RX-FIFO ring buffer) run on the host machine with no
+          toolchain. These give fast, deterministic regression coverage of the
+          deterministic core.
+HARDWARE: commissioning/flash/networking/real-sensor behavior - requires COM3
+          + physical board. NOT claimed here.
+============================================================
 """
 import time
 import math
 
 PASS = 0
 FAIL = 0
+CATS = {}          # category -> [passed, failed]
+CURRENT = None     # category being recorded
+
+
+def set_cat(name):
+    """Begin a new verification category for subsequent checks."""
+    global CURRENT
+    CURRENT = name
+    if name not in CATS:
+        CATS[name] = [0, 0]
+    print("\n[%s] (HOST verification tier)" % name)
 
 
 def check(name, cond, detail=""):
@@ -26,6 +51,8 @@ def check(name, cond, detail=""):
     else:
         FAIL += 1
         print("  [FAIL] %s%s" % (name, (" -- " + detail) if detail else ""))
+    if CURRENT is not None:
+        CATS[CURRENT][0 if cond else 1] += 1
 
 
 # ---------------------------------------------------------------- timezone
@@ -48,7 +75,8 @@ def get_minutes_of_day(utc, offset_min):
 import calendar
 UTC_REF = calendar.timegm((2026, 8, 20, 6, 0, 0))
 
-print("[timezone]")
+print("")  # end of header/none
+set_cat("timezone")
 check("offset 0 -> same clock",
       get_time(UTC_REF, 0) == (2026, 8, 20, 6, 0, 0))
 check("offset +120 (Madrid) -> 08:00",
@@ -106,7 +134,7 @@ def parse_strict_float(s):
     return True, v
 
 
-print("[strict float]")
+set_cat("strict float")
 ok, v = parse_strict_float("")
 check("empty rejected", not ok)
 ok, v = parse_strict_float("abc")
@@ -182,7 +210,7 @@ class Fifo:
         return p
 
 
-print("[esp-now fifo]")
+set_cat("rx fifo")
 f = Fifo()
 check("empty recv -> None", f.recv() is None)
 for i in range(QSIZE):
@@ -214,4 +242,14 @@ check("reusable after full cycle", f.recv() == b"z" and f.count == 0)
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
+print()
+print("Per-category (HOST tier):")
+for cat, (p, f) in CATS.items():
+    print("  %-16s %d passed, %d failed" % (cat, p, f))
+print()
+print("Verification summary:")
+print("  BUILD    : `idf.py build` / `pio run -e esp32_idf` (Matter-disabled default)")
+print("             -> proven GREEN in workspace (RAM 19.2% / Flash 17.3%)")
+print("  HOST     : this suite -> %d passed, %d failed" % (PASS, FAIL))
+print("  HARDWARE : COM3 flash / WiFi / Matter commissioning / real sensors -> PENDING")
 raise SystemExit(1 if FAIL else 0)

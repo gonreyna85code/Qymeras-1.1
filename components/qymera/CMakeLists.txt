@@ -9,6 +9,7 @@
 #   - espnow_p2p.*    : ESP-NOW removed from the IDF port (per branch scope)
 
 set(QYMERA_SRCS
+    "src/Qymera.cpp"
     "src/core.cpp"
     "src/storage.cpp"
     "src/log.cpp"
@@ -17,7 +18,6 @@ set(QYMERA_SRCS
     "src/web.cpp"
     "src/html.cpp"
     "src/automations.cpp"
-    "src/ota.cpp"
     "src/hal/qhal.cpp"
     "src/hal/qudp.cpp"
     "src/hal/qhttpserver.cpp"
@@ -29,5 +29,6 @@ idf_component_register(
                 "src"
                 "src/hal"
     REQUIRES    nvs_flash esp_wifi esp_netif esp_event esp_http_server
-                driver esp_efuse esp_system esp_ota
+                driver efuse esp_system esp_common esp_timer esp_hw_support
+                heap lwip freertos
 )

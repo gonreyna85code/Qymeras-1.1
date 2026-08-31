@@ -1,11 +1,11 @@
 # ESP-IDF partition table for Qymera (4 MB flash)
 #
-# nvs      : credentials, settings, calibration, rules, OTA flag/token
-#            (mirrors the historical 4 KiB EEPROM image, stored as one blob)
-# ota_0/1  : dual-slot OTA (first flash goes to ota_0, then OTA swaps)
+# OTA is intentionally REMOVED from the qymera-IDF branch (no ota_0/ota_1/
+# otadata). A single `factory` app partition is used, matching the UDP-only,
+# no-OTA runtime. Storage lives in NVS (credentials, settings, calibration,
+# rules) backed by the historical 4 KiB EEPROM image stored as one blob.
+#
 # Name,    Type, SubType, Offset,   Size
 nvs,       data, nvs,     0x9000,   0x6000,
-otadata,   data, ota,     0xf000,   0x2000,
-phy_init,  data, phy,     0x11000,  0x1000,
-ota_0,     app,  ota_0,   0x12000,  0x1F0000,
-ota_1,     app,  ota_1,   0x202000, 0x1F0000,
+phy_init,  data, phy,     0xf000,   0x1000,
+factory,   app,  factory, 0x10000,  0x390000,

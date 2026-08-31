@@ -15,4 +15,4 @@ CONFIG_QYMERA_LOOP_STACK_SIZE=8192
 # ===================== Matter bridge (opt-in) =====================
 # Enable only when the ESP-Matter SDK dependency is available
 # (main/idf_component.yml). Leave disabled for a plain Qymera build.
-CONFIG_QYMERA_MATTER_ENABLE=n
+CONFIG_QYMERA_MATTER_ENABLE=nCONFIG_QYMERA_MATTER_ENABLE=y

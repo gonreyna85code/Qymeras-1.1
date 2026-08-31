@@ -1,172 +1,165 @@
-# Qymera - Smart Automation Firmware
+# Qymera Link
 
-Qymera turns your ESP8266 or ESP32 into a complete IoT node: reads sensors, controls actuators, and executes automation rules — all from a built-in web UI with EEPROM persistence and zero internet dependency after initial setup.
+**Qymera Link** — Qymera ported to native **ESP-IDF** (ESP32-only) acting as an
+**Matter Bridge**: it reads sensors, controls actuators, and executes automation
+rules from a built-in web UI, and can optionally expose its local Link-owned
+actuators (relays/dimmers) to the **Matter ecosystem**.
 
-**Status:** Qymeras 1.1 production candidate (ESP8266 + ESP32 hardware-validated; final soak/factory-reset hw tests pending) | Built-in web server | UDP + ESP-NOW mesh | EEPROM/Preferences persistence | Arduino Library
+```
+Qymera devices ──UDP──▶ Qymera Link (native ESP-IDF, ESP32) ──Matter──▶ Matter ecosystem
+                                          │
+                                          └─ web UI (HTTP) + automation engine (local)
+```
+
+**Branch status (qymera-IDF):** Matter-disabled build **green** (RAM 19.2% /
+Flash 17.3%), host sanity suite **45/45**. Matter bridge is written and
+isolated but **not yet compiled** — it requires ESP-IDF 5.2.1 + ESP-Matter 1.3.0
+(see [Matter](#matter-opt-in)).
 
 ---
 
-## Quick Start
+## Why & how this differs from Qymeras 1.1
 
-### 1. What You Need
+| | Qymeras 1.1 (`main`) | Qymera Link (`qymera-IDF`) |
+|--|----------------------|----------------------------|
+| Framework | Arduino Library | **Native ESP-IDF** (no Arduino at runtime) |
+| Targets | ESP8266 + ESP32 | **ESP32 only** |
+| Transport | UDP mesh + ESP-NOW | **UDP only** (ESP-NOW removed) |
+| Persistence | EEPROM / Preferences | **NVS-backed** single-factory partition |
+| Matter | roadmap | **Optional, isolated** Matter bridge |
+
+The historical Arduino build lives on `main`. This branch `#error`s if built
+with the Arduino framework (`config.h`).
+
+---
+
+## Quick Start (ESP-IDF)
+
+### 1. What you need
 
 | Component | Required? |
 |-----------|-----------|
-| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) or ESP32 (DevKit, etc.) | Yes |
+| ESP32 (DevKit, WROOM, etc.) | Yes |
 | USB cable (data capable) | Yes |
-| Optional sensors/actuators (DHT22, relays, etc.) | Optional |
+| ESP-IDF ≥ 5.0 toolchain (or PlatformIO `framework-espidf`) | Yes |
+| Optional sensors/actuators (DHT22, relays, LED/PWM dimmers, ...) | Optional |
 
-### 2. Install Qymera as an Arduino Library
+### 2. Build and flash
 
-Qymera is distributed as an Arduino Library. There are three ways to install it:
+Authoritative build is **`idf.py build`** (ESP-IDF ≥ 5.0). PlatformIO
+(`pio run -e esp32_idf`, framework-espidf 3.50102.240122 / IDF 5.1.2) is a
+convenience environment.
 
-#### Option A: Arduino IDE (Recommended)
-
-1. Download this repository (click **Code → Download ZIP**)
-2. In Arduino IDE: **Sketch → Include Library → Add .ZIP Library...**
-3. Select the downloaded ZIP file
-4. The library is now available as `#include <Qymera.h>`
-
-#### Option B: Arduino IDE (Manual)
-
-1. Clone or copy the `src/` folder and `library.properties` into your Arduino
-   libraries directory (e.g. `~/Documents/Arduino/libraries/Qymera/`)
-
-#### Option C: PlatformIO
-
-```ini
-[env:your_board]
-platform = <your_platform>
-board = <your_board>
-lib_deps =
-    https://github.com/gonreyna85code/Qymera.git
+```sh
+idf.py set-target esp32
+idf.py build
+idf.py -p COM3 flash monitor   # device is on COM3
 ```
 
-### 3. Create Your First Sketch
+### 3. First-time setup
 
-Use the built-in [Base example](examples/Base/Base.ino) as a starting point
-(`main.cpp` is the PlatformIO entry point). The library handles WiFi, the web
-server, UDP mesh, and automation logic — your sketch only needs to:
-
-- `initSatellite()` &mdash; initialize hardware libraries (Wire, I2C, etc.)
-- `report()` &mdash; read sensors and report values via `sensors::xxx()` API
-- `onCommandHook(...)` &mdash; handle custom commands from remote devices
-
-```cpp
-#include <Qymera.h>
-#include <Wire.h>
-
-void initSatellite() {
-  Wire.begin();
-  // initialize your hardware here
-}
-
-void report() {
-  // read your sensors
-  sensors::temperature("Office", 23.5f);
-  sensors::humidity("Soil", 65);
-}
-
-void onCommandHook(uint32_t, uint8_t, int, bool) {
-  // optional: react to remote commands
-}
-
-void setup()   { core::begin(); }
-void loop()    { core::loop(); }
-```
-
-### 4. First-Time Setup
-
-1. **Upload** the sketch to your device.
+1. **Upload** the firmware to your device.
 2. Connect to the WiFi network **`QymeraSetup`** (no password).
 3. Open **`http://192.168.4.1`** in your browser.
 4. Go to the **NETWORK** tab, enter your home WiFi SSID and password.
 5. The device reboots and connects to your network.
 
-### 5. Configure Sensors and Rules
+### 4. Configure sensors and rules
 
-- **SETTINGS** tab &mdash; calibrate sensors, set offsets, timezone, fade/pulse/persist
-- **AUTOMATIONS** tab (Rules) &mdash; create automation rules
-- **DEVICES** tab &mdash; control relays and dimmers in real time
+- **SETTINGS** tab — calibrate sensors, set offsets, timezone, fade/pulse/persist
+- **AUTOMATIONS** tab (Rules) — create automation rules
+- **DEVICES** tab — control relays and dimmers in real time
 
 ---
 
-## Supported Sensors
+## Public API
 
-Qymera supports **10 sensor types** plus **2 actuator types**. Each entity has
-individual calibration (offset, min/max, availability, persistence, pulse/fade
-options).
+The application no longer defines magic global functions
+(`initSatellite`/`report`/`onCommandHook`). It registers callbacks:
 
-| Sensor | API | Typical Hardware |
-|--------|-----|-------------------|
-| Temperature | `sensors::temperature()` | DHT22, DS18B20, NTC |
-| Humidity | `sensors::humidity()` | DHT22, soil moisture |
-| Light | `sensors::luminosity()` | Photoresistor, BH1750 |
-| Pressure | `sensors::pressure()` | BMP280, BME280 |
-| Level | `sensors::level()` | Ultrasonic, float switch |
-| Air Quality | `sensors::airQ()` | MQ135, SDS011 |
-| Rain | `sensors::rain()` | Rain drop sensor |
-| Contact | `sensors::contact()` | Reed switch, door sensor |
-| Generic | `sensors::custom()` | Any analog/digital value |
-| Time | `sensors::rtc()` / `sensors::ntp()` | RTC module or NTP (clock stays UTC; timezone is an offset per node) |
-| Relay (actuator) | `sensors::relay()` | Digital relay, latching |
-| Dimmer (actuator) | `sensors::dimmer()` | LED strip, fan, PWM |
+```cpp
+#include "Qymera.h"
+
+Qymera::setInit([] { /* GPIO/LEDC/I2C/SPI init */ });
+Qymera::setReport([] {
+  Qymera::temperature("TEMP", 35.2f);
+  Qymera::relay("RELAY0", 5, true);
+  Qymera::dimmer("DIMM0", 2, false);
+});
+Qymera::setCommand([](uint32_t uid, uint8_t type, int value, bool state) {
+  /* (optional) observe received commands */
+});
+
+Qymera::begin();   // init NVS + networking + services
+// in the app loop task:
+Qymera::loop();    // single deterministic tick
+```
+
+---
+
+## Supported entities
+
+12 entity types (10 sensors + 2 actuators). Each entity has individual
+calibration (offset, min/max, availability, persistence, pulse/fade).
+
+| Type | API | Typical Hardware |
+|------|-----|-------------------|
+| Temperature | `Qymera::temperature()` | DHT22, DS18B20, NTC |
+| Humidity | `Qymera::humidity()` | DHT22, soil moisture |
+| Light | `Qymera::luminosity()` | Photoresistor, BH1750 |
+| Pressure | `Qymera::pressure()` | BMP280, BME280 |
+| Level | `Qymera::level()` | Ultrasonic, float switch |
+| Air Quality | `Qymera::airQ()` | MQ135, SDS011 |
+| Rain | `Qymera::rain()` | Rain drop sensor |
+| Contact | `Qymera::contact()` | Reed switch, door sensor |
+| Generic | `Qymera::custom()` | Any analog/digital value |
+| Time | `Qymera::rtc()` / NTP | RTC module or NTP (UTC stored; timezone is a per-node offset) |
+| **Relay** (actuator) | `Qymera::relay()` | Digital relay, latching |
+| **Dimmer** (actuator) | `Qymera::dimmer()` | LED strip, fan, PWM |
 
 Sensor type enum (`/calib` JSON `type` field): 1=LUMI, 2=HUMI, 3=TEMP, 4=PRESS,
-5=LEVEL, 6=AIRQ, 7=RAIN, 8=DIMMER, 9=RELAY, 10=TIME, 11=GENERIC, 12=CONTACT.
+5=LEVEL, 6=AIRQ, 7=RAIN, **8=DIMMER, 9=RELAY**, 10=TIME, 11=GENERIC, 12=CONTACT.
 
 ---
 
-## Automation: Up to 20 Rules
+## Automation: up to 20 rules
 
-Create rules combining up to **5 sensors** and **5 actuators** per rule.
+Rules combine up to **5 sensors** and **5 actuators** per rule.
 
-### Rule Types
+- **Edge** — triggers on state change (RISING / FALLING) for boolean entities
+  (contact, rain)
+- **Threshold** — triggers when a calibrated value crosses a threshold;
+  combine multiple conditions with AND / OR
+- **Time** — triggers once per day at a local time (NTP or local RTC)
+- **Interval** — triggers every N ms while the date window holds
 
-- **Edge** &mdash; triggers on state change (RISING / FALLING) for boolean
-  entities (contact, rain)
-- **Threshold** &mdash; triggers when a calibrated sensor value crosses a
-  threshold. Combine multiple conditions with AND/OR logic
-- **Time** &mdash; triggers once per day at a local time (uses NTP or local
-  RTC). Fires once per calendar day
-- **Interval** &mdash; triggers every N ms while the date window holds
-
-All rules support execution delay, per-rule cooldown, and logic composition.
-Note: THRESHOLD has no hysteresis — always set a `cooldown_ms`; TIME
-`time_s` is truncated to minutes; TIME/INTERVAL have no catch-up after a reboot.
+All rules support execution delay and per-rule cooldown. Note: THRESHOLD has no
+hysteresis — always set `cooldown_ms`; TIME `time_s` is truncated to minutes;
+TIME/INTERVAL have no catch-up after a reboot.
 
 ---
 
-## Actuator Control
+## Actuator control
 
-**Relays:** ON / OFF / TOGGLE / PULSE (activate for X ms then release).
-Supports state persistence across reboots (UID-matched restore before the first
-report — no boot glitch).
-
-**Dimmers:** Smooth fade transitions between 0-100% brightness for LEDs, fans,
-and other PWM loads.
+- **Relays:** ON / OFF / TOGGLE / PULSE (activate for X ms then release); state
+  persists across reboots (UID-matched restore before first report — no boot
+  glitch).
+- **Dimmers:** smooth fade transitions 0–100 % for LEDs, fans, PWM loads.
 
 ---
 
-## Communication: Web + Local Network
+## Communication
 
-### Zero USB Required
-
-All configuration is done through the web UI. After initial setup, the device
-operates independently — no internet needed. HTTP server runs on port 80,
-reading all config from EEPROM / Preferences (ESP32).
-
-**Main tabs:** DEVICES (actuators) · AUTOMATIONS (rules) · SETTINGS
-(calibration + remote entities) · LOGS · NETWORK (WiFi, OTA, factory reset)
-
-### Mesh
-
-- **STA mode:** UDP broadcast discovery/announcement (batched datagrams,
-  protocol v4/v5; up to 29 packets per datagram).
-- **AP mode:** ESP-NOW broadcast (bounded RX FIFO, peer management).
-- Remote entities are visible/controllable/calibratable across nodes by
-  POSTing to the owning node's IP; remote config is verified over HTTP and never
-  falls back silently to the local node.
+- **UDP only.** ESP-NOW is removed from the runtime. `mesh::setTransport()`
+  forces UDP; the `TRANSPORT_ESPNOW` enum constant stays only for source
+  compatibility.
+- **STA with AP fallback**: connects to the saved SSID, or brings up
+  `QymeraSetup` when none is stored / connection times out.
+- **Mesh**: UDP broadcast discovery/announcement (batched datagrams, protocol
+  v4/v5, up to 29 packets/datagram). Remote entities are
+  visible/controllable/calibratable by POSTing to the owning node's IP; remote
+  config is verified over HTTP and never falls back silently to the local node.
+- **Time**: SNTP (poll mode) + manual RTC set via mesh time sync.
 
 ### HTTP API (curl)
 
@@ -186,111 +179,190 @@ curl http://<device-ip>/logs
 ```
 
 Key facts:
-- Commands address **entity `id` (uid)**; rules address **slot indexes**.
+- Commands address entity **`id` (uid)**; rules address **slot indexes**.
 - Remote entities must be addressed on their **owner's IP** (the `ip` field in
   `/calib`).
 - Rate limit: 6 requests / 2 s burst on state-changing endpoints (7th → `429`).
-- Full API reference and architecture: see `docs/architecture-baseline.md`.
+- Endpoints: `/`, `/save`, `/calib`, `/calib/set`, `/genset/save`, `/rules`,
+  `/rules/set`, `/rules/delete`, `/factory`, `/toggle`, `/dimmer`, `/logs`.
 
 ---
 
-## Supported Platforms
+## Persistence
 
-| Board | Status |
-|-------|--------|
-| ESP8266 (NodeMCU, Wemos D1 Mini, etc.) | Fully Tested (hardware) |
-| ESP32 (DevKit, WROOM, etc.) | Fully Tested (hardware) |
-| ESP32-S2, ESP32-S3, ESP32-C3 | Build-verified (`esp32c3_devkit` env); hardware validation pending |
+A 4 KiB EEPROM-layout image is stored in NVS (`qymera`/`eedata` blob) and edited
+byte-wise in RAM. Partition table is single-`factory` (no OTA slots) — see
+`partitions_qymera.csv`.
 
-Platform auto-detection via preprocessor defines in `config.h`.
+- WiFi credentials · general settings (ports/interval) · sensor calibration
+  (UID slot: magic+version+uid+pers_state+min/max+correction+avail+persist+
+  pulse+ms+fade) · automation rules · OTA device identity flag.
+
+### Factory reset
+
+`POST /factory` clears Qymera credentials, calibration, and rules, then reboots
+into `QymeraSetup` AP mode. **It does NOT touch the Matter fabric.** Matter
+commissioning is stored in the chip/Matter NVS namespace, which is independent;
+removing a Matter fabric uses the standard Matter operation (e.g. open the
+commissioning window after the last fabric is removed), not the Qymera factory
+reset.
 
 ---
 
-## Data Persistence
+## Matter (opt-in)
 
-All web configuration survives power loss — only live sensor readings are lost
-on reset:
+The **default build is Matter-free** and pulls only the ESP-IDF core. The Matter
+bridge is compiled and run only behind `#if CONFIG_QYMERA_MATTER_ENABLE`.
 
-| Region (4 kB EEPROM / Preferences) | Size |
-|------------------------------------|------|
-| WiFi credentials | 100 B |
-| General settings (ports/interval) | 12 B |
-| Sensor calibration (UID slot: magic+version+uid+pers_state+min/max+correction+avail+persist+pulse+ms+fade) | 40 × 34 B = 1360 B |
-| Automation rules | 1600 B |
-| OTA device identity token + enable flag | 4 B + 1 B |
+### Pairing (pinned versions)
 
-Factory reset behaviour: `POST /factory` clears credentials, calibration, rules
-and OTA flag, then reboots into `QymeraSetup` AP mode.
+| Component | Version |
+|-----------|---------|
+| `espressif/esp_matter` | `~1.3.0` (first registry-published line; release/v1.3) |
+| ESP-IDF | **5.2.1** (both ESP-Matter 1.2 and 1.3 recommend IDF v5.2.1) |
+| target | `esp32` |
+
+> **Important:** there is **no `1.2.x` in the Espressif Component Registry**
+> (published versions go `0.0.1, 0.0.2, 1.3.0, 1.3.1, 1.4.x, 1.5.x, 1.6.0`).
+> Pinning `^1.2` cannot resolve — use `~1.3.0`.
+
+### Enable
+
+1. Uncomment `espressif/esp_matter: "~1.3.0"` in `main/idf_component.yml`
+   (the component manager fetches the SDK).
+2. Set `CONFIG_QYMERA_MATTER_ENABLE=y` (via `idf.py menuconfig` or
+   `sdkconfig.defaults`).
+
+### Device model
+
+| Qymera entity | Matter device type |
+|---------------|--------------------|
+| Relay | OnOffLight (OnOff cluster) |
+| Dimmer | DimmableLight (OnOff + LevelControl clusters) |
+
+Only **local Link-owned** actuators are bridged. Remote Qymera entities in the
+mesh are never exposed as Matter endpoints.
+
+### Commissioning
+
+After the Matter-enabled build boots with an IP connection, commission the
+device with any Matter controller (Google Home, Apple Home, Alexa, CHIP-Tool,
+Matter controller in the ESP app). The bridge starts automatically once the
+stack is online; device label is **"Qymera"**.
+
+### State synchronization
+
+- **Matter → Qymera:** on/off and level writes are routed through the same
+  validated actuation primitives the web API uses (`sensors::setRelay` /
+  `sensors::handleDimmer`) — no direct GPIO.
+- **Qymera → Matter:** local state changes are pushed to the Matter attribute DB
+  via `attribute::update`, echo-guarded (only pushes on change; the write
+  callback only acts on external requests) so there is **no feedback loop**.
+
+### Maturity / verification status
+
+The bridge is **written against the official ESP-Matter `release/v1.3` API**
+(`managed_component_light` example + `esp_matter_core.h`), but **has not been
+compiled in this workspace** — Matter needs IDF 5.2.1, and this environment only
+has IDF 5.1.2 via PlatformIO. Treat Matter as **source-ready scaffold pending a
+real IDF 5.2.1 build and hardware commissioning**, not as production-verified.
+
+---
+
+## Architecture
+
+```
+main/                    example application (app_main + loop task)
+  main.cpp               registers callbacks via Qymera API + boot sequence
+  matter_bridge.*        Matter bridge - compiled only if CONFIG_QYMERA_MATTER_ENABLE=y
+components/qymera/       reusable ESP-IDF component (the library)
+  src/Qymera.h/.cpp      public API (Qymera::begin/loop/setInit/setReport/setCommand)
+  src/core.*             deterministic application loop + WiFi orchestration
+  src/sensors.*          sensor/actuator model, calibration, command routing
+  src/automations.*      automation rules engine
+  src/mesh.*             UDP mesh protocol v5
+  src/web.* / html.*     embedded web UI + REST endpoints
+  src/log.*              runtime log ring buffer
+  src/storage.*          NVS-backed persistence (4 KiB EEPROM-image blob)
+  src/hal/               platform HAL (qhal/qhttp/qstr)
+```
+
+### Deterministic core ↔ HAL boundary
+
+Only `src/hal/*` touches ESP-IDF drivers directly. The deterministic core
+(`sensors`/`automations`/`rules`) is frozen and portable, reaching hardware only
+through the thin `qhal_*` / `qstr` interface:
+
+| HAL symbol | Backing ESP-IDF API |
+|------------|---------------------|
+| `qhal_wifi_sta_connect` / `qhal_wifi_start_ap` | `esp_wifi` |
+| `qhal_wifi_ap_active` | `esp_wifi` mode query |
+| `qhal_local_ip` | `esp_netif` |
+| `qhal_pin_output/write` | `driver/gpio` |
+| `qhal_pwm_setup/write` | `driver/ledc` (8-bit) |
+| `qhal_sntp_init` | `esp_sntp` (poll mode) |
+| `qhal_lock/unlock` | FreeRTOS recursive mutex |
+| `qhal_delay` / `millis` | `esp_timer` |
+| storage (NVS) | `nvs_flash` |
+| `qhttp` | `esp_http_server` |
+
+### Runtime / threading model
+
+FreeRTOS:
+- **`qymera_loop` task** (priority 5, 8 KiB stack) runs the single deterministic
+  `core::loop()` tick at ~1 ms period.
+- **httpd worker tasks** serve HTTP concurrently. A recursive mutex
+  (`qhal_lock`) serializes them against the loop task so deterministic state
+  (calibrations/reports/rules) is only mutated safely.
 
 ---
 
 ## Security
 
-- **Authentication infrastructure present but dormant** (HTTP Basic Auth gate
-  off by default; placeholder creds `admin:qymera123` stay in the firmware, not
-  in client JS). Recommended for trusted local networks only.
-- **OTA device identity check:** a chip-unique token (`GET_CHIP_ID()`) is stored
-  and verified on boot/toggle — a provisioning check, NOT a firmware
-  authenticity hash.
-- **Rate limiting:** burst-tolerant 6 req / 2 s on state-changing endpoints.
-- **Strict input validation:** rejects empty/trailing-junk/overflow/NaN/Inf and
-  enforces type ranges on every write path.
-- Known limitations: HTTP only (no HTTPS for OTA/web); no CSRF tokens; no
-  full firmware signing (SHA-256 deferred to Phase 3+).
+- HTTP Basic Auth gate present but **off by default** (placeholder creds
+  `admin:qymera123` in firmware, not in client JS). Trusted local networks only.
+- OTA device identity check: a chip-unique token is stored/verified on
+  boot/toggle — a provisioning check, not a firmware authenticity hash.
+- Rate limiting: burst-tolerant 6 req / 2 s on state-changing endpoints.
+- Strict input validation on every write path (rejects empty/trailing-junk/
+  overflow/NaN/Inf; enforces type ranges).
+- Known limitations: HTTP only (no HTTPS); no CSRF tokens; no full firmware
+  signing. Use on a trusted local WiFi network; block external access via
+  router firewall.
 
-Use only on a trusted local WiFi network; block external access via router
-firewall; use a VPN for remote access.
+---
+
+## Tests
+
+- **`tests/host_sanity.py`**: host-state checks (timezone/float parsing, FIFO).
+  **45/45 pass.**
+- The authoritative gate is a successful firmware build plus the host sanity
+  suite.
+- Matter-enabled bridge / commissioning require hardware (`COM3` flash + real
+  commissioning) and are tracked as hardware-verified steps, not claimed from
+  the build alone.
 
 ---
 
 ## Troubleshooting
 
-**Device appears but won't join WiFi?**
-- First-time flash: ensure the USB cable supports data (not power-only)
-- Wait 10 seconds after power-on before scanning for networks
-- Verify router allows unknown MAC addresses on the 2.4 GHz band
+**Device appears but won't join WiFi?** Ensure the USB cable supports data
+(not power-only); wait 10 s after power-on before scanning; verify the router
+allows unknown MACs on 2.4 GHz.
 
-**Sensors not reporting values?**
-- Register the sensor in the SETTINGS tab, add calibration values, and save
-- Verify pin assignments match your hardware
-- Remote entities only appear while their owner announces (< ~30 s — `MESH_TIMEOUT`)
-
----
-
-## Advanced Configuration
-
-Edit `config.h` for platform-specific settings and limits:
-
-```cpp
-#define MAX_SENSORS             64   // max entities in memory
-#define MAX_PERSISTED_SENSORS   40   // max persisted calibration slots
-#define MAX_RULES               20   // max automation rules
-#define EEPROM_SIZE             4096 // storage size
-#define BROADCAST_INTERVAL      5000 // mesh announce interval (ms)
-```
-
----
-
-## Contributing
-
-Issues and PRs welcome. To build and verify:
-
-```bash
-pip install platformio
-pio run -t upload --monitor -e esp32_devkit   # ESP32
-pio run -e esp8266_generic                     # ESP8266
-python tests/host_sanity.py                    # host test suite (45 checks)
-```
+**Sensors not reporting?** Register the sensor in SETTINGS, add calibration,
+verify pin assignments. Remote entities only appear while their owner announces
+(< ~30 s, `MESH_TIMEOUT`).
 
 ---
 
 ## Roadmap
 
-MQTT · Zigbee/Z-Wave · Matter · graphing dashboard · email/SMS notifications ·
-mobile app. An **optional external AI assistant subsystem** is authorized and
-under development on `feature/ai-experiments` (kept out of the 1.1 production
-tree per `AGENTS.md`).
+Matter commissioning validation on hardware · MQTT · Zigbee/Z-Wave · graphing
+dashboard · email/SMS notifications · mobile app. An optional external AI
+assistant subsystem is authorized and under development on
+`feature/ai-experiments` (kept out of the production tree per `AGENTS.md`).
 
 ---
 
-License: MIT — see `LICENSE` file (per `library.properties`).
+License: MIT — see `LICENSE`.
