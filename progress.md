@@ -364,3 +364,102 @@ Uses existing events: `QYMERA_EVENT_ACTUATOR_CHANGED`, plus the Command status r
 ### NEXT PHASE
 
 AI/Skill layer (only after this remote-control contract is verified on hardware). Highest-value task: wire `rule → Control API → remote relay/dimmer → ACK → state confirmation` on two ESP32 Qymera nodes.
+
+## Phase 3A: Deterministic Skill API (2026-08-31)
+
+### Objective
+
+Build the deterministic Skill API foundation on top of the established runtime
+(base `5752ed2`, Phase 2F, 102/102 host tests) so a future LLM/agent can
+discover, inspect, control, and manage rules via structured, validated, bounded
+skill calls — with **no LLM dependency** and no inference infrastructure.
+
+### Skill Registry
+
+Fixed, compile-time `const` table of **13** skills (`QYMERA_MAX_SKILLS`). No
+dynamic tool registry, no scripting engine, no per-invocation heap allocation,
+no unbounded JSON/strings. Discovery via `qymera_skill_registry_count` /
+`qymera_skill_registry_get` / `qymera_skill_lookup`.
+
+### Skills (13)
+
+`list_devices`, `list_entities`, `get_entity_state`, `get_entity_info`,
+`set_relay`, `set_dimmer`, `list_rules`, `get_rule`, `create_rule`,
+`update_rule`, `delete_rule`, `enable_rule`, `disable_rule`.
+
+### Permissions
+
+Authorization boundary (not a security system): `READ`(1), `CONTROL`(2),
+`RULE_READ`(4), `RULE_WRITE`(8). Read skills require `READ`; control skills
+`CONTROL`; rule read `RULE_READ`; rule write `RULE_WRITE`. Missing bit →
+`PERMISSION_DENIED`.
+
+### Error Model
+
+Stable result shape `{ok, data}` / `{ok:false, error:{code,message,details}}`.
+Codes: `SKILL_NOT_FOUND`, `PERMISSION_DENIED`, `ENTITY_NOT_FOUND`,
+`INVALID_CAPABILITY`, `INVALID_VALUE`, `RULE_INVALID`, `NO_SPACE`,
+`DEVICE_OFFLINE`, `COMMAND_TIMEOUT`. Output capped at 1024 bytes
+(`QYMERA_SKILL_OUTPUT_SIZE`).
+
+### Input Validation
+
+Dimmer level range check (0-100), entity existence, capability compatibility
+(relay → `set_relay`, dimmer → `set_dimmer`), rule entity-reference validation
+(existence + capability match per action type), empty-name checks, rule
+compile/validate/persist failures.
+
+### LLM-Independent Behavior
+
+Skills are deterministic functions over Registry / Rule Engine / Control API
+(storage for persistence). They never touch GPIO, UDP, or internal structures
+directly, and never parse natural language. Caller-agnostic (Ollama / OpenAI /
+local / remote / human UI / automation are identical callers).
+
+### Host Tests
+
+- `python tests/host_sanity.py`: **144/144** (added 42 Skill tests over the 102
+  baseline).
+- Covers: discovery, permissions, input validation, entity lookup, state
+  retrieval, relay/dimmer control, rule create/update/delete/enable/disable,
+  invalid capability, invalid entity, invalid values, permission denied,
+  command failure (`NO_SPACE`), and a full LLM-independent AI workflow
+  (`list_entities` → `get_entity_state` → `create_rule` → `enable_rule` →
+  `set_relay` → observe state).
+
+### Hardware / RAM / Flash
+
+- ESP32 build: **SUCCESS** (`pio run -e esp32_devkit`).
+- Firmware totals (PIO): RAM 21116 B, Flash 234165 B — unchanged from Phase 2F
+  (PIO ELF artifact omits project symbols; see Phase 2F note).
+- Skill module object-measured (`size -A` on `qymera_skill.c.o`):
+  - **RAM delta: 4 bytes** (single static `s_rule_seq` counter; registry is a
+    `const` flash table).
+  - **FLASH delta: 14,773 bytes** (`text` + `rodata`).
+
+### Files
+
+- `src/ai/qymera_skill.h` / `qymera_skill.c` — new (registry, dispatch, 13
+  handlers, validation, permissions).
+- `src/core/qymera_core.h` / `.c` — include `qymera_skill.h`, `skill` member +
+  `qymera_core_get_skills()` getter, init in `core_init_subsystems`.
+- `tests/host_sanity.py` — +42 Skill reference-model tests.
+- `docs/skills.md` — new machine-oriented Skill API documentation.
+
+### KNOWN LIMITATIONS
+
+- Permissions are an authorization boundary only; there is no authentication.
+- Output is a bounded JSON fragment (1024 B); large corpora beyond the cap are
+  truncated (`truncated` flag set).
+- Rules must target entities/capabilities the engine can resolve; mismatched
+  entity references fail at validation with a stable code.
+- `ACKED != CONFIRMED` (from Phase 2F) still applies to relay/dimmer state
+  reporting.
+- No automatic command retries (matches the existing UDP layer).
+
+### NEXT PHASE
+
+Attach an LLM/adapter shim that maps provider tool calls onto
+`qymera_skill_execute` by exact skill name + structured input, running on
+device, still routed through the Skill layer so all validation/permission/error
+semantics remain centralized and deterministic.

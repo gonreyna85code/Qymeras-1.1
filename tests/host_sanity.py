@@ -539,6 +539,435 @@ crowded.on_state("nodeA", "ent0", True, 1.0)
 seq_, r_ = crowded.alloc("nodeA", "extra", 1, 1.0, 3000)
 check("PENDING: after resolving one, new command succeeds", r_ == "OK")
 
+# ================================================================ Phase 3A: Skill API
+# Deterministic Skill layer mirror (qymera_skill.c). Structured calls only;
+# no LLM, no natural-language parsing, no direct GPIO/UDP/registry internals.
+
+def _Ok(data):
+    return {"ok": True, "data": data}
+
+
+def _Err(code, message="", details=None):
+    return {"ok": False, "error": {"code": code, "message": message, "details": details or {}}}
+
+
+PERMS = {"READ": 1, "CONTROL": 2, "RULE_READ": 4, "RULE_WRITE": 8}
+
+SKILLS = {
+    "list_devices": "READ", "list_entities": "READ",
+    "get_entity_state": "READ", "get_entity_info": "READ",
+    "set_relay": "CONTROL", "set_dimmer": "CONTROL",
+    "list_rules": "RULE_READ", "get_rule": "RULE_READ",
+    "create_rule": "RULE_WRITE", "update_rule": "RULE_WRITE",
+    "delete_rule": "RULE_WRITE", "enable_rule": "RULE_WRITE", "disable_rule": "RULE_WRITE",
+}
+
+_ACTION_CAP = {
+    "SET_BOOL": {"actuator.relay"}, "TOGGLE": {"actuator.relay"}, "PULSE": {"actuator.relay"},
+    "SET_LEVEL": {"actuator.dimmer"}, "SET_VALUE": {"actuator.dimmer"}, "FADE": {"actuator.dimmer"},
+}
+_OP_VALID = {"GT", "LT", "GE", "LE", "EQ", "NE", "IN_RANGE", "OUT_RANGE"}
+
+
+class FakeControl:
+    def __init__(self, cap=3):
+        self.pending = 0
+        self.cap = cap
+
+    def set_relay(self, ref, value):
+        if self.pending >= self.cap:
+            return _Err("NO_SPACE", "pending command table full")
+        self.pending += 1
+        return _Ok({"requested": bool(value), "status": "WAITING_ACK", "reliability": "PENDING"})
+
+    def set_dimmer(self, ref, level):
+        if self.pending >= self.cap:
+            return _Err("NO_SPACE", "pending command table full")
+        self.pending += 1
+        return _Ok({"requested": level, "status": "WAITING_ACK", "reliability": "PENDING"})
+
+
+class SkillEnv:
+    def __init__(self):
+        self.devices = {}
+        self.rules = {}
+        self.control = FakeControl()
+        self.persist_log = []
+        self.rule_seq = 1
+
+    def add_device(self, did, name="node", model="esp32", role="remote", online=True):
+        self.devices[did] = {"device_id": did, "name": name, "model": model, "role": role,
+                             "online": online, "state": "operational", "location": "room",
+                             "entities": {}}
+
+    def add_entity(self, did, eid, name, ctype, caps, unit="", obs=None, des=None,
+                   cmd="STATE_CONFIRMED", reliability="CONFIRMED"):
+        self.devices[did]["entities"][eid] = {
+            "device_id": did, "entity_id": eid, "name": name, "type": ctype, "caps": set(caps),
+            "unit": unit, "obs": obs, "des": des, "cmd_status": cmd, "reliability": reliability}
+
+    def find_entity(self, did, eid):
+        d = self.devices.get(did)
+        if not d:
+            return None
+        return d["entities"].get(eid)
+
+    def execute(self, skill, inp, perm=None):
+        if perm is None:
+            perm = 0
+            for v in PERMS.values():
+                perm |= v
+        if skill not in SKILLS:
+            return _Err("SKILL_NOT_FOUND")
+        if (perm & PERMS[SKILLS[skill]]) != PERMS[SKILLS[skill]]:
+            return _Err("PERMISSION_DENIED")
+        return getattr(self, "_" + skill)(inp)
+
+    # -- read skills --
+    def _list_devices(self, inp):
+        return _Ok([{"device_id": did, "name": d["name"], "model": d["model"], "role": d["role"],
+                     "online": d["online"], "state": d["state"], "location": d["location"]}
+                    for did, d in self.devices.items()])
+
+    def _list_entities(self, inp):
+        out = []
+        for did, d in self.devices.items():
+            for eid, e in d["entities"].items():
+                out.append({"device_id": did, "entity_id": eid, "name": e["name"], "type": e["type"],
+                            "capabilities": sorted(e["caps"]), "unit": e["unit"],
+                            "current": e["obs"], "desired": e["des"], "cmd_status": e["cmd_status"]})
+        return _Ok(out)
+
+    def _get_entity_state(self, inp):
+        e = self.find_entity(inp.get("device_id"), inp.get("entity_id"))
+        if e is None:
+            return _Err("ENTITY_NOT_FOUND")
+        st = e["cmd_status"]
+        if st == "STATE_CONFIRMED":
+            rel = "CONFIRMED"
+        elif st in ("ACKED", "WAITING_ACK", "DISPATCHED", "REQUESTED"):
+            rel = "PENDING"
+        elif st in ("FAILED", "TIMEOUT"):
+            rel = "FAILED"
+        elif e["reliability"] in ("STALE", "OFFLINE"):
+            rel = "STALE"
+        else:
+            rel = "CONFIRMED"
+        return _Ok({"device_id": e["device_id"], "entity_id": e["entity_id"], "observed": e["obs"],
+                    "desired": e["des"], "status": st, "reliability": rel, "timestamp": 0})
+
+    def _get_entity_info(self, inp):
+        e = self.find_entity(inp.get("device_id"), inp.get("entity_id"))
+        if e is None:
+            return _Err("ENTITY_NOT_FOUND")
+        return _Ok({"device_id": e["device_id"], "entity_id": e["entity_id"], "name": e["name"],
+                    "type": e["type"], "capabilities": sorted(e["caps"]), "unit": e["unit"]})
+
+    # -- control skills --
+    def _set_relay(self, inp):
+        e = self.find_entity(inp.get("device_id"), inp.get("entity_id"))
+        if e is None:
+            return _Err("ENTITY_NOT_FOUND")
+        if "actuator.relay" not in e["caps"]:
+            return _Err("INVALID_CAPABILITY")
+        res = self.control.set_relay(inp["entity_id"], bool(inp.get("value")))
+        if not res["ok"]:
+            return res
+        e["des"] = bool(inp.get("value"))
+        e["cmd_status"] = "WAITING_ACK"
+        e["reliability"] = "PENDING"
+        return _Ok({"device_id": inp["device_id"], "entity_id": inp["entity_id"],
+                    "requested": bool(inp.get("value")), "status": "WAITING_ACK", "reliability": "PENDING"})
+
+    def _set_dimmer(self, inp):
+        level = inp.get("level", 0)
+        if not isinstance(level, int) or level < 0 or level > 100:
+            return _Err("INVALID_VALUE")
+        e = self.find_entity(inp.get("device_id"), inp.get("entity_id"))
+        if e is None:
+            return _Err("ENTITY_NOT_FOUND")
+        if "actuator.dimmer" not in e["caps"]:
+            return _Err("INVALID_CAPABILITY")
+        res = self.control.set_dimmer(inp["entity_id"], level)
+        if not res["ok"]:
+            return res
+        e["des"] = level
+        e["cmd_status"] = "WAITING_ACK"
+        e["reliability"] = "PENDING"
+        return _Ok({"device_id": inp["device_id"], "entity_id": inp["entity_id"],
+                    "requested": level, "status": "WAITING_ACK", "reliability": "PENDING"})
+
+    # -- rule validation + skills --
+    def _body(self, inp):
+        b = dict(inp.get("rule") or inp)
+        if "name" not in b:
+            b["name"] = inp.get("name")
+        return b
+
+    def _validate_rule(self, body):
+        if not body.get("name"):
+            return _Err("INVALID_VALUE", "name required")
+        trig = body.get("trigger") or {}
+        if trig.get("entity"):
+            e = self.find_entity(trig["entity"].get("device_id"), trig["entity"].get("entity_id"))
+            if e is None:
+                return _Err("ENTITY_NOT_FOUND")
+            if trig.get("operator") not in _OP_VALID:
+                return _Err("RULE_INVALID")
+        for c in body.get("conditions", []):
+            ce = c.get("entity") or {}
+            if self.find_entity(ce.get("device_id"), ce.get("entity_id")) is None:
+                return _Err("ENTITY_NOT_FOUND")
+            if c.get("operator") not in _OP_VALID:
+                return _Err("RULE_INVALID")
+        if not body.get("actions"):
+            return _Err("RULE_INVALID", "at least one action required")
+        for a in body.get("actions", []):
+            ae = a.get("entity") or {}
+            e = self.find_entity(ae.get("device_id"), ae.get("entity_id"))
+            if e is None:
+                return _Err("ENTITY_NOT_FOUND")
+            if a.get("action") not in _ACTION_CAP:
+                return _Err("RULE_INVALID")
+            if not (e["caps"] & _ACTION_CAP[a["action"]]):
+                return _Err("RULE_INVALID", "action incompatible with target capability")
+        return None
+
+    def _list_rules(self, inp):
+        return _Ok([{"rule_id": rid, "name": r["name"], "enabled": r["enabled"], "revision": r["revision"]}
+                    for rid, r in self.rules.items()])
+
+    def _get_rule(self, inp):
+        r = self.rules.get(inp.get("rule_id"))
+        if r is None:
+            return _Err("RULE_INVALID", "rule not found")
+        return _Ok({"rule_id": inp["rule_id"], "name": r["name"], "enabled": r["enabled"],
+                    "revision": r["revision"], "priority": r.get("priority", 0),
+                    "cooldown_ms": r.get("cooldown_ms", 0),
+                    "max_activations_per_hour": r.get("max_activations_per_hour", 0),
+                    "trigger": r.get("trigger"), "conditions": r.get("conditions", []),
+                    "actions": r.get("actions", []),
+                    "state": {"activation_count": r.get("activation_count", 0)}})
+
+    def _create_rule(self, inp):
+        body = self._body(inp)
+        err = self._validate_rule(body)
+        if err:
+            return err
+        rid = body.get("rule_id") or inp.get("rule_id") or ("rule_%d" % self.rule_seq)
+        if str(rid).startswith("rule_"):
+            self.rule_seq += 1
+        self.rules[rid] = {"name": body["name"], "enabled": True, "revision": 1,
+                           "trigger": body.get("trigger"), "conditions": body.get("conditions", []),
+                           "actions": body.get("actions", []),
+                           "cooldown_ms": body.get("cooldown_ms", 0),
+                           "max_activations_per_hour": body.get("max_activations_per_hour", 0)}
+        self.persist_log.append(("create", rid))
+        return _Ok({"rule_id": rid, "revision": 1, "enabled": True, "activated": True})
+
+    def _update_rule(self, inp):
+        rid = inp.get("rule_id")
+        r = self.rules.get(rid)
+        if r is None:
+            return _Err("RULE_INVALID", "rule not found")
+        body = self._body(inp)
+        err = self._validate_rule(body)
+        if err:
+            return err
+        for k in ("name", "trigger", "conditions", "actions", "cooldown_ms", "max_activations_per_hour"):
+            if k in body:
+                r[k] = body[k]
+        r["revision"] += 1
+        self.persist_log.append(("update", rid))
+        return _Ok({"rule_id": rid, "revision": r["revision"], "enabled": r["enabled"], "updated": True})
+
+    def _delete_rule(self, inp):
+        rid = inp.get("rule_id")
+        if rid not in self.rules:
+            return _Err("RULE_INVALID", "rule not found")
+        del self.rules[rid]
+        self.persist_log.append(("delete", rid))
+        return _Ok({"rule_id": rid, "deleted": True})
+
+    def _enable_rule(self, inp):
+        rid = inp.get("rule_id")
+        if rid not in self.rules:
+            return _Err("RULE_INVALID", "rule not found")
+        self.rules[rid]["enabled"] = True
+        self.persist_log.append(("enable", rid))
+        return _Ok({"rule_id": rid, "enabled": True})
+
+    def _disable_rule(self, inp):
+        rid = inp.get("rule_id")
+        if rid not in self.rules:
+            return _Err("RULE_INVALID", "rule not found")
+        self.rules[rid]["enabled"] = False
+        self.persist_log.append(("disable", rid))
+        return _Ok({"rule_id": rid, "enabled": False})
+
+
+env = SkillEnv()
+env.add_device("node-a", name="Node A")
+env.add_device("node-b", name="Node B")
+env.add_entity("node-a", "temperature", "Temp", "sensor.numeric", ["sensor.numeric"], unit="C",
+               obs=25.0, des=25.0)
+env.add_entity("node-a", "relay0", "Relay", "actuator.relay", ["actuator.relay"], obs=False, des=False,
+               cmd="STATE_CONFIRMED", reliability="CONFIRMED")
+env.add_entity("node-b", "dimmer0", "Dimmer", "actuator.dimmer", ["actuator.dimmer"], obs=30, des=30,
+               cmd="STATE_CONFIRMED", reliability="CONFIRMED")
+
+# --- 1. Skill discovery ---
+check("SKILL: registry exposes 13 fixed skills", len(SKILLS) == 13)
+check("SKILL: all required skills present",
+      set(SKILLS.keys()) == {"list_devices", "list_entities", "get_entity_state", "get_entity_info",
+                             "set_relay", "set_dimmer", "list_rules", "get_rule", "create_rule",
+                             "update_rule", "delete_rule", "enable_rule", "disable_rule"})
+check("SKILL: set_relay requires CONTROL", SKILLS["set_relay"] == "CONTROL")
+check("SKILL: get_entity_state requires READ", SKILLS["get_entity_state"] == "READ")
+check("SKILL: create_rule requires RULE_WRITE", SKILLS["create_rule"] == "RULE_WRITE")
+check("SKILL: unknown skill -> SKILL_NOT_FOUND", env.execute("nope", {})["error"]["code"] == "SKILL_NOT_FOUND")
+
+# --- 2. Permissions ---
+READ = PERMS["READ"]; CONTROL = PERMS["CONTROL"]; RW = PERMS["RULE_WRITE"]
+r = env.execute("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True}, perm=READ)
+check("SKILL: set_relay with READ only -> PERMISSION_DENIED", r["error"]["code"] == "PERMISSION_DENIED")
+r = env.execute("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True}, perm=READ | CONTROL)
+check("SKILL: set_relay with READ|CONTROL succeeds", r["ok"] is True)
+r = env.execute("list_devices", {}, perm=CONTROL)
+check("SKILL: list_devices with CONTROL only -> PERMISSION_DENIED", r["error"]["code"] == "PERMISSION_DENIED")
+r = env.execute("create_rule", {"name": "x", "rule": {"trigger": {}}}, perm=READ)
+check("SKILL: create_rule with READ only -> PERMISSION_DENIED", r["error"]["code"] == "PERMISSION_DENIED")
+
+# --- 3. Input validation ---
+r = env.execute("set_dimmer", {"device_id": "node-b", "entity_id": "dimmer0", "level": 101})
+check("SKILL: set_dimmer level 101 -> INVALID_VALUE", r["error"]["code"] == "INVALID_VALUE")
+r = env.execute("set_dimmer", {"device_id": "node-b", "entity_id": "dimmer0", "level": -1})
+check("SKILL: set_dimmer level -1 -> INVALID_VALUE", r["error"]["code"] == "INVALID_VALUE")
+check("SKILL: create_rule empty name -> INVALID_VALUE",
+      env.execute("create_rule", {"name": "", "rule": {}})["error"]["code"] == "INVALID_VALUE")
+
+# --- 4. Entity lookup ---
+r = env.execute("get_entity_state", {"device_id": "node-a", "entity_id": "temperature"})
+check("SKILL: get_entity_state finds sensor", r["ok"] and r["data"]["observed"] == 25.0)
+check("SKILL: get_entity_state missing entity -> ENTITY_NOT_FOUND",
+      env.execute("get_entity_state", {"device_id": "node-a", "entity_id": "nope"})["error"]["code"] == "ENTITY_NOT_FOUND")
+
+# --- 5. State retrieval (observed/desired/status/reliability) ---
+state_env = SkillEnv()
+state_env.add_device("node-a")
+state_env.add_entity("node-a", "relay0", "Relay", "actuator.relay", ["actuator.relay"], obs=False, des=False,
+                     cmd="STATE_CONFIRMED", reliability="CONFIRMED")
+r = state_env.execute("get_entity_state", {"device_id": "node-a", "entity_id": "relay0"})
+check("SKILL: relay state has observed false", r["data"]["observed"] is False)
+check("SKILL: relay state has status STATE_CONFIRMED", r["data"]["status"] == "STATE_CONFIRMED")
+check("SKILL: relay state has reliability CONFIRMED", r["data"]["reliability"] == "CONFIRMED")
+check("SKILL: relay state has desired+observed present",
+      ("desired" in r["data"]) and ("observed" in r["data"]))
+
+# --- 6. Relay control ---
+r = env.execute("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True})
+check("SKILL: set_relay dispatches", r["ok"] and r["data"]["status"] == "WAITING_ACK")
+check("SKILL: set_relay marks desired true", env.find_entity("node-a", "relay0")["des"] is True)
+
+# --- 7. Dimmer control ---
+r = env.execute("set_dimmer", {"device_id": "node-b", "entity_id": "dimmer0", "level": 50})
+check("SKILL: set_dimmer dispatches 50", r["ok"] and r["data"]["requested"] == 50)
+check("SKILL: set_dimmer marks desired 50", env.find_entity("node-b", "dimmer0")["des"] == 50)
+
+# --- 8. Rule create ---
+res = env.execute("create_rule", {"name": "Hot room fan",
+                                  "rule": {"trigger": {"entity": {"device_id": "node-a", "entity_id": "temperature"},
+                                                       "operator": "GT", "threshold": 30},
+                                           "conditions": [],
+                                           "actions": [{"entity": {"device_id": "node-a", "entity_id": "relay0"},
+                                                        "action": "SET_BOOL", "value": True}]}})
+check("SKILL: create_rule activates", res["ok"] and res["data"]["activated"] is True)
+rid = res["data"]["rule_id"]
+check("SKILL: create_rule stored in rules", rid in env.rules)
+
+# --- 9. Rule get ---
+r = env.execute("get_rule", {"rule_id": rid})
+check("SKILL: get_rule returns trigger+actions",
+      r["ok"] and "trigger" in r["data"] and len(r["data"]["actions"]) == 1)
+
+# --- 10. Rule update ---
+r = env.execute("update_rule", {"rule_id": rid, "name": "Hot room fan v2",
+                                "rule": {"trigger": {"entity": {"device_id": "node-a", "entity_id": "temperature"},
+                                                     "operator": "GT", "threshold": 35},
+                                         "conditions": [],
+                                         "actions": [{"entity": {"device_id": "node-a", "entity_id": "relay0"},
+                                                      "action": "SET_BOOL", "value": False}]}})
+check("SKILL: update_rule bumps revision", r["ok"] and r["data"]["revision"] == 2)
+
+# rules list after create+update
+check("SKILL: list_rules reflects count", len(env.execute("list_rules", {})["data"]) == 1)
+
+# --- 11. Rule enable / disable ---
+r = env.execute("disable_rule", {"rule_id": rid})
+check("SKILL: disable_rule -> enabled false", r["ok"] and r["data"]["enabled"] is False)
+check("SKILL: disable_rule mirrored in store", env.rules[rid]["enabled"] is False)
+r = env.execute("enable_rule", {"rule_id": rid})
+check("SKILL: enable_rule -> enabled true", r["ok"] and r["data"]["enabled"] is True)
+
+# --- 12. Invalid capability ---
+r = env.execute("set_dimmer", {"device_id": "node-a", "entity_id": "relay0", "level": 50})
+check("SKILL: set_dimmer on relay -> INVALID_CAPABILITY", r["error"]["code"] == "INVALID_CAPABILITY")
+r = env.execute("set_relay", {"device_id": "node-b", "entity_id": "dimmer0", "value": True})
+check("SKILL: set_relay on dimmer -> INVALID_CAPABILITY", r["error"]["code"] == "INVALID_CAPABILITY")
+r = env.execute("create_rule", {"name": "Bad cap", "rule": {"trigger": {},
+                                                            "actions": [{"entity": {"device_id": "node-b", "entity_id": "dimmer0"},
+                                                                         "action": "SET_BOOL", "value": True}]}})
+check("SKILL: rule action incompatible capability -> RULE_INVALID", r["error"]["code"] == "RULE_INVALID")
+
+# --- 13. Invalid entity (in rule) ---
+r = env.execute("create_rule", {"name": "Bad ref", "rule": {"trigger": {"entity": {"device_id": "node-a", "entity_id": "ghost"},
+                                                                        "operator": "GT", "threshold": 1},
+                                                            "conditions": [], "actions": []}})
+check("SKILL: rule referencing nonexistent entity -> ENTITY_NOT_FOUND", r["error"]["code"] == "ENTITY_NOT_FOUND")
+
+# --- 14. Command failure (pending table full -> NO_SPACE) ---
+env2 = SkillEnv()
+env2.add_device("node-a")
+env2.add_entity("node-a", "relay0", "Relay", "actuator.relay", ["actuator.relay"], obs=False, des=False)
+env2.control = FakeControl(cap=1)
+env2.execute("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True})
+r = env2.execute("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": False})
+check("SKILL: pending full -> NO_SPACE command failure", r["error"]["code"] == "NO_SPACE")
+
+# --- 15. Permission denied (rule write) ---
+r = env.execute("delete_rule", {"rule_id": rid}, perm=READ | PERMS["RULE_READ"])
+check("SKILL: delete_rule without RULE_WRITE -> PERMISSION_DENIED", r["error"]["code"] == "PERMISSION_DENIED")
+
+# --- 16. Rule delete ---
+r = env.execute("delete_rule", {"rule_id": rid})
+check("SKILL: delete_rule removes rule", r["ok"] and r["data"]["deleted"] is True)
+check("SKILL: delete_rule removed from store", rid not in env.rules)
+
+# --- LLM-independent execution: future AI workflow (no LLM) ---
+wf = SkillEnv()
+wf.add_device("node-a")
+wf.add_device("node-b")
+wf.add_entity("node-a", "temperature", "Temp", "sensor.numeric", ["sensor.numeric"], unit="C", obs=22.0, des=22.0)
+wf.add_entity("node-b", "relay0", "Relay", "actuator.relay", ["actuator.relay"], obs=False, des=False,
+              cmd="STATE_CONFIRMED", reliability="CONFIRMED")
+
+step1 = wf.execute("list_entities", {})
+step2 = wf.execute("get_entity_state", {"device_id": "node-a", "entity_id": "temperature"})
+step3 = wf.execute("create_rule", {"name": "Warm fan", "rule": {
+    "trigger": {"entity": {"device_id": "node-a", "entity_id": "temperature"}, "operator": "GT", "threshold": 28},
+    "conditions": [], "actions": [{"entity": {"device_id": "node-b", "entity_id": "relay0"}, "action": "SET_BOOL", "value": True}]}})
+wf_rid = step3["data"]["rule_id"]
+step4 = wf.execute("enable_rule", {"rule_id": wf_rid})
+step5 = wf.execute("set_relay", {"device_id": "node-b", "entity_id": "relay0", "value": True})
+step6 = wf.execute("get_entity_state", {"device_id": "node-b", "entity_id": "relay0"})
+wf_ok = (step1["ok"] and step2["ok"] and step3["ok"] and step4["ok"] and step5["ok"] and step6["ok"])
+check("SKILL: AI workflow list_entities->state->create->enable->set->observe (no LLM)", wf_ok)
+check("SKILL: workflow observe reflects desired", wf_ok and step6["data"]["desired"] is True and
+      step6["data"]["status"] == "WAITING_ACK")
+check("SKILL: discovery lists both devices",
+      len(wf.execute("list_devices", {})["data"]) == 2 and
+      len(wf.execute("list_entities", {})["data"]) == 2)
+
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
 raise SystemExit(1 if FAIL else 0)

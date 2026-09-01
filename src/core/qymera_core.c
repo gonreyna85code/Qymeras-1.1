@@ -49,6 +49,7 @@ struct qymera_core_s {
     qymera_ai_t *ai;
     
     qymera_control_context_t control;
+    qymera_skill_context_t skill;
     
     qymera_device_t *devices_storage;
     qymera_entity_t *entities_storage;
@@ -185,8 +186,13 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ACK, udp_on_ack, NULL);
     qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ENTITY_STATE, udp_on_entity_state, NULL);
     qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ENTITY_SAMPLE, udp_on_entity_state, NULL);
-    
-    qymera_log_system(core->log, "core", "Core initialized, device UID: %08X", core->config.general.device_uid);
+
+    /* Skill layer: deterministic, bounded surface over the runtime above. */
+    qymera_skill_context_init(&core->skill, core->registry, core->rule_engine,
+                              &core->control, core->storage, core->log);
+
+    qymera_log_system(core->log, "core", "Core initialized, device UID: %08X, %u skills",
+                      core->config.general.device_uid, (unsigned)qymera_skill_registry_count());
     
     return QYMERA_OK;
 }
@@ -295,6 +301,10 @@ qymera_ai_t *qymera_core_get_ai(qymera_core_t *core) {
 
 qymera_control_context_t *qymera_core_get_control(qymera_core_t *core) {
     return core ? &core->control : NULL;
+}
+
+qymera_skill_context_t *qymera_core_get_skills(qymera_core_t *core) {
+    return core ? &core->skill : NULL;
 }
 
 void qymera_core_shutdown(qymera_core_t *core) {
