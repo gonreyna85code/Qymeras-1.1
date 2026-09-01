@@ -13,6 +13,12 @@ a human UI, and an automation all look identical here.
 Implementation: `src/ai/qymera_skill.c` / `src/ai/qymera_skill.h`. Wired into the
 runtime in `src/core/qymera_core.c` via `qymera_core_get_skills()`.
 
+The **LLM Adapter** (`src/ai/qymera_llm_adapter.c`, documented in
+`docs/llm_adapter.md`) is the only provider-facing boundary above this layer. It
+derives its tool catalog from the Skill registry, propagates an explicit
+permission mask, and dispatches every tool call strictly through
+`qymera_skill_execute()` — it never weakens any validation here.
+
 ---
 
 ## Skill model

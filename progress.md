@@ -576,3 +576,129 @@ Attach an LLM/adapter shim mapping provider tool calls onto
 device, still routed through the hardened Skill layer so all validation,
 permission, JSON-validity, and transactional semantics remain centralized and
 deterministic.
+
+---
+
+## Phase 3C: LLM Adapter over the hardened Skill API (2026-08-31)
+
+### Objective
+
+Add the first **LLM adapter boundary** for Qymera Dashboard: a small, isolated,
+provider-agnostic module that sits strictly ABOVE the deterministic Skill API and
+dispatches bounded structured tool calls only through `qymera_skill_execute()`.
+**No LLM was attached** — everything is verified with a deterministic mock
+provider.
+
+### BRANCH / BASE
+
+- Branch `feature/ai-experiments`; base Phase 3B commit `9780d12`.
+
+### LLM ADAPTER
+
+- New `src/ai/qymera_llm_adapter.h` / `.c`: `qymera_llm_adapter_init`,
+  `qymera_llm_adapter_process` (bounded turn, tool-budget loop),
+  `qymera_llm_adapter_execute_tool` (single validated structured tool call).
+- The adapter never accesses GPIO / UDP / registry internals / rule-engine
+  internals / storage directly; every action goes through the Skill layer.
+
+### PROVIDER INTERFACE
+
+- Provider-agnostic `qymera_llm_provider_t` vtable with one bounded callback
+  (`complete` → a `qymera_llm_message_t`). No Ollama/OpenAI HTTP, no SDK, no
+  provider-specific syntax. No provider-specific logic leaks into skills.
+- Distinguishes assistant text / tool call / malformed / provider error /
+  timeout — never assumes a response is a tool call.
+
+### SKILL CATALOG
+
+- Tool catalog **derived** from the Skill registry
+  (`qymera_skill_registry_count/get` via `qymera_llm_adapter_tool_*`); no second,
+  manually-duplicated tool list. 13 tools, no duplicates. Each tool carries
+  name / version / description / schema_id / permissions from the registry.
+
+### TOOL CALL VALIDATION
+
+- Envelope validation before the runtime: tool name present, arguments present,
+  structurally valid, skill exists, permission mask. Invalid output → classified
+  `tool_error` and never reaches the runtime, serialized through the stable
+  Skill envelope (no second error taxonomy).
+- Structured-only arguments via a bounded typed carrier or a strict, bounded
+  flat-field JSON extractor (`qymera_llm_args_from_json`). No NL parsing.
+
+### PERMISSION PROPAGATION
+
+- Explicit permission mask per call/turn; **never silent grant-all**. Verified
+  against each skill's required bit before dispatch. Policy stays outside
+  Skills.
+
+### TOOL BUDGET / RECURSION PROTECTION
+
+- `QYMERA_MAX_TOOL_CALLS_PER_TURN` = **8** (canonical 6-step workflow + headroom,
+  ESP32-appropriate). `process()` turn is capped → no unbounded tool→LLM→tool
+  recursion; exceeding → `TOOL_CALL_LIMIT`.
+
+### RULE WORKFLOW / RULE SAFETY
+
+- 6-step structured workflow (list_entities → get_entity_state → create_rule →
+  enable_rule → set_relay → observe) executed entirely through the Skill layer
+  with no direct hardware/registry/rule-engine access. Rules still pass Skill
+  validation → Rule Engine validation → compile → persist → activate; the
+  adapter adds no bypass and weakens nothing.
+
+### PROVIDER ERROR ISOLATION
+
+- Provider/LLM unavailability does not affect the deterministic runtime; the
+  adapter is optional and passive.
+
+### NO DIRECT HARDWARE / NO DIRECT UDP ACCESS
+
+- The adapter only calls `qymera_skill_execute()`. Constraint satisfied by
+  construction and verified by tests.
+
+### DETERMINISTIC MOCK PROVIDER
+
+- Compiled-in `qymera_llm_mock_provider_init` drives the canonical workflow; a
+  deterministic mock provider in the host tests exercises all message kinds,
+  budgets, permissions, and the full workflow — no real LLM required.
+
+### HOST TESTS
+
+- `python tests/host_sanity.py`: **226/226** (144 P3A + 53 P3B + **29 P3C**).
+  Coverage: catalog (13, no dupes, registry-derived), execution (valid/unknown/
+  missing-args/permission), budgets (1 / N / N+1→limit), provider behavior
+  (text/tool/malformed/error/timeout), permission propagation (READ/CONTROL/
+  RULE_READ/RULE_WRITE), full 6-step workflow.
+
+### ESP32 BUILD / RAM / FLASH
+
+- `pio run -e esp32_devkit`: **SUCCESS**, no new warnings.
+- Adapter module object-measured (`size -A` on `qymera_llm_adapter.c.o`):
+  - **RAM: 0 bytes static** (small heap handle allocated once at init).
+  - **FLASH: ~3,378 bytes** incremental.
+- Firmware totals (PIO artifact, unchanged due to known ELF-symbol limitation):
+  RAM 21116 B, Flash 234165 B.
+
+### FILES
+
+- `src/ai/qymera_llm_adapter.h` / `.c` — new adapter module + mock provider.
+- `tests/host_sanity.py` — +29 Phase 3C adapter tests.
+- `docs/llm_adapter.md` — new (architecture, provider boundary, lifecycle,
+  permissions, budget, error handling, memory bounds, example workflow,
+  system-prompt contract).
+- `docs/skills.md` — reference to the adapter boundary.
+
+### KNOWN LIMITATIONS
+
+- No real provider transport yet (Ollama/OpenAI HTTP intentionally deferred).
+- JSON-form structured arguments cover only the flat fields; rule bodies use the
+  native typed carrier.
+- Adapter not yet wired to a request path (no web/HTTP layer exists to host it);
+  it is a self-contained, optional boundary.
+- Permissions remain an authorization boundary only; no authentication.
+
+### NEXT PHASE
+
+Add one concrete provider adapter (e.g. a bounded Ollama/OpenAI-compatible
+transport against `qymera_llm_provider_t`) plus the request path (HTTP/UI) that
+hosts an adapter instance — mapping provider tool calls onto
+`qymera_skill_execute` with the existing permission/budget/recursion guards.

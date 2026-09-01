@@ -1238,6 +1238,215 @@ check("P3B PERSIST: create/update/disable/delete all recorded",
 check("P3B PERSIST: failed ops never touch the write-ahead log",
       sum(1 for x in b7.persist_log if x[0] == "update") == 1)
 
+# ==========================================================================
+# Phase 3C: LLM Adapter over the hardened Skill API
+#
+# Mirrors src/ai/qymera_llm_adapter.c. The adapter sits strictly ABOVE the Skill
+# layer: it validates a bounded structured tool call, propagates an explicit
+# permission mask, and dispatches ONLY through env.execute() (the reference for
+# qymera_skill_execute). No direct registry/rule-engine/GPIO/UDP access here.
+# No natural-language parsing. Each turn is bounded by MAX_TOOL_CALLS.
+# ==========================================================================
+
+class LLMAdapter:
+    MAX_TOOL_CALLS = 8
+    REQ_ENTITY = {"get_entity_state", "get_entity_info", "set_relay", "set_dimmer"}
+    REQ_RULE_ID = {"get_rule", "update_rule", "delete_rule", "enable_rule", "disable_rule"}
+    REQ_NAME = {"create_rule"}
+
+    def __init__(self, env):
+        self.env = env
+
+    # Tool catalog DERIVED from the skill registry (single source of truth).
+    def tool_catalog(self):
+        return [(n, PERMS[self.env_perm(n)]) for n in sorted(SKILLS)]
+
+    def env_perm(self, name):
+        return SKILLS[name]
+
+    def execute_tool(self, name, args=None, perm=0):
+        """Envelope validation FIRST; never reaches the runtime on failure."""
+        if name not in SKILLS:
+            return ("UNKNOWN", _Err("SKILL_NOT_FOUND", "unknown skill / tool"))
+        req = PERMS[SKILLS[name]]
+        if (perm & req) != req:                      # no silent grant-all
+            return ("PERMISSION", _Err("PERMISSION_DENIED", "insufficient permission for this skill"))
+        args = args or {}
+        if name in self.REQ_ENTITY and not (args.get("device_id") and args.get("entity_id")):
+            return ("MISSING_ARGS", _Err("INVALID_INPUT", "missing required arguments (device_id/entity_id)"))
+        if name in self.REQ_RULE_ID and not args.get("rule_id"):
+            return ("MISSING_ARGS", _Err("INVALID_INPUT", "missing required argument (rule_id)"))
+        if name in self.REQ_NAME and not args.get("name"):
+            return ("MISSING_ARGS", _Err("INVALID_INPUT", "missing required argument (name)"))
+        res = self.env.execute(name, args, perm=perm)
+        return ("OK", res)
+
+    def process(self, provider, perm=0, max_calls=None):
+        budget = min(max_calls or self.MAX_TOOL_CALLS, self.MAX_TOOL_CALLS)
+        result = {"ended": "text", "tool_calls": 0, "steps": [], "final": None}
+        while True:
+            msg = provider.next()
+            kind = msg["kind"]
+            if kind == "tool_call":
+                if result["tool_calls"] >= budget:
+                    result["ended"] = "toollimit"
+                    break
+                terr, res = self.execute_tool(msg["name"], msg.get("args"), perm)
+                result["tool_calls"] += 1
+                result["steps"].append((msg["name"], terr, res))
+                continue
+            # terminal: text / malformed / error / timeout
+            result["ended"] = {"text": "text", "malformed": "malformed",
+                               "error": "provider_error", "timeout": "provider_error"}[kind]
+            result["final"] = msg
+            break
+        return result
+
+
+class MockProvider:
+    """Deterministic scripted provider (no real LLM): exact reference to the
+    C qymera_llm_mock_provider + tests exercising all message kinds."""
+    def __init__(self, steps):
+        self.steps = list(steps)
+        self.i = 0
+
+    def next(self):
+        if self.i >= len(self.steps):
+            return {"kind": "text", "text": "[done]"}
+        s = self.steps[self.i]
+        self.i += 1
+        return s
+
+
+# -- Tool catalog derived from registry -------------------------------------
+envA = LLMAdapter(SkillEnv())
+cat = envA.tool_catalog()
+check("P3C CATALOG: 13 tools", len(cat) == 13)
+check("P3C CATALOG: no duplicate tool names", len(set(n for n, _ in cat)) == 13)
+check("P3C CATALOG: tool set matches skill registry",
+      {n for n, _ in cat} == set(SKILLS.keys()))
+check("P3C CATALOG: each tool carries its permission requirement",
+      all(p in (1, 2, 4, 8) for _, p in cat))
+check("P3C CATALOG: control tools carry CONTROL bit",
+      all(p == PERMS["CONTROL"] for n, p in cat if n in ("set_relay", "set_dimmer")))
+
+# -- Tool execution: valid / unknown / invalid-args / permission -------------
+w = SkillEnv()
+w.add_device("node-a")
+w.add_entity("node-a", "relay0", "Relay0", "actuator.relay", ["actuator.relay"], obs=False)
+adp = LLMAdapter(w)
+terr, res = adp.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                             perm=PERMS["READ"] | PERMS["CONTROL"])
+check("P3C EXEC: valid tool -> OK + skill envelope", terr == "OK" and res["ok"] is True)
+
+terr, res = adp.execute_tool("no_such_tool", {}, perm=0xFFFF)
+check("P3C EXEC: unknown tool -> UNKNOWN + SKILL_NOT_FOUND",
+      terr == "UNKNOWN" and res["error"]["code"] == "SKILL_NOT_FOUND")
+
+terr, res = adp.execute_tool("set_relay", {"device_id": "node-a"}, perm=PERMS["READ"] | PERMS["CONTROL"])
+check("P3C EXEC: missing args -> MISSING_ARGS + INVALID_INPUT",
+      terr == "MISSING_ARGS" and res["error"]["code"] == "INVALID_INPUT")
+
+terr, res = adp.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                             perm=PERMS["READ"])
+check("P3C EXEC: permission denied -> PERMISSION + PERMISSION_DENIED",
+      terr == "PERMISSION" and res["error"]["code"] == "PERMISSION_DENIED")
+
+terr, res = adp.execute_tool("list_entities", {}, perm=PERMS["READ"])
+check("P3C EXEC: read skill with READ perm -> OK", terr == "OK" and res["ok"] is True)
+
+# -- Budgets -----------------------------------------------------------------
+w2 = SkillEnv()
+w2.add_device("node-a")
+w2.add_entity("node-a", "relay0", "Relay0", "actuator.relay", ["actuator.relay"], obs=False)
+adp2 = LLMAdapter(w2)
+full_perm = 0xFF
+steps8 = [{"kind": "tool_call", "name": "list_devices", "args": {}}] * 8
+steps10 = steps8 + [{"kind": "tool_call", "name": "list_devices", "args": {}}] * 2
+
+r = adp2.process(MockProvider([{"kind": "tool_call", "name": "list_devices", "args": {}}]),
+                 perm=full_perm, max_calls=1)
+check("P3C BUDGET: 1 tool call with budget 1", r["tool_calls"] == 1 and r["ended"] == "text")
+
+r = adp2.process(MockProvider(steps8), perm=full_perm, max_calls=8)
+check("P3C BUDGET: N calls -> text at end (all ran)", r["tool_calls"] == 8 and r["ended"] == "text")
+
+r = adp2.process(MockProvider(steps10), perm=full_perm, max_calls=8)
+check("P3C BUDGET: N+1 -> TOOL_CALL_LIMIT at 8", r["tool_calls"] == 8 and r["ended"] == "toollimit")
+
+r = adp2.process(MockProvider(steps8), perm=full_perm, max_calls=4)
+check("P3C BUDGET: N > max -> limit at max", r["tool_calls"] == 4 and r["ended"] == "toollimit")
+
+# -- Provider behavior: never assume a tool call -----------------------------
+r = adp2.process(MockProvider([{"kind": "text", "text": "hello"}]), perm=full_perm, max_calls=4)
+check("P3C PROVIDER: assistant text -> turn ends text", r["ended"] == "text" and r["tool_calls"] == 0)
+
+r = adp2.process(MockProvider([{"kind": "malformed", "text": "???"}]), perm=full_perm, max_calls=4)
+check("P3C PROVIDER: malformed -> turn ends malformed", r["ended"] == "malformed" and r["tool_calls"] == 0)
+
+r = adp2.process(MockProvider([{"kind": "error", "text": "boom"}]), perm=full_perm, max_calls=4)
+check("P3C PROVIDER: provider error -> turn ends provider_error", r["ended"] == "provider_error")
+
+r = adp2.process(MockProvider([{"kind": "timeout", "text": "late"}]), perm=full_perm, max_calls=4)
+check("P3C PROVIDER: timeout -> turn ends provider_error", r["ended"] == "provider_error")
+
+r = adp2.process(MockProvider([{"kind": "text", "text": "pre"}, {"kind": "tool_call", "name": "list_devices", "args": {}}]),
+                 perm=full_perm, max_calls=4)
+check("P3C PROVIDER: leading assistant text stops the turn (no tool ran)",
+      r["tool_calls"] == 0 and r["ended"] == "text")
+
+r = adp2.process(MockProvider([{"kind": "tool_call", "name": "list_devices", "args": {}}, {"kind": "text", "text": "post"}]),
+                 perm=full_perm, max_calls=4)
+check("P3C PROVIDER: tool then text -> 1 tool ran then text end",
+      r["tool_calls"] == 1 and r["ended"] == "text")
+
+# -- Permission propagation --------------------------------------------------
+adpP = LLMAdapter(w)
+terr, _ = adpP.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                            perm=PERMS["READ"])
+check("P3C PERM: READ-only cannot CONTROL", terr == "PERMISSION")
+terr, _ = adpP.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                            perm=PERMS["CONTROL"])
+check("P3C PERM: CONTROL can set_relay", terr == "OK")
+terr, _ = adpP.execute_tool("create_rule", {"name": "r"}, perm=PERMS["RULE_READ"])
+check("P3C PERM: RULE_READ cannot RULE_WRITE", terr == "PERMISSION")
+terr, _ = adpP.execute_tool("create_rule", {"name": "r", "rule": {
+    "trigger": {"entity": {"device_id": "node-a", "entity_id": "relay0"}, "operator": "EQ", "threshold": 1},
+    "conditions": [], "actions": []}}, perm=PERMS["RULE_READ"] | PERMS["RULE_WRITE"])
+check("P3C PERM: RULE_WRITE can create_rule", terr == "OK")
+terr, _ = adpP.execute_tool("list_entities", {}, perm=PERMS["READ"])
+check("P3C PERM: READ can list_entities", terr == "OK")
+
+# -- Full structured workflow (6 steps, no LLM) -------------------------------
+fw = SkillEnv()
+fw.add_device("node-a")
+fw.add_entity("node-a", "temperature", "Temp", "sensor.numeric", ["sensor.numeric"], obs=30.0)
+fw.add_entity("node-a", "garden_relay", "Garden Relay", "actuator.relay", ["actuator.relay"], obs=False)
+adpW = LLMAdapter(fw)
+trig = {"entity": {"device_id": "node-a", "entity_id": "temperature"}, "operator": "GT", "threshold": 28}
+act = [{"entity": {"device_id": "node-a", "entity_id": "garden_relay"}, "action": "SET_BOOL", "value": True}]
+script = [
+    {"kind": "tool_call", "name": "list_entities", "args": {}},
+    {"kind": "tool_call", "name": "get_entity_state", "args": {"device_id": "node-a", "entity_id": "temperature"}},
+    {"kind": "tool_call", "name": "create_rule", "args": {"name": "Garden fan", "rule": {"trigger": trig, "conditions": [], "actions": act}}},
+    {"kind": "tool_call", "name": "enable_rule", "args": {"rule_id": "rule_1"}},
+    {"kind": "tool_call", "name": "set_relay", "args": {"device_id": "node-a", "entity_id": "garden_relay", "value": True}},
+    {"kind": "tool_call", "name": "get_entity_state", "args": {"device_id": "node-a", "entity_id": "garden_relay"}},
+    {"kind": "text", "text": "Workflow complete"},
+]
+r = adpW.process(MockProvider(script), perm=0xFF, max_calls=8)
+steps = r["steps"]
+all_ok = all(t == "OK" for _, t, _ in steps)
+check("P3C WORKFLOW: all 6 steps executed through the Skill layer",
+      len(steps) == 6 and all_ok and r["ended"] == "text")
+check("P3C WORKFLOW: create_rule produced an active rule", "rule_1" in fw.rules and fw.rules["rule_1"]["enabled"] is True)
+step_names = [n for n, _, _ in steps]
+check("P3C WORKFLOW: step order is discover->inspect->build->create->enable->act->observe",
+      step_names == ["list_entities", "get_entity_state", "create_rule", "enable_rule", "set_relay", "get_entity_state"])
+last = steps[-1][2]
+check("P3C WORKFLOW: final inspect reflects requested actuator state",
+      last["ok"] and last["data"]["desired"] is True)
+
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
 raise SystemExit(1 if FAIL else 0)
