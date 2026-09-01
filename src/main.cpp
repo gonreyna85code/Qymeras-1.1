@@ -8,6 +8,7 @@
 #include "qymera_registry.h"
 #include "qymera_rule.h"
 #include "qymera_event_bus.h"
+#include "qymera_http_api.h"
 #include <string.h>
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
@@ -177,7 +178,14 @@ int main(void) {
         ap_cfg.channel = 1;
         qymera_wifi_ap_start(&ap_cfg);
     }
-    
+
+    qymera_err_t herr = qymera_http_api_init(core);
+    if (herr == QYMERA_OK) {
+        qymera_log_info(log, "main", "Dashboard HTTP API started on port 80");
+    } else {
+        qymera_log_error(log, "main", "Dashboard HTTP API init failed: %d", herr);
+    }
+
     qymera_log_info(log, "main", "Entering main loop");
     
     while (1) {

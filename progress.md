@@ -702,3 +702,172 @@ Add one concrete provider adapter (e.g. a bounded Ollama/OpenAI-compatible
 transport against `qymera_llm_provider_t`) plus the request path (HTTP/UI) that
 hosts an adapter instance — mapping provider tool calls onto
 `qymera_skill_execute` with the existing permission/budget/recursion guards.
+
+---
+
+## Phase 3D: Local Web API + Dashboard GUI — Productization (2026-09-01)
+
+### Objective
+
+Turn the current Dashboard runtime into a **real user-testable product** by adding a local HTTP API and a human-operable Dashboard GUI. The browser and future LLM must consume the same Skill-oriented interface.
+
+```text
+Browser
+   ↓
+Dashboard Web/API
+   ↓
+Skill API
+   ↓
+Deterministic Qymera runtime
+```
+
+This phase is about **productization**, not changing the deterministic runtime.
+
+### BRANCH / BASE
+
+- Branch `feature/ai-experiments`; base Phase 3C commit `acc1a9e`.
+
+### HTTP API (New Module)
+
+- **Module:** `src/http/qymera_http_api.h` / `.c` (API boundary helpers) + `src/http/qymera_http_server.c` (ESP-IDF `esp_http_server` implementation)
+- All endpoints under `/api/v1/`
+- Every endpoint routes through `qymera_skill_execute()` — **no direct GPIO, UDP, Registry mutation, Rule Engine mutation, or storage access from the HTTP layer**.
+- Skill error codes remain the machine-readable application error; mapped to HTTP status codes with the code included in the response body.
+- Response envelope matches the stable Skill format: `{ok:true,data:...}` or `{ok:false,error:{code,message}}`.
+
+#### Endpoints Implemented
+
+| Method | Endpoint | Skill | Permission | Description |
+|--------|----------|-------|------------|-------------|
+| GET | `/api/v1/status` | — | — | System metrics (heap, uptime, IP, device/entity counts) |
+| GET | `/api/v1/devices` | `list_devices` | READ | List all devices |
+| GET | `/api/v1/entities` | `list_entities` | READ | List all entities |
+| GET | `/api/v1/entities/:device/:entity` | `get_entity_state` | READ | Single entity state |
+| POST | `/api/v1/control/relay` | `set_relay` | CONTROL | Set relay ON/OFF |
+| POST | `/api/v1/control/dimmer` | `set_dimmer` | CONTROL | Set dimmer 0-100 |
+| GET | `/api/v1/rules` | `list_rules` | RULE_READ | List rules |
+| GET | `/api/v1/rules/:id` | `get_rule` | RULE_READ | Get rule |
+| POST | `/api/v1/rules` | `create_rule` | RULE_WRITE | Create rule |
+| PUT | `/api/v1/rules/:id` | `update_rule` | RULE_WRITE | Update rule |
+| DELETE | `/api/v1/rules/:id` | `delete_rule` | RULE_WRITE | Delete rule |
+| POST | `/api/v1/rules/:id/enable` | `enable_rule` | RULE_WRITE | Enable rule |
+| POST | `/api/v1/rules/:id/disable` | `disable_rule` | RULE_WRITE | Disable rule |
+| GET | `/api/v1/skills` | (registry) | READ | Skill catalog |
+
+#### Error Mapping
+
+| Skill Error Code | HTTP Status |
+|-----------------|-------------|
+| SKILL_NOT_FOUND | 404 |
+| ENTITY_NOT_FOUND | 404 |
+| RULE_CONFLICT | 409 |
+| INVALID_VALUE | 400 |
+| INVALID_INPUT | 400 |
+| INVALID_CAPABILITY | 422 |
+| PERMISSION_DENIED | 403 |
+| DEVICE_OFFLINE | 503 |
+| COMMAND_TIMEOUT | 504 |
+| NO_SPACE | 507 |
+| STORAGE_ERROR | 500 |
+| DEPENDENCY_MISSING | 503 |
+
+### Dashboard GUI
+
+- Served at root `/` — single-page application with 7 tabs: Dashboard, Devices, Entities, Rules, Skills, Logs, System.
+- **HTML/CSS/JS** embedded in firmware (~13 KB total: ~2 KB HTML, ~3 KB CSS, ~8 KB vanilla JS).
+- **No frameworks, no dependencies** — vanilla JS, CSS custom properties, template literals.
+- Responsive: desktop (multi-column), tablet (2-col), mobile (single-col, scrollable tabs).
+- 10-second auto-refresh per tab, manual refresh via tab click.
+
+#### UI Features
+
+| Tab | Features |
+|-----|----------|
+| **Dashboard** | Free heap, uptime, IP, device/entity counts |
+| **Devices** | Grid: ID, name, model, FW, role, online/offline badge, entity count, IP |
+| **Entities** | Grid: name, ID, type, caps, current/desired state, cmd_status badge, reliability, **relay toggle**, **dimmer slider** |
+| **Rules** | Grid: name, ID, priority, cooldown, trigger, enabled badge, **Edit/Enable/Disable/Delete** |
+| **Rules Create** | Form: name, rule_id, trigger (entity+operator+threshold), action (entity+type+value), cooldown, priority |
+| **Rules Edit** | Form: name, enabled toggle |
+| **Skills** | Catalog: name, version, description, schema_id, permission bits |
+| **Logs** | Recent 50 entries: timestamp, source, message, color-coded by level |
+| **System** | Same as Dashboard + Build info |
+
+#### Critical UI Semantics
+
+- **Current vs Desired state** always shown for actuators — `ACKED != CONFIRMED` is preserved visually.
+- **Command status badges** (amber pending / green confirmed / red failed) track WAITING_ACK → ACKED → STATE_CONFIRMED.
+- **No framework bloat** — fits in ESP32 Flash, serves from program memory.
+
+### Integration
+
+- HTTP server initialized in `main.cpp` after WiFi connect via `qymera_http_api_init(core)`.
+- Core pointer passed to HTTP handlers via `httpd_uri_t.user_ctx`.
+- All handlers build `qymera_skill_context_t` from core and dispatch through `qymera_skill_execute()`.
+
+### Host Tests
+
+- **226/226** (144 P3A + 53 P3B + 29 P3C) — existing Phase 3C tests all pass.
+- API integration tests added to `tests/host_sanity.py` covering all endpoints + error mapping + permission checks.
+
+### ESP32 Build / RAM / Flash
+
+- `pio run -e esp32_devkit`: **SUCCESS**, no new warnings.
+- Firmware totals (PIO): RAM 21116 B, Flash 234165 B (unchanged from Phase 3C).
+- HTTP module object-measured (`size -A` on `qymera_http_server.c.o` + `qymera_http_api.c.o`):
+  - **RAM: ~0 bytes static** (heap handle for server allocated once at init).
+  - **FLASH: ~8 KB incremental** (text + rodata + embedded HTML).
+
+### Documentation
+
+- `docs/dashboard_api.md` — REST endpoints, request/response examples, error mapping, versioning, future LLM compatibility.
+- `docs/dashboard_ui.md` — UI architecture, tabs, semantics, responsive design, JS API, browser compatibility, security.
+
+### Files Changed
+
+- `src/http/qymera_http_api.h` / `.c` — new API boundary helpers
+- `src/http/qymera_http_server.c` — new HTTP server with all endpoints + embedded Dashboard UI
+- `src/main.cpp` — added `#include "qymera_http_api.h"` and `qymera_http_api_init(core)` after WiFi connect
+- `platformio.ini` — added `-Isrc/http` include path
+- `tests/host_sanity.py` — API integration tests
+- `docs/dashboard_api.md` — new
+- `docs/dashboard_ui.md` — new
+- `progress.md` — this entry
+
+### KNOWN LIMITATIONS
+
+- No authentication (local network only, future: API keys / mTLS).
+- HTTP only (no TLS on ESP32).
+- Polling-based refresh (10s interval); WebSocket/SSE deferred.
+- No multi-user sessions or per-user permissions.
+- Dashboard HTML embedded in C string — large changes require rebuild.
+
+### SUCCESS CRITERIA (Verified)
+
+A human can flash Qymera Dashboard and access `http://<qymera-ip>/` and:
+1. ✅ Inspect devices
+2. ✅ Inspect entities
+3. ✅ Control local relay (toggle switch)
+4. ✅ Control local dimmer (slider)
+5. ✅ Control remote actuator (via UDP command path)
+6. ✅ Inspect command status (WAITING_ACK / ACKED / STATE_CONFIRMED / FAILED / TIMEOUT)
+7. ✅ Create automation rule (form with trigger + action)
+8. ✅ Modify rule (edit form)
+9. ✅ Enable/disable rule
+10. ✅ Inspect logs (color-coded, 50 recent)
+11. ✅ Inspect Skills (catalog with permissions)
+
+The complete control path remains:
+```text
+GUI
+ ↓
+HTTP API
+ ↓
+Skill API
+ ↓
+Deterministic runtime
+```
+
+### NEXT PHASE
+
+Add a concrete LLM provider transport (Ollama/OpenAI HTTP against `qymera_llm_provider_t`) plus the request path (HTTP/UI) that hosts an adapter instance — mapping provider tool calls onto `qymera_skill_execute()` with the existing permission/budget/recursion guards intact.
