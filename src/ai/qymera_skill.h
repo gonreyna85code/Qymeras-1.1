@@ -36,6 +36,22 @@ extern "C" {
 #define QYMERA_SKILL_ERROR_CODE_LEN  32
 #define QYMERA_SKILL_MESSAGE_LEN     160
 
+/* Stable machine-readable error codes (never change between releases). */
+#define QYMERA_SKILL_ERR_SKILL_NOT_FOUND    "SKILL_NOT_FOUND"
+#define QYMERA_SKILL_ERR_PERMISSION_DENIED  "PERMISSION_DENIED"
+#define QYMERA_SKILL_ERR_ENTITY_NOT_FOUND   "ENTITY_NOT_FOUND"
+#define QYMERA_SKILL_ERR_INVALID_CAPABILITY "INVALID_CAPABILITY"
+#define QYMERA_SKILL_ERR_INVALID_VALUE      "INVALID_VALUE"
+#define QYMERA_SKILL_ERR_INVALID_INPUT      "INVALID_INPUT"
+#define QYMERA_SKILL_ERR_RULE_INVALID       "RULE_INVALID"
+#define QYMERA_SKILL_ERR_RULE_CONFLICT      "RULE_CONFLICT"
+#define QYMERA_SKILL_ERR_NO_SPACE           "NO_SPACE"
+#define QYMERA_SKILL_ERR_STORAGE_ERROR      "STORAGE_ERROR"
+#define QYMERA_SKILL_ERR_OUTPUT_TOO_LARGE   "OUTPUT_TOO_LARGE"
+#define QYMERA_SKILL_ERR_DEVICE_OFFLINE     "DEVICE_OFFLINE"
+#define QYMERA_SKILL_ERR_COMMAND_TIMEOUT    "COMMAND_TIMEOUT"
+#define QYMERA_SKILL_ERR_DEPENDENCY_MISSING "DEPENDENCY_MISSING"
+
 /* =========================
  * Permission model (authorization boundary, not a security system)
  * ========================= */
@@ -106,15 +122,23 @@ typedef struct {
 /* =========================
  * Skill output / result model
  *
- * Always this shape: { "ok": bool, "data" | "error": {...} }.
- * Never arbitrary strings. `data` is a bounded JSON fragment.
+ * The builder guarantees the serialized form is always one of two stable
+ * envelopes (never malformed, never truncated JSON):
+ *
+ *   { "ok": true,  "data": <bounded valid JSON fragment> }
+ *   { "ok": false, "error": { "code": "...", "message": "...", "details": <...> } }
+ *
+ * On success `data` holds exactly one valid JSON value (object or array). Every
+ * string inserted into `data` is JSON-escaped. If the fragment would exceed
+ * QYMERA_SKILL_OUTPUT_SIZE the skill returns `OUTPUT_TOO_LARGE` (ok=false) and
+ * leaves `data` empty — it never returns truncated/malformed JSON.
  * ========================= */
 typedef struct {
     bool ok;
-    bool truncated;                        /* data was capped at buffer size */
+    bool truncated;                        /* internal: set on overflow; resolved to OUTPUT_TOO_LARGE */
     char error_code[QYMERA_SKILL_ERROR_CODE_LEN]; /* machine-stable code */
     char message[QYMERA_SKILL_MESSAGE_LEN];       /* human-readable detail */
-    char data[QYMERA_SKILL_OUTPUT_SIZE];          /* bounded JSON on success */
+    char data[QYMERA_SKILL_OUTPUT_SIZE];          /* exactly one valid JSON value on success, else empty */
     size_t data_len;
 } qymera_skill_output_t;
 
@@ -141,7 +165,10 @@ qymera_err_t qymera_skill_context_init(qymera_skill_context_t *ctx,
                                        qymera_storage_t *storage,
                                        qymera_log_t *log);
 
-/* Bounded registry discovery (number of fixed skills + entry by index). */
+/* Bounded registry discovery. registry_get returns the fixed skill id for a
+ * valid index, and (qymera_skill_id_t)-1 for an out-of-range index or NULL
+ * entry pointer (it never reports a real skill for an invalid index). lookup
+ * returns (qymera_skill_id_t)-1 when the name is unknown or NULL. */
 size_t qymera_skill_registry_count(void);
 qymera_skill_id_t qymera_skill_registry_get(size_t idx, const qymera_skill_entry_t **entry);
 qymera_skill_id_t qymera_skill_lookup(const char *skill_name);

@@ -463,3 +463,116 @@ Attach an LLM/adapter shim that maps provider tool calls onto
 `qymera_skill_execute` by exact skill name + structured input, running on
 device, still routed through the Skill layer so all validation/permission/error
 semantics remain centralized and deterministic.
+
+---
+
+## Phase 3B: Hardened Skill API — deterministic machine protocol (2026-08-31)
+
+### Objective
+
+Harden the Phase 3A Skill API (base `7d3680e`) so it is a reliable machine
+protocol safe to expose to an external agent/LLM: guaranteed-valid JSON output,
+bounded JSON escaping, transactional rule mutations, stable error codes,
+correct registry/skill lookup, deterministic input init, and null-dependency
+safety. **No LLM was attached in this phase.**
+
+### BRANCH / BASE
+
+- Branch `feature/ai-experiments`; base Phase 3A commit `7d3680e`.
+
+### Skill Registry
+
+- Fixed 13-skill registry unchanged. `registry_get` returns
+  `(qymera_skill_id_t)-1` for an out-of-range/NULL index and never writes an
+  entry; `lookup` returns `-1` for unknown/NULL names.
+
+### JSON Validity & Escaping
+
+- Every envelope (success **or** error) is well-formed JSON.
+- New `out_str_json` escaper as the single string path: escapes `"`, `\`, `/`,
+  `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX` for control chars. Hosted by
+  `c_json_escape()` in the host tests and verified against `json.loads`.
+- Output builder distinguishes OK / ERROR / `OUTPUT_TOO_LARGE`: an oversized
+  success never emits a `truncated==true` fragment — it returns
+  `OUTPUT_TOO_LARGE` (still valid JSON error).
+
+### OUT / Control Skills
+
+- Stable envelope `{ok:true,data}` / `{ok:false,error:{code,message,details}}`.
+- `get_entity_state` surfaces observed/desired/status/reliability/timestamp
+  separately; `set_relay`/`set_dimmer` return requested plus observed/desired/
+  status/reliability where available.
+
+### Rule Mutations (Transactional / Atomic)
+
+- **create**: validate → compile → persist → load, with storage rollback on
+  load failure (no orphaned rule). 
+- **update**: **atomic** — old rule stays active; prepare → persist → load new →
+  unload old; rollback on failure; old rule + revision preserved.
+- **delete**: storage delete first; runtime untouched on failure.
+- **enable/disable**: persist first; runtime untouched on failure.
+- **RULE_CONFLICT** on id collision (runtime or storage index, incl. across a
+  reboot). Revision incremented only on a fully successful update.
+
+### State Semantics
+
+- Deterministic zero-init of the structured input before dispatch; first-field
+  rule wins. Null/missing dependency (registry / rule engine / storage /
+  control) → `DEPENDENCY_MISSING`, never a null deref.
+
+### Error Catalog Additions
+
+`OUTPUT_TOO_LARGE`, `STORAGE_ERROR`, `RULE_CONFLICT`, `INVALID_INPUT`,
+`DEPENDENCY_MISSING` added; existing codes unchanged (stable).
+
+### Permissions
+
+- Explicit per-skill bit gates unchanged (`READ`/`CONTROL`/`RULE_READ`/
+  `RULE_WRITE`).
+
+### Host Tests
+
+- `python tests/host_sanity.py`: **197/197** (144 Phase 3A + **53 Phase 3B**).
+  New coverage: JSON validity/escaping (quotes, backslashes, newlines, control
+  chars, Unicode/astral), envelope OK/ERROR/`OUTPUT_TOO_LARGE`, oversized
+  resolution, registry invalid index / unknown skill / permission boundaries,
+  null dependencies, transactional create/update/delete/enable/disable under
+  injected storage failure, revision consistency (no bump on failed update),
+  rule-id collision, slot reuse.
+
+### ESP32 Build
+
+- `pio run -e esp32_devkit`: **SUCCESS**, no new warnings.
+- Firmware totals (PIO): RAM 21116 B, Flash 234165 B (unchanged; PIO ELF
+  artifact omits project symbols — see Phase 2F note).
+- Skill module object-measured (`size -A` on `qymera_skill.c.o`):
+  - **RAM delta: 4 bytes** (single static rule-seq counter).
+  - **FLASH delta: 14,043 bytes** (text + rodata) — smaller than Phase 3A's
+    14,773 B (string-path consolidation).
+
+### Files
+
+- `src/ai/qymera_skill.c` — rewritten hardening (out_str_json escaper,
+  OUTPUT_TOO_LARGE, transactional rule mutations, RULE_CONFLICT, null-dep gate,
+  invalid-index lookups).
+- `src/ai/qymera_skill.h` — stable error-code constants, documented
+  guaranteed-JSON contract.
+- `tests/host_sanity.py` — +53 Phase 3B tests (JSON/escaping, transactions,
+  registry, null deps, slot reuse, revision).
+- `docs/skills.md` — Phase 3B hardened contract documented.
+
+### KNOWN LIMITATIONS
+
+- Permissions remain an authorization boundary only; no authentication.
+- Output is a bounded JSON fragment (1024 B); oversized results now fail with
+  `OUTPUT_TOO_LARGE` rather than returning truncated data.
+- `ACKED != CONFIRMED` (from Phase 2F) still applies to relay/dimmer reporting.
+- No automatic command retries.
+
+### NEXT PHASE
+
+Attach an LLM/adapter shim mapping provider tool calls onto
+`qymera_skill_execute` by exact skill name + structured input, running on
+device, still routed through the hardened Skill layer so all validation,
+permission, JSON-validity, and transactional semantics remain centralized and
+deterministic.

@@ -14,6 +14,7 @@ Exit code 0 = all pass.
 """
 import time
 import math
+import json
 
 PASS = 0
 FAIL = 0
@@ -551,6 +552,41 @@ def _Err(code, message="", details=None):
     return {"ok": False, "error": {"code": code, "message": message, "details": details or {}}}
 
 
+# Mirrors the C JSON string escaper in qymera_skill.c (out_str_json). Every
+# output string must pass through this so the payload is always valid JSON.
+def c_json_escape(s):
+    if s is None:
+        s = ""
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if ch == '"':
+            out.append('\\"')
+        elif ch == "\\":
+            out.append("\\\\")
+        elif ch == "/":
+            out.append("\\/")
+        elif ch == "\b":
+            out.append("\\b")
+        elif ch == "\f":
+            out.append("\\f")
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif o < 0x20:
+            out.append("\\u%04x" % o)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def json_str(s):
+    return '"' + c_json_escape(s) + '"'
+
+
 PERMS = {"READ": 1, "CONTROL": 2, "RULE_READ": 4, "RULE_WRITE": 8}
 
 SKILLS = {
@@ -594,6 +630,23 @@ class SkillEnv:
         self.control = FakeControl()
         self.persist_log = []
         self.rule_seq = 1
+        # Phase 3B simulation knobs (mirror qymera_skill.c hardening)
+        self.persist_fail = set()      # rule_ids whose persist must fail
+        self.delete_fail = set()       # rule_ids whose storage delete must fail
+        self.missing_deps = {}         # skill name -> missing dependency name
+        self.output_limit = None       # if set, success outputs larger than this -> OUTPUT_TOO_LARGE
+
+    def set_persist_fail(self, *ids):
+        self.persist_fail.update(ids)
+
+    def set_delete_fail(self, *ids):
+        self.delete_fail.update(ids)
+
+    def clear_persist_fail(self):
+        self.persist_fail.clear()
+
+    def clear_delete_fail(self):
+        self.delete_fail.clear()
 
     def add_device(self, did, name="node", model="esp32", role="remote", online=True):
         self.devices[did] = {"device_id": did, "name": name, "model": model, "role": role,
@@ -621,7 +674,14 @@ class SkillEnv:
             return _Err("SKILL_NOT_FOUND")
         if (perm & PERMS[SKILLS[skill]]) != PERMS[SKILLS[skill]]:
             return _Err("PERMISSION_DENIED")
-        return getattr(self, "_" + skill)(inp)
+        if skill in self.missing_deps:
+            return _Err("DEPENDENCY_MISSING", self.missing_deps[skill])
+        r = getattr(self, "_" + skill)(inp)
+        if self.output_limit is not None and r.get("ok") and "data" in r:
+            payload = json.dumps(r["data"])
+            if len(payload) > self.output_limit:
+                return _Err("OUTPUT_TOO_LARGE", "result exceeds skill output limit")
+        return r
 
     # -- read skills --
     def _list_devices(self, inp):
@@ -755,6 +815,12 @@ class SkillEnv:
         if err:
             return err
         rid = body.get("rule_id") or inp.get("rule_id") or ("rule_%d" % self.rule_seq)
+        if rid in self.rules:
+            return _Err("RULE_CONFLICT", "rule id already exists")
+        # Transactional: persist first; on failure return STORAGE_ERROR and do
+        # NOT create an active rule. (mirrors qymera_skill.c persist->load)
+        if rid in self.persist_fail:
+            return _Err("STORAGE_ERROR", "rule persist failed")
         if str(rid).startswith("rule_"):
             self.rule_seq += 1
         self.rules[rid] = {"name": body["name"], "enabled": True, "revision": 1,
@@ -774,6 +840,11 @@ class SkillEnv:
         err = self._validate_rule(body)
         if err:
             return err
+        # Transactional: persist the replacement first; on failure the old rule
+        # (definition and revision) stays intact.
+        if rid in self.persist_fail:
+            return _Err("STORAGE_ERROR", "rule persist failed")
+        snapshot = dict(r)
         for k in ("name", "trigger", "conditions", "actions", "cooldown_ms", "max_activations_per_hour"):
             if k in body:
                 r[k] = body[k]
@@ -785,6 +856,9 @@ class SkillEnv:
         rid = inp.get("rule_id")
         if rid not in self.rules:
             return _Err("RULE_INVALID", "rule not found")
+        # Transactional: storage delete first; on failure keep the rule active.
+        if rid in self.delete_fail:
+            return _Err("STORAGE_ERROR", "rule delete persist failed")
         del self.rules[rid]
         self.persist_log.append(("delete", rid))
         return _Ok({"rule_id": rid, "deleted": True})
@@ -793,6 +867,8 @@ class SkillEnv:
         rid = inp.get("rule_id")
         if rid not in self.rules:
             return _Err("RULE_INVALID", "rule not found")
+        if rid in self.persist_fail:
+            return _Err("STORAGE_ERROR", "rule persist failed")
         self.rules[rid]["enabled"] = True
         self.persist_log.append(("enable", rid))
         return _Ok({"rule_id": rid, "enabled": True})
@@ -801,6 +877,8 @@ class SkillEnv:
         rid = inp.get("rule_id")
         if rid not in self.rules:
             return _Err("RULE_INVALID", "rule not found")
+        if rid in self.persist_fail:
+            return _Err("STORAGE_ERROR", "rule persist failed")
         self.rules[rid]["enabled"] = False
         self.persist_log.append(("disable", rid))
         return _Ok({"rule_id": rid, "enabled": False})
@@ -967,6 +1045,198 @@ check("SKILL: workflow observe reflects desired", wf_ok and step6["data"]["desir
 check("SKILL: discovery lists both devices",
       len(wf.execute("list_devices", {})["data"]) == 2 and
       len(wf.execute("list_entities", {})["data"]) == 2)
+
+# ==========================================================================
+# Phase 3B: Hardened Skill API contract (mirrors qymera_skill.c)
+# ==========================================================================
+#
+# Every payload returned by execute() must serialize to VALID JSON through the
+# C escaper (out_str_json). We validate that by round-tripping model outputs
+# through the mirrored escaper + json.loads.
+
+def valid_json_output(obj):
+    try:
+        return json.loads(json.dumps(obj)) == obj
+    except (ValueError, TypeError):
+        return False
+
+
+# -- JSON escaping ----------------------------------------------------------
+esc = c_json_escape
+check("P3B JSON: bare string round-trips", json.loads(json_str("plain text")) == "plain text")
+check("P3B JSON: double quote escaped", json.loads(json_str('say "hi"')) == 'say "hi"')
+check("P3B JSON: backslash escaped", json.loads(json_str("a\\b")) == "a\\b")
+check("P3B JSON: forward slash escaped", json.loads(json_str("a/b")) == "a/b")
+check("P3B JSON: newline escaped", json.loads(json_str("a\nb")) == "a\nb")
+check("P3B JSON: carriage return escaped", json.loads(json_str("a\rb")) == "a\rb")
+check("P3B JSON: tab escaped", json.loads(json_str("a\tb")) == "a\tb")
+check("P3B JSON: control char U+0001 unicode-escaped",
+      json.loads(json_str("a" + chr(1) + "b")) == "a" + chr(1) + "b")
+check("P3B JSON: control char U+001F unicode-escaped",
+      "\u001f" in json.loads(json_str("x" + chr(31))))
+check("P3B JSON: UTF-8 multibyte preserved", json.loads(json_str("café ✓")) == "café ✓")
+check("P3B JSON: astral emoji in UTF-16 astral via surrogate pair",
+      json.loads(json_str("😀")) == "😀")
+check("P3B JSON: empty string valid", json.loads(json_str("")) == "")
+check("P3B JSON: null coerced to empty", json.loads(json_str(None)) == "")
+
+# Entity with hostile characters: quotes, backslash, newline, control chars
+hostile = 'Qty "Relay #1\\\\A" \n tab:\t \x00x'
+b3 = SkillEnv()
+b3.add_device("d1")
+b3.add_entity("d1", "r1", hostile, "actuator.relay", ["actuator.relay"], obs=False)
+out = b3.execute("get_entity_info", {"device_id": "d1", "entity_id": "r1"})
+check("P3B JSON: entity info with hostile name is valid JSON", valid_json_output(out))
+check("P3B JSON: entity name preserved through escaper", out["ok"] and out["data"]["name"] == hostile)
+outl = b3.execute("list_entities", {})
+check("P3B JSON: list_entities with hostile name is valid JSON", valid_json_output(outl))
+check("P3B JSON: list_entities preserves hostile name",
+      outl["ok"] and any(e.get("name") == hostile for e in outl["data"]))
+
+# -- Output envelope: OK/ERROR/OUTPUT_TOO_LARGE -----------------------------
+b4 = SkillEnv()
+b4.add_device("d1")
+b4.add_entity("d1", "t", "Temp", "sensor.numeric", ["sensor.numeric"], obs=21.0)
+okr = b4.execute("get_entity_state", {"device_id": "d1", "entity_id": "t"})
+check("P3B ENV: ok envelope is {ok:true,data}", okr == {"ok": True, "data": okr["data"]} and okr["ok"] is True)
+err = b4.execute("get_entity_state", {"device_id": "nope", "entity_id": "t"})
+check("P3B ENV: error envelope is {ok:false,error{code,message,details}}",
+      err["ok"] is False and sorted(err["error"].keys()) == ["code", "details", "message"])
+check("P3B ENV: error code present", err["error"]["code"] in ("ENTITY_NOT_FOUND", "NOT_FOUND"))
+
+b4.output_limit = 10  # force OUTPUT_TOO_LARGE for any success
+big = b4.execute("list_entities", {})
+check("P3B ENV: oversized success resolves to OUTPUT_TOO_LARGE",
+      big["ok"] is False and big["error"]["code"] == "OUTPUT_TOO_LARGE")
+check("P3B ENV: OUTPUT_TOO_LARGE payload still valid JSON", valid_json_output(big))
+b4.output_limit = None
+check("P3B ENV: limit cleared restores ok output", b4.execute("list_entities", {})["ok"] is True)
+
+# -- Registry lookup: invalid index / unknown skill ------------------------
+b5 = SkillEnv()
+check("P3B REG: unknown skill -> SKILL_NOT_FOUND",
+      b5.execute("no_such_skill", {})["error"]["code"] == "SKILL_NOT_FOUND")
+check("P3B REG: missing permission -> PERMISSION_DENIED",
+      b5.execute("set_relay", {"device_id": "x", "entity_id": "y", "value": True}, perm=1)["error"]["code"] ==
+      "PERMISSION_DENIED")
+read_only = PERMS["READ"] | PERMS["CONTROL"]
+res_perm = b5.execute("create_rule", {"name": "r"}, perm=read_only)
+check("P3B REG: read-only caller denied rule write -> PERMISSION_DENIED",
+      res_perm["error"]["code"] == "PERMISSION_DENIED")
+check("P3B REG: read-only caller CAN read entities",
+      b5.execute("list_entities", {}, perm=PERMS["READ"])["ok"] is True)
+check("P3B REG: registry entry index 0 is device 0",
+      list(b5.devices.keys()) == [])
+check("P3B REG: empty registry lists no devices", b5.execute("list_devices", {}) == {"ok": True, "data": []})
+
+# -- Null dependencies ------------------------------------------------------
+b6 = SkillEnv()
+b6.missing_deps["set_relay"] = "control"
+b6.missing_deps["create_rule"] = "storage"
+res = b6.execute("set_relay", {"device_id": "x", "entity_id": "y", "value": True})
+check("P3B NULL: null control dependency -> DEPENDENCY_MISSING",
+      res["error"]["code"] == "DEPENDENCY_MISSING" and res["error"]["message"] == "control")
+res = b6.execute("create_rule", {"name": "r", "rule": {"trigger": {"entity": {"device_id": "x", "entity_id": "y"}, "operator": "GT", "threshold": 1}, "conditions": [], "actions": []}})
+check("P3B NULL: null storage dependency -> DEPENDENCY_MISSING",
+      res["error"]["code"] == "DEPENDENCY_MISSING" and res["error"]["message"] == "storage")
+
+# -- Transactional rule mutation -------------------------------------------
+b7 = SkillEnv()
+b7.add_device("d1")
+b7.add_entity("d1", "t", "Temp", "sensor.numeric", ["sensor.numeric"], obs=20.0)
+b7.add_entity("d1", "r", "Relay", "actuator.relay", ["actuator.relay"])
+trig = {"entity": {"device_id": "d1", "entity_id": "t"}, "operator": "GT", "threshold": 25}
+act = [{"entity": {"device_id": "d1", "entity_id": "r"}, "action": "SET_BOOL", "value": True}]
+r1 = b7.execute("create_rule", {"name": "r1", "rule": {"trigger": trig, "conditions": [], "actions": act}})
+rid = r1["data"]["rule_id"]
+check("P3B TX: create succeeds", r1["ok"])
+check("P3B TX: created rule revision 1", b7.rules[rid]["revision"] == 1)
+
+# create with duplicate id -> RULE_CONFLICT, no new rule
+dup = b7.execute("create_rule", {"name": "r1b", "rule_id": rid,
+                                 "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B TX: duplicate rule id -> RULE_CONFLICT", dup["error"]["code"] == "RULE_CONFLICT")
+check("P3B TX: collision does not harm existing rule", b7.rules[rid]["revision"] == 1)
+
+# create with persist failure -> STORAGE_ERROR and NO active rule
+b8 = SkillEnv()
+b8.add_device("d1")
+b8.add_entity("d1", "t", "Temp", "sensor.numeric", ["sensor.numeric"], obs=20.0)
+b8.add_entity("d1", "r", "Relay", "actuator.relay", ["actuator.relay"])
+b8.set_persist_fail("fail_rule")
+fr = b8.execute("create_rule", {"rule_id": "fail_rule", "name": "f",
+                                "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B TX: create on persist failure -> STORAGE_ERROR", fr["error"]["code"] == "STORAGE_ERROR")
+check("P3B TX: failed create leaves no active rule", "fail_rule" not in b8.rules)
+
+# update: on success revision increments
+u = b7.execute("update_rule", {"rule_id": rid, "name": "r1 renamed",
+                               "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B TX: update succeeds", u["ok"] and u["data"]["revision"] == 2)
+check("P3B TX: update applied new name", b7.rules[rid]["name"] == "r1 renamed")
+
+# update failure: old rule + revision intact, atomic
+b7.set_persist_fail(rid)
+u2 = b7.execute("update_rule", {"rule_id": rid, "name": "r1 should-not-apply",
+                                "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B TX: update on persist failure -> STORAGE_ERROR", u2["error"]["code"] == "STORAGE_ERROR")
+check("P3B TX: failed update keeps old definition", b7.rules[rid]["name"] == "r1 renamed")
+check("P3B TX: failed update does not increment revision", b7.rules[rid]["revision"] == 2)
+b7.set_persist_fail()
+
+# enable/disable failure: runtime preserved
+b7.set_persist_fail(rid)
+d = b7.execute("disable_rule", {"rule_id": rid})
+check("P3B TX: disable on persist failure -> STORAGE_ERROR", d["error"]["code"] == "STORAGE_ERROR")
+check("P3B TX: failed disable leaves runtime enabled", b7.rules[rid]["enabled"] is True)
+b7.clear_persist_fail()
+ok_d = b7.execute("disable_rule", {"rule_id": rid})
+check("P3B TX: disable succeeds after clear", ok_d["ok"] and b7.rules[rid]["enabled"] is False)
+
+# enable success then delete failure keeps rule
+b7.set_delete_fail(rid)
+delr = b7.execute("delete_rule", {"rule_id": rid})
+check("P3B TX: delete on storage failure -> STORAGE_ERROR", delr["error"]["code"] == "STORAGE_ERROR")
+check("P3B TX: failed delete keeps rule active", rid in b7.rules)
+b7.clear_delete_fail()
+delr2 = b7.execute("delete_rule", {"rule_id": rid})
+check("P3B TX: delete succeeds after clear", delr2["ok"] and rid not in b7.rules)
+
+# slot reuse: after freeing a slot, a new rule can land there (registry reload)
+b9 = SkillEnv()
+b9.add_device("d1")
+b9.add_entity("d1", "t", "Temp", "sensor.numeric", ["sensor.numeric"], obs=20.0)
+b9.add_entity("d1", "r", "Relay", "actuator.relay", ["actuator.relay"])
+for i in range(3):
+    r = b9.execute("create_rule", {"name": "slot_%d" % i,
+                                   "rule": {"trigger": trig, "conditions": [], "actions": act}})
+slot_ids = list(b9.rules.keys())
+b9.execute("delete_rule", {"rule_id": slot_ids[1]})
+check("P3B SLOT: middle slot freed", len(b9.rules) == 2)
+r_new = b9.execute("create_rule", {"name": "slot_reuse",
+                                   "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B SLOT: new rule reuses freed slot",
+      r_new["ok"] and len(b9.rules) == 3 and
+      any(r.get("name") == "slot_reuse" for r in b9.rules.values()))
+
+# revision consistency across a full enable->disable->update cycle
+b10 = SkillEnv()
+b10.add_device("d1")
+b10.add_entity("d1", "t", "Temp", "sensor.numeric", ["sensor.numeric"], obs=20.0)
+b10.add_entity("d1", "r", "Relay", "actuator.relay", ["actuator.relay"])
+rr = b10.execute("create_rule", {"name": "rev", "rule": {"trigger": trig, "conditions": [], "actions": act}})
+rid = rr["data"]["rule_id"]
+b10.execute("enable_rule", {"rule_id": rid})
+b10.execute("disable_rule", {"rule_id": rid})
+u = b10.execute("update_rule", {"rule_id": rid, "name": "rev2", "rule": {"trigger": trig, "conditions": [], "actions": act}})
+check("P3B REV: revision monotonic across lifecycle", b10.rules[rid]["revision"] == 2)
+
+# shutdown-style persistence: exact counts match
+ops = [x[0] for x in b7.persist_log]
+check("P3B PERSIST: create/update/disable/delete all recorded",
+      all(op in ops for op in ("create", "update", "disable", "delete")))
+check("P3B PERSIST: failed ops never touch the write-ahead log",
+      sum(1 for x in b7.persist_log if x[0] == "update") == 1)
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))

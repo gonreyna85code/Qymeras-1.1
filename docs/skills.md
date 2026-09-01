@@ -1,4 +1,4 @@
-# Qymera Deterministic Skill API (Phase 3A)
+# Qymera Deterministic Skill API (Phase 3B — hardened)
 
 The single, machine-readable surface an external agent (a future LLM adapter,
 web UI, or automation) uses to observe and control Qymera. The Skill layer is
@@ -17,16 +17,27 @@ runtime in `src/core/qymera_core.c` via `qymera_core_get_skills()`.
 
 ## Skill model
 
-Every call returns the same bounded result shape:
+The Skill layer is a fixed machine protocol. **Every** response — success or
+failure, truncated or not — is guaranteed to be **well-formed JSON**. All string
+fields are passed through a bounded JSON escaper (`"`, `\`, `/`, `\b`, `\f`,
+`\n`, `\r`, `\t`, and `\uXXXX` for control chars), so a hostile string (quotes,
+backslashes, newlines, control chars) can never break the envelope.
 
 ```json
 { "ok": true,  "data": { ... bounded JSON fragment ... } }
 { "ok": false, "error": { "code": "MACHINE_STABLE_CODE", "message": "human detail", "details": {...} } }
 ```
 
-- `data` is capped at `QYMERA_SKILL_OUTPUT_SIZE` (1024 bytes); `truncated` is set
-  in the output model when the cap is hit.
+- `data` is capped at `QYMERA_SKILL_OUTPUT_SIZE` (1024 bytes). When a result
+  cannot fit, the call returns the `OUTPUT_TOO_LARGE` error instead of emitting
+  a malformed or partially-truncated payload. There is never a
+  `truncated==true` in a success envelope — an oversized result is an error.
 - Error `code`s are machine-stable and never change between releases.
+- Inputs are zero-initialized deterministically before dispatch; the first field
+  rule wins.
+- If a required dependency is missing (registry, rule engine, storage, or
+  control), the call fails with `DEPENDENCY_MISSING` rather than dereferencing
+  null.
 - No memory is allocated per invocation and no strings are unbounded: the
   registry is a compile-time `const` table of exactly `QYMERA_MAX_SKILLS` (13)
   skills. There is no dynamic tool registry and no scripting engine.
@@ -144,29 +155,46 @@ Validation: `level` must be 0-100 (`INVALID_VALUE`); entity must exist
 ```json
 {"rule_id":"rule_1","revision":1,"enabled":true,"activated":true,"slot":0}
 ```
-Flow: validate references → `qymera_rule_engine_validate` → `compile` → `load` →
-`persist` (storage). If `rule_id` is not supplied, one is generated (`rule_%u`).
-Errors: `INVALID_VALUE` (no name), `ENTITY_NOT_FOUND` (unknown entity ref),
-`RULE_INVALID` (bad operator / type / incompatible capability / validation /
-compile / persist failure), `NO_SPACE` (rule table full).
+Flow: validate references → `qymera_rule_engine_validate` → `compile` → **persist**
+(storage) → `load`. Persist happens **before** the rule becomes active; if load
+fails after a successful persist, the persisted rule is rolled back (deleted)
+so no orphaned rule survives. If `rule_id` is not supplied, one is generated
+(`rule_%u`). Supplying an id that collides with an existing rule (runtime or in
+the storage index, e.g. after a reboot) returns `RULE_CONFLICT`.
+Errors: `INVALID_VALUE` (no name), `INVALID_INPUT` (bad field), `ENTITY_NOT_FOUND`
+(unknown entity ref), `RULE_INVALID` (bad operator / type / incompatible
+capability / validation / compile), `RULE_CONFLICT` (id collision),
+`STORAGE_ERROR` (persist/load failure — no active rule is created),
+`NO_SPACE` (rule table full).
 
 ### `update_rule`
 ```json
 {"rule_id":"...","revision":2,"enabled":true,"updated":true}
 ```
-Reuses the create pipeline then unloads the old slot and loads the new body.
-Errors: `INVALID_VALUE` (no `rule_id` / no name), `RULE_INVALID` (not found /
-validation / compile / persist), `ENTITY_NOT_FOUND`, `NO_SPACE`.
+**Atomic**: the old rule stays active until the new body is validated, compiled,
+persisted, and loaded into a fresh free slot; only then is the old slot unloaded.
+On any persist/load failure the operation rolls back and the **old rule —
+including its revision — remains intact and untouched**. Revision is incremented
+only on a fully successful update.
+Errors: `INVALID_VALUE` (no `rule_id` / no name), `INVALID_INPUT`,
+`RULE_INVALID` (not found / validation / compile), `RULE_CONFLICT`,
+`STORAGE_ERROR`, `ENTITY_NOT_FOUND`, `NO_SPACE`.
 
 ### `delete_rule`
 ```json
 {"rule_id":"...","deleted":true}
 ```
+**Transactional**: the storage record is deleted first; only on success is the
+runtime rule unloaded. If storage deletion fails the rule stays active and
+`STORAGE_ERROR` is returned.
 
 ### `enable_rule` / `disable_rule`
 ```json
 {"rule_id":"...","enabled":true}
 ```
+**Atomic**: the enabled flag is persisted first; the runtime flag is only
+changed after a successful persist, so a storage failure leaves the runtime
+enabled/disabled state untouched (`STORAGE_ERROR`).
 
 ---
 
@@ -179,7 +207,12 @@ validation / compile / persist), `ENTITY_NOT_FOUND`, `NO_SPACE`.
 | `ENTITY_NOT_FOUND` | `device_id`/`entity_id` does not resolve |
 | `INVALID_CAPABILITY` | Target entity lacks the required capability (relay/dimmer) |
 | `INVALID_VALUE` | A field is malformed or out of range (e.g. dimmer level, missing name) |
-| `RULE_INVALID` | Rule not found, or failed reference/validation/compile/persist |
+| `INVALID_INPUT` | Structured input rejected (bad field / first-field-wins conflict) |
+| `RULE_INVALID` | Rule not found, or failed reference/validation/compile |
+| `RULE_CONFLICT` | Supplied `rule_id` collides with an existing rule (runtime or storage index) |
+| `STORAGE_ERROR` | A persist/load/delete on storage failed; transaction rolled back |
+| `OUTPUT_TOO_LARGE` | Result exceeds the output cap and is rejected (never truncated-in-band) |
+| `DEPENDENCY_MISSING` | A required subsystem is unavailable (registry/rule engine/storage/control) |
 | `NO_SPACE` | Pending command table or rule table full |
 | `DEVICE_OFFLINE` | Command transport unavailable for a remote dispatch |
 | `COMMAND_TIMEOUT` | A dispatched command timed out |
@@ -201,12 +234,22 @@ validation / compile / persist), `ENTITY_NOT_FOUND`, `NO_SPACE`.
 
 The Skill layer is verified without any model. `tests/host_sanity.py` carries a
 deterministic Python reference model (`SkillEnv`) that mirrors `qymera_skill.c`
-and covers 16 categories plus a complete future-AI workflow
+and covers the Phase 3A categories plus a complete future-AI workflow
 (`list_entities` → `get_entity_state` → `create_rule` → `enable_rule` →
-`set_relay` → observe state), with no LLM involved:
+`set_relay` → observe state), no LLM involved.
+
+**Phase 3B hardening tests** additionally verify: JSON validity of every
+envelope, JSON string escaping (quotes, backslashes, newlines, control chars,
+Unicode/astral), output-limit resolution to `OUTPUT_TOO_LARGE` (never a
+truncated-in-band success), `{ok:true,data}` / `{ok:false,error{code,message,
+details}}` envelopes, transactional create/update/delete/enable/disable under
+injected storage failure (old rule + revision preserved, no phantom write-ahead
+entries), rule-id collision (`RULE_CONFLICT`), rule slot reuse, registry invalid
+index / unknown skill / permission boundaries, and null-dependency
+(`DEPENDENCY_MISSING`) behavior.
 
 ```
-python tests/host_sanity.py
+python tests/host_sanity.py        # 197 checks (144 Phase 3A + 53 Phase 3B)
 ```
 
 The ESP32 build is independent of inference infrastructure:
