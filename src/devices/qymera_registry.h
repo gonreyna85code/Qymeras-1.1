@@ -6,6 +6,7 @@
 
 #include "qymera_types.h"
 #include "qymera_ring.h"
+#include "qymera_control_context.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -238,8 +239,9 @@ qymera_err_t qymera_registry_remove_device(qymera_registry_t *registry, uint16_t
  * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
  *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have relay capability
 typedef struct qymera_core_s qymera_core_t;
+typedef struct qymera_control_s qymera_control_context_t;
  */
-qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, bool state, bool local_only);
+qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, bool state, bool local_only);
 
 /**
  * Set dimmer actuator level
@@ -250,7 +252,7 @@ qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, c
  * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
  *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have dimmer capability
  */
-qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only);
+qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only);
 
 /**
  * Check and update stale devices (called periodically)

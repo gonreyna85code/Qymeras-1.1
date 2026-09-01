@@ -6,6 +6,7 @@
 #include <string.h>
 #include "qymera_udp.h"
 #include <stdlib.h>
+#include "qymera_control_context.h"
 
 struct qymera_registry_s {
     qymera_device_t *devices;
@@ -311,7 +312,7 @@ static bool _control_entity_has_capability(qymera_registry_t *registry, const qy
 }
 
 
-qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
+qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
     // Check entity has relay capability
@@ -352,7 +353,7 @@ qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, c
         // else: already in desired state - idempotent no-op, GPIO not re-written
     } else {
         // Remote device: send UDP control command using existing protocol
-        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)core;
+        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)context->udp_transport;
         if (!transport) {
             return QYMERA_ERR_NETWORK;
         }
@@ -390,7 +391,7 @@ qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, void *core, c
 
     return QYMERA_OK;
 }
-qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, void *core, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
+qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
     if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
 
     // Check entity has dimmer capability
@@ -440,7 +441,7 @@ qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, void *core, 
         // else: already at desired level - idempotent no-op
     } else {
         // Remote device: send UDP control command using existing protocol
-        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)core;
+        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)context->udp_transport;
         if (!transport) {
             return QYMERA_ERR_NETWORK;
         }
