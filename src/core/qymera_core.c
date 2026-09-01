@@ -9,6 +9,34 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/* The UDP receive path does not thread a user context through the callback,
+ * so we keep a single control-context reference (one core per system). */
+static qymera_control_context_t *s_control_ctx = NULL;
+
+static qymera_err_t udp_on_ack(qymera_udp_transport_t *transport, const qymera_msg_header_t *header,
+                               const void *payload, size_t payload_len,
+                               const char *src_ip, uint16_t src_port) {
+    (void)transport; (void)header; (void)src_port;
+    if (!s_control_ctx || !payload || payload_len != sizeof(qymera_payload_ack_t)) {
+        return QYMERA_ERR_PROTOCOL;
+    }
+    const qymera_payload_ack_t *ack = (const qymera_payload_ack_t *)payload;
+    qymera_control_on_ack(s_control_ctx, ack->cmd_seq, ack->result, src_ip);
+    return QYMERA_OK;
+}
+
+static qymera_err_t udp_on_entity_state(qymera_udp_transport_t *transport, const qymera_msg_header_t *header,
+                                        const void *payload, size_t payload_len,
+                                        const char *src_ip, uint16_t src_port) {
+    (void)transport; (void)header; (void)src_port;
+    if (!s_control_ctx || !payload || payload_len != sizeof(qymera_payload_entity_sample_t)) return QYMERA_ERR_PROTOCOL;
+    const qymera_payload_entity_sample_t *s = (const qymera_payload_entity_sample_t *)payload;
+    bool has_f = (s->value_f != 0.0f) || (s->value_u32 == 0);
+    qymera_control_on_state(s_control_ctx, s->entity_id, s->type,
+                            (&s->value_f), (&s->value_u32), has_f, !has_f, src_ip);
+    return QYMERA_OK;
+}
+
 struct qymera_core_s {
     qymera_core_config_t config;
     
@@ -19,6 +47,8 @@ struct qymera_core_s {
     qymera_storage_t *storage;
     qymera_rule_engine_t *rule_engine;
     qymera_ai_t *ai;
+    
+    qymera_control_context_t control;
     
     qymera_device_t *devices_storage;
     qymera_entity_t *entities_storage;
@@ -149,6 +179,13 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     uint16_t dev_idx;
     qymera_registry_register_device(core->registry, &dashboard_dev, &dev_idx);
     
+    /* Control context: typed reference to the services it needs */
+    qymera_control_context_init(&core->control, core->registry, core->udp, core->event_bus, core->log);
+    s_control_ctx = &core->control;
+    qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ACK, udp_on_ack, NULL);
+    qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ENTITY_STATE, udp_on_entity_state, NULL);
+    qymera_udp_transport_set_callback(core->udp, QYMERA_MSG_ENTITY_SAMPLE, udp_on_entity_state, NULL);
+    
     qymera_log_system(core->log, "core", "Core initialized, device UID: %08X", core->config.general.device_uid);
     
     return QYMERA_OK;
@@ -205,6 +242,8 @@ qymera_err_t qymera_core_tick(qymera_core_t *core) {
     
     qymera_udp_transport_receive(core->udp);
     
+    qymera_control_tick(&core->control, now_ms);
+    
     qymera_event_bus_process(core->event_bus);
     
     qymera_rule_engine_tick(core->rule_engine, now_ms);
@@ -252,6 +291,10 @@ qymera_rule_engine_t *qymera_core_get_rule_engine(qymera_core_t *core) {
 
 qymera_ai_t *qymera_core_get_ai(qymera_core_t *core) {
     return core ? core->ai : NULL;
+}
+
+qymera_control_context_t *qymera_core_get_control(qymera_core_t *core) {
+    return core ? &core->control : NULL;
 }
 
 void qymera_core_shutdown(qymera_core_t *core) {

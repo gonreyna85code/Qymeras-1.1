@@ -244,3 +244,123 @@ Flash: [==        ]  17.9% (used 234165 bytes from 1310720 bytes)
 6. **Web Dashboard**: REST API endpoints for Skill/API, operational UI
 7. **Host Tests**: Extend `tests/host_sanity.py` for new modules
 8. **Hardware Validation**: Flash to ESP32, verify WiFi, UDP, GPIO, rule execution
+---
+
+## Phase 2F: Remote Command State Machine, ACK Correlation & Typed Control Context (2026-08-31)
+
+### Objective
+
+Finish the remote-control runtime introduced in Phase 2D before starting the AI/Skill layer:
+
+1. Replace the `void *udp_transport` in the control context with the real `qymera_udp_transport_t *` type.
+2. Represent remote commands with a bounded, deterministic pending-command state machine.
+3. Wire ACK parsing into command lifecycle correlation with source validation.
+4. Separate desired (requested) state from observed (authoritative) state in the Registry.
+5. Make timeout / failure / late / duplicate ACK semantics explicit.
+
+### Architecture
+
+```text
+Qymera Core
+ ├── Registry
+ ├── UDP Transport
+ ├── Control Context (typed)
+ └── Rule Engine
+```
+
+The Rule Engine calls the **Control API** (`qymera_control_set_relay` / `qymera_control_set_dimmer`) and never sees UDP/IP/socket/ACK/packet format.
+
+### Remote Command State Machine
+
+```text
+REQUESTED → DISPATCHED → WAITING_ACK → ACKED → CONFIRMED
+                                       ↘ FAILED
+                     DISPATCHED → FAILED (UDP send error)
+                     WAITING_ACK → TIMEOUT (deadline reached, no ACK/state)
+```
+
+Important distinction:
+
+```text
+ACKED != CONFIRMED
+```
+
+An ACK means the remote command was *accepted*; it does NOT mean the actuator physically executed it. Physical confirmation comes only from an authoritative remote state report (HOST `QYMERA_MSG_ENTITY_STATE` / `QYMERA_MSG_ENTITY_SAMPLE`) whose reported value matches the desired value.
+
+### Semantics (desired vs observed)
+
+| Stage | desired | observed | status |
+|-------|---------|----------|--------|
+| Initial | OFF | OFF | CONFIRMED |
+| After dispatch | ON | OFF | WAITING_ACK |
+| After ACK only | ON | OFF | ACKED |
+| After authoritative state | ON | ON | CONFIRMED |
+| Timeout | ON | OFF | TIMEOUT |
+| ACK error / mismatch | ON | OFF | FAILED |
+
+The Control API never overwrites observed state with the requested state for remote entities simply because a packet was sent.
+
+### Control API Return Semantics
+
+For asynchronous remote commands, `QYMERA_OK` means *command accepted/dispatched*, NOT physically confirmed. The detailed eventual outcome is represented by the entity's `cmd_status` (desired/observed). This is documented so return codes never lie.
+
+### Fixed-size Pending Command Table
+
+- `QYMERA_MAX_PENDING_COMMANDS = 8` fixed-size array, embedded in the control context (part of the core struct).
+- When full, dispatch returns `QYMERA_ERR_NO_SPACE`.
+- No `malloc`/`std::map`/linked list/promise per command.
+- Every pending command reaches a terminal state (`CONFIRMED`/`FAILED`/`TIMEOUT`) and frees its slot.
+- `QYMERA_COMMAND_TIMEOUT_MS = 2000`.
+
+### Sequence Correlation
+
+`qymera_udp_transport_send_command()` now allocates a **single** command correlation ID and uses it for both the message `header.seq` and the payload `cmd.cmd_seq` (one `tx_seq` increment per command). ACKs echo `cmd_seq`; the runtime correlates via `cmd_seq` and validates source by comparing the ACK's `src_ip` against the pending command's `dest_ip`, preventing one node's ACK from resolving another node's command.
+
+### ACK Handling
+
+- Matching ACK → `ACKED` (entry kept waiting for authoritative state, then `CONFIRMED`).
+- ACK with `result != 0` → `FAILED`.
+- Duplicate ACK → idempotent (no second transition).
+- Late ACK after timeout → ignored safely (entry already freed, not resurrected).
+- Unknown `cmd_seq` → ignored.
+- Wrong source IP → ignored (does not resolve another node's command).
+
+### Remote State Reports
+
+When a remote node reports actuator state, the runtime:
+1. Resolves the device by source IP.
+2. Locates the entity by the deterministic FNV-1a hash of the dashboard `entity_id` string (mapping used both for command transmission and report matching).
+3. Updates **observed** state.
+4. Compares against **desired** state; match → `CONFIRMED`, mismatch → `FAILED` (desired preserved, not silently overwritten).
+5. Publishes `ACTUATOR_CHANGED`.
+
+### Timeout Engine
+
+`qymera_control_tick()` runs from the core tick (non-blocking). Pending commands past their deadline transition to `TIMEOUT`. No sleeps, no Rule Engine blocking.
+
+### Event Model
+
+Uses existing events: `QYMERA_EVENT_ACTUATOR_CHANGED`, plus the Command status represented in the entity `cmd_status`. No new event taxonomy.
+
+### Memory
+
+- Pending table: `8 × sizeof(qymera_pending_command_t)` ≈ 0.7 KB BSS, embedded in core `.bss`.
+- Control module text+rodata ≈ 3.7 KB flash (object-measured).
+- No per-command heap allocation.
+
+### Verification
+
+- ESP32 build: **SUCCESS**.
+- Host tests: **102/102** (added 23 remote-control state-machine tests over the 79 baseline).
+- New host tests cover: dispatch, WAITING, ACK, confirmation, failure, timeout, matching/wrong/duplicate/late ACK, wrong source, ACK error result, desired/observed, mismatch, multi-device independence, and pending-table capacity (fill → `NO_SPACE` → resolve → succeed).
+
+### KNOWN LIMITATIONS
+
+- `ACKED != CONFIRMED`: confirmation requires an authoritative state report; if a remote node never sends state reports, a command will only reach `ACKED` then `TIMEOUT`.
+- Single dispatch + timeout; no automatic retries (matches existing UDP layer).
+- Entity identity across the wire uses a deterministic hash of the dashboard `entity_id` string; must remain consistent between both ends.
+- State report matching requires the remote to report on the same entity hash; mismatched rosters are currently ignored.
+
+### NEXT PHASE
+
+AI/Skill layer (only after this remote-control contract is verified on hardware). Highest-value task: wire `rule → Control API → remote relay/dimmer → ACK → state confirmation` on two ESP32 Qymera nodes.

@@ -377,5 +377,168 @@ check("AND gate requires both sensors", trigger_and is False)
 check("OR gate fires on any sensor", trigger_or is True)
 
 print()
+print("[remote-control-state-machine]")
+# Reference implementation mirroring src/control/qymera_control.c semantics.
+# Only the *logic* is ported; the firmware owns the real structs/registry.
+
+MAX_PENDING = 8
+TIMEOUT_MS = 2000
+(CMD_REQUESTED, CMD_DISPATCHED, CMD_WAITING_ACK, CMD_ACKED,
+ CMD_STATE_CONFIRMED, CMD_FAILED, CMD_TIMEOUT) = range(7)
+
+
+def entity_hash(eid):
+    h = 2166136261
+    for c in eid:
+        h = ((h ^ ord(c)) * 16777619) & 0xFFFFFFFF
+    return h
+
+
+class PendingCtrl:
+    """Portable model of qymera_control_context_t + pending table + tick/ack/state."""
+
+    def __init__(self):
+        self.cmd_seq = 1
+        self.pending = {}
+        self.events = []
+
+    def alloc(self, device_id, entity_id, opcode, value, now):
+        if len(self.pending) >= MAX_PENDING:
+            return None, "NO_SPACE"
+        seq = self.cmd_seq
+        self.cmd_seq += 1
+        rec = {
+            "used": True, "cmd_seq": seq, "device_id": device_id,
+            "entity_id": entity_id, "opcode": opcode, "requested_value": value,
+            "desired_bool": value not in (0, 0.0, False),
+            "desired_numeric": float(value),
+            "started_at": now, "deadline": now + TIMEOUT_MS,
+            "status": CMD_WAITING_ACK,
+        }
+        self.pending[seq] = rec
+        return seq, "OK"
+
+    def on_ack(self, seq, ack_result, src_ip, expected_ip):
+        rec = self.pending.get(seq)
+        if rec is None:
+            return "IGNORED_UNKNOWN"   # late / duplicate-already-resolved
+        if expected_ip is not None and src_ip != expected_ip:
+            return "IGNORED_SOURCE"    # wrong node
+        if ack_result != 0:
+            del self.pending[seq]
+            return "FAILED"
+        rec["status"] = CMD_ACKED       # ACKED != CONFIRMED
+        return "ACKED"
+
+    def on_state(self, device_id, entity_id, observed_bool, observed_val):
+        if device_id not in self.registry_devices:
+            return "UNKNOWN_DEVICE"
+        matched = False
+        for seq, rec in list(self.pending.items()):
+            if rec["device_id"] != device_id or rec["entity_id"] != entity_id:
+                continue
+            # desired matches observed ?
+            if rec["desired_bool"] == observed_bool:
+                rec["status"] = CMD_STATE_CONFIRMED
+                del self.pending[seq]
+                matched = True
+            else:
+                rec["status"] = CMD_FAILED
+                del self.pending[seq]
+        return "CONFIRMED" if matched else "MISMATCH"
+
+    def tick(self, now):
+        for seq, rec in list(self.pending.items()):
+            if now >= rec["deadline"]:
+                rec["status"] = CMD_TIMEOUT
+                del self.pending[seq]
+
+    def count(self):
+        return len(self.pending)
+
+
+ctrl = PendingCtrl()
+ctrl.registry_devices = {"nodeA", "nodeB"}
+
+# --- happy path: requested -> dispatched -> waiting -> ack -> state confirm ---
+seq, r = ctrl.alloc("nodeA", "relay", 1, 1.0, 100)
+check("PENDING: dispatch allocates cmd_seq", r == "OK" and seq == 1)
+check("PENDING: status WAITING_ACK after dispatch", ctrl.pending[seq]["status"] == CMD_WAITING_ACK)
+r = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
+check("PENDING: matching ACK -> ACKED (not confirmed)", r == "ACKED" and ctrl.pending[seq]["status"] == CMD_ACKED)
+check("PENDING: ACKED != CONFIRMED (entry still present)",
+      ctrl.pending.get(seq) is not None and ctrl.pending[seq]["status"] != CMD_STATE_CONFIRMED)
+r = ctrl.on_state("nodeA", "relay", True, 1.0)
+check("PENDING: authoritative state -> CONFIRMED and removed",
+      r == "CONFIRMED" and ctrl.count() == 0)
+
+# --- duplicate ACK: second ack after resolution is ignored ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 200)
+r = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
+r2 = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
+ctrl.on_state("nodeA", "relay", True, 1.0)
+check("PENDING: duplicate ACK while pending stays ACKED", r == "ACKED" and r2 == "ACKED")
+check("PENDING: duplicate ACK after removal ignored", ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
+
+# --- wrong cmd_seq ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 300)
+check("PENDING: unknown cmd_seq ignored", ctrl.on_ack(999, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
+# late ACK does not resurrect a timed-out command
+ctrl.tick(300 + TIMEOUT_MS + 1)
+check("PENDING: timeout frees the slot", ctrl.count() == 0)
+check("PENDING: late ACK after timeout ignored", ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
+
+# --- wrong source ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 400)
+r = ctrl.on_ack(seq, 0, "192.168.0.99", "10.0.0.2")   # spoofed source
+check("PENDING: wrong source ACK does not resolve command", r == "IGNORED_SOURCE" and ctrl.count() == 1)
+ctrl.on_state("nodeA", "relay", True, 1.0)
+
+# --- ACK error result -> FAILED ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 500)
+r = ctrl.on_ack(seq, 1, "10.0.0.2", "10.0.0.2")       # result != 0 -> error
+check("PENDING: ACK error -> FAILED (not ACKED/CONFIRMED)", r == "FAILED" and ctrl.count() == 0)
+
+# --- timeout: desired kept, observed unchanged, status TIMEOUT ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 600)
+ctrl.tick(600 + TIMEOUT_MS - 1)
+check("PENDING: before deadline still pending", ctrl.count() == 1)
+ctrl.tick(600 + TIMEOUT_MS)
+check("PENDING: at deadline -> TIMEOUT, slot freed", ctrl.count() == 0)
+
+# --- state mismatch: desired ON, observed OFF ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 700)
+ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
+r = ctrl.on_state("nodeA", "relay", False, 0.0)
+check("PENDING: desired!=observed -> FAILED mismatch (not silent overwrite)", r == "MISMATCH" and ctrl.count() == 0)
+
+# --- multi-device: same entity id, different device ---
+sA, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 800)
+sB, _ = ctrl.alloc("nodeB", "relay", 1, 1.0, 801)
+check("PENDING: multi-device independent (2 pending)", ctrl.count() == 2)
+ctrl.on_ack(sA, 0, "10.0.0.2", "10.0.0.2")
+check("PENDING: nodeA ack only resolves nodeA", ctrl.pending.get(sB) is not None)
+ctrl.on_ack(sB, 0, "10.0.0.3", "10.0.0.3")
+check("PENDING: both acked, still waiting state", ctrl.count() == 2)
+ctrl.on_state("nodeA", "relay", True, 1.0)
+check("PENDING: nodeA confirmed, nodeB pending", ctrl.count() == 1 and ctrl.pending.get(sB) is not None)
+ctrl.on_state("nodeB", "relay", True, 1.0)
+check("PENDING: nodeB confirmed, all clear", ctrl.count() == 0)
+
+# --- capacity: fill table -> NO_SPACE -> resolve one -> succeeds ---
+crowded = PendingCtrl(); crowded.registry_devices = {"nodeA"}
+for i in range(MAX_PENDING):
+    seq_, r_ = crowded.alloc("nodeA", "ent%d" % i, 1, 1.0, 1000 + i)
+    assert r_ == "OK"
+check("PENDING: table fills to MAX_PENDING", crowded.count() == MAX_PENDING)
+seq_, r_ = crowded.alloc("nodeA", "extra", 1, 1.0, 2000)
+check("PENDING: overflow -> NO_SPACE", r_ == "NO_SPACE")
+first_seq = next(iter(crowded.pending))
+crowded.on_ack(first_seq, 0, "10.0.0.2", "10.0.0.2")
+crowded.on_state("nodeA", "ent0", True, 1.0)
+seq_, r_ = crowded.alloc("nodeA", "extra", 1, 1.0, 3000)
+check("PENDING: after resolving one, new command succeeds", r_ == "OK")
+
+print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
 raise SystemExit(1 if FAIL else 0)

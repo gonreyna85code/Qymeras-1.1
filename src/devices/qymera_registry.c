@@ -4,9 +4,7 @@
 #include "qymera_registry.h"
 #include "qymera_hal.h"
 #include <string.h>
-#include "qymera_udp.h"
 #include <stdlib.h>
-#include "qymera_control_context.h"
 
 struct qymera_registry_s {
     qymera_device_t *devices;
@@ -212,6 +210,19 @@ qymera_err_t qymera_registry_update_entity_value(qymera_registry_t *registry, ui
     return QYMERA_OK;
 }
 
+qymera_err_t qymera_registry_set_entity_desired(qymera_registry_t *registry, uint16_t entity_idx,
+                                                 const qymera_entity_value_t *desired,
+                                                 qymera_cmd_status_t status) {
+    if (!registry || !desired) return QYMERA_ERR_INVALID_ARG;
+    if (entity_idx >= registry->max_entities) return QYMERA_ERR_INVALID_ARG;
+    if (registry->entities[entity_idx].entity_id[0] == '\0') return QYMERA_ERR_NOT_FOUND;
+
+    qymera_entity_t *e = &registry->entities[entity_idx];
+    e->desired = *desired;
+    e->cmd_status = status;
+    return QYMERA_OK;
+}
+
 qymera_err_t qymera_registry_get_device(qymera_registry_t *registry, uint16_t device_idx, qymera_device_t *device) {
     if (!registry || !device || device_idx >= registry->max_devices) return QYMERA_ERR_INVALID_ARG;
     if (registry->devices[device_idx].device_id[0] == '\0') return QYMERA_ERR_NOT_FOUND;
@@ -279,204 +290,6 @@ qymera_err_t qymera_registry_remove_device(qymera_registry_t *registry, uint16_t
     registry_free_device(registry, device_idx);
     registry->device_count--;
     
-    return QYMERA_OK;
-}
-
-/* Control API implementations */
-
-static bool _control_entity_has_capability(qymera_registry_t *registry, const qymera_entity_ref_t *entity_ref, qymera_capability_t cap) {
-    uint16_t entity_idx;
-    if (qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx) != QYMERA_OK) {
-        return false;
-    }
-    qymera_entity_t entity;
-
-    if (qymera_registry_get_entity(registry, entity_idx, &entity) != QYMERA_OK) {
-
-        return false;
-
-    }
-
-    for (uint8_t i = 0; i < entity.capability_count; i++) {
-
-        if (entity.capabilities[i] == cap) {
-
-            return true;
-
-        }
-
-    }
-
-    return false;
-
-}
-
-
-qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, bool state, bool local_only) {
-    if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
-
-    // Check entity has relay capability
-    if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_RELAY)) {
-        return QYMERA_ERR_INVALID_CAPABILITY;
-    }
-
-    // Find entity in registry
-    uint16_t entity_idx;
-    qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
-    if (err != QYMERA_OK) return err;
-
-    qymera_entity_t *e = &registry->entities[entity_idx];
-
-    // Check device role for locality
-    uint16_t dev_idx;
-    err = qymera_registry_find_device(registry, entity_ref->device_id, &dev_idx);
-    if (err != QYMERA_OK) return err;
-
-    qymera_device_t *d = &registry->devices[dev_idx];
-    bool is_remote = (d->role == 1);  // role==1 = remote
-
-    // local_only enforcement: reject remote targets when local_only=true
-    if (local_only && is_remote) {
-        return QYMERA_ERR_INVALID_CAPABILITY;
-    }
-
-    // Perform actual GPIO control for local devices
-    if (!is_remote) {
-        // Idempotency check: avoid unnecessary GPIO write if already in desired state
-        if (e->value.bool_value != state) {
-            qymera_err_t gpio_err = qymera_gpio_write(e->gpio_pin,
-                        state ? QYMERA_GPIO_HIGH : QYMERA_GPIO_LOW);
-            if (gpio_err != QYMERA_OK) {
-                return gpio_err;  // GPIO write failed - state not updated
-            }
-        }
-        // else: already in desired state - idempotent no-op, GPIO not re-written
-    } else {
-        // Remote device: send UDP control command using existing protocol
-        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)context->udp_transport;
-        if (!transport) {
-            return QYMERA_ERR_NETWORK;
-        }
-
-        // Build UDP command payload for relay
-        qymera_payload_command_t cmd = {0};
-        cmd.entity_id = e->entity_id;
-        cmd.opcode = 1;  // Opcode for relay command
-        cmd.flags = 0;
-        cmd.value_f = state ? 1.0f : 0.0f;  // 1.0 = ON, 0.0 = OFF
-        cmd.value_u32 = 0;
-        cmd.cmd_seq = 0;
-
-        // Send the command via UDP (fire-and-report)
-        qymera_err_t udp_err = qymera_udp_transport_send_command(
-            transport, d->ip_addr, entity_ref->entity_id,
-            1, state ? 1.0f : 0.0f, 0, &cmd.cmd_seq);
-
-        // Update registry state to reflect dispatched (fire-and-report)
-        e->value.valid = true;
-        e->value.numeric_value = state ? 1.0f : 0.0f;
-        e->value.bool_value = state;
-        e->value.timestamp = qymera_timestamp_now();
-        e->value.reliability = 0;  // pending remote confirmation
-
-        return udp_err;
-    }
-
-    // Update registry state AFTER successful control
-    e->value.valid = true;
-    e->value.numeric_value = state ? 1.0f : 0.0f;
-    e->value.bool_value = state;
-    e->value.timestamp = qymera_timestamp_now();
-    e->value.reliability = 0;
-
-    return QYMERA_OK;
-}
-qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only) {
-    if (!registry || !entity_ref) return QYMERA_ERR_INVALID_ARG;
-
-    // Check entity has dimmer capability
-    if (!_control_entity_has_capability(registry, entity_ref, QYMERA_CAP_ACTUATOR_DIMMER)) {
-        return QYMERA_ERR_INVALID_CAPABILITY;
-    }
-
-    // Clamp level to valid range (0-100) - return error for invalid instead of clamping
-    if (level > 100) {
-        return QYMERA_ERR_INVALID_ARG;
-    }
-
-    // Find entity in registry
-    uint16_t entity_idx;
-    qymera_err_t err = qymera_registry_find_entity(registry, entity_ref->device_id, entity_ref->entity_id, &entity_idx);
-    if (err != QYMERA_OK) return err;
-
-    qymera_entity_t *e = &registry->entities[entity_idx];
-
-    // Check device role for locality
-    uint16_t dev_idx;
-    err = qymera_registry_find_device(registry, entity_ref->device_id, &dev_idx);
-    if (err != QYMERA_OK) return err;
-
-    qymera_device_t *d = &registry->devices[dev_idx];
-    bool is_remote = (d->role == 1);  // role==1 = remote
-
-    // local_only enforcement: reject remote targets when local_only=true
-    if (local_only && is_remote) {
-        return QYMERA_ERR_INVALID_CAPABILITY;
-    }
-
-    // Perform actual PWM control for local devices
-    if (!is_remote) {
-        // Idempotency check: avoid unnecessary PWM write if already at desired level
-        if (e->value.numeric_value != (float)level) {
-            // Set PWM duty cycle - use entity's gpio_pin as PWM channel
-            // gpio_pin == -1 means not mapped to PWM
-            if (e->gpio_pin < 0) {
-                return QYMERA_ERR_INVALID_STATE;  // Pin not mapped to PWM
-            }
-            qymera_err_t pwm_err = qymera_pwm_set_duty(e->gpio_pin, level);
-            if (pwm_err != QYMERA_OK) {
-                return pwm_err;  // PWM write failed
-            }
-        }
-        // else: already at desired level - idempotent no-op
-    } else {
-        // Remote device: send UDP control command using existing protocol
-        qymera_udp_transport_t *transport = (qymera_udp_transport_t *)context->udp_transport;
-        if (!transport) {
-            return QYMERA_ERR_NETWORK;
-        }
-
-        // Build UDP command payload for dimmer
-        qymera_payload_command_t cmd = {0};
-        cmd.entity_id = e->entity_id;
-        cmd.opcode = 2;  // Opcode for dimmer command
-        cmd.flags = 0;
-        cmd.value_f = (float)level;
-        cmd.value_u32 = 0;
-        cmd.cmd_seq = 0;
-
-        // Send the command via UDP (fire-and-report)
-        qymera_err_t udp_err = qymera_udp_transport_send_command(
-            transport, d->ip_addr, entity_ref->entity_id,
-            2, (float)level, 0, &cmd.cmd_seq);
-
-        // Update registry state to reflect dispatched (fire-and-report)
-        e->value.valid = true;
-        e->value.numeric_value = (float)level;
-        e->value.bool_value = false;
-        e->value.timestamp = qymera_timestamp_now();
-        e->value.reliability = 0;  // pending remote confirmation
-
-        return udp_err;
-    }
-
-    // Update registry state AFTER successful control
-    e->value.valid = true;
-    e->value.numeric_value = (float)level;
-    e->value.bool_value = false;
-    e->value.timestamp = qymera_timestamp_now();
-    e->value.reliability = 0;
-
     return QYMERA_OK;
 }
 

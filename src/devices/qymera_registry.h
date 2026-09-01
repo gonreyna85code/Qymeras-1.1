@@ -6,7 +6,7 @@
 
 #include "qymera_types.h"
 #include "qymera_ring.h"
-#include "qymera_control_context.h"
+#include "qymera_control.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -36,7 +36,9 @@ typedef struct {
     uint32_t fade_ms;
     bool protected_actuator;
     int8_t gpio_pin;  // GPIO pin for actuator control (-1 = not mapped)
-    qymera_entity_value_t value;
+    qymera_entity_value_t value;   // OBSERVED (authoritative) state
+    qymera_entity_value_t desired; // REQUESTED (desired) state for remote entities
+    qymera_cmd_status_t cmd_status; // Remote command lifecycle status
     qymera_timestamp_t last_updated;
 } qymera_entity_t;
 
@@ -228,31 +230,23 @@ qymera_err_t qymera_registry_remove_device(qymera_registry_t *registry, uint16_t
 
 /* =========================
  * Control API
+ *
+ * The remote/actuator Control API and the typed qymera_control_context_t live
+ * in qymera_control.h. The Registry provides the state helpers below that the
+ * Control API uses to represent desired vs observed state.
  * ========================= */
 
 /**
- * Set relay actuator state
+ * Set an entity's desired (requested) state and remote command status.
  * @param registry   Registry handle
- * @param entity_ref Entity reference (device_id + entity_id)
- * @param state      true = ON, false = OFF
- * @param local_only if true, only act on local devices (not remote)
- * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
- *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have relay capability
-typedef struct qymera_core_s qymera_core_t;
-typedef struct qymera_control_s qymera_control_context_t;
+ * @param entity_idx Entity index
+ * @param desired    Requested state (does not imply observed)
+ * @param status     Remote command lifecycle status
+ * @return QYMERA_OK on success
  */
-qymera_err_t qymera_control_set_relay(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, bool state, bool local_only);
-
-/**
- * Set dimmer actuator level
- * @param registry   Registry handle
- * @param entity_ref Entity reference (device_id + entity_id)
- * @param level      duty cycle 0-100
- * @param local_only if true, only act on local devices (not remote)
- * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if entity not found,
- *         QYMERA_ERR_INVALID_CAPABILITY if entity doesn't have dimmer capability
- */
-qymera_err_t qymera_control_set_dimmer(qymera_registry_t *registry, qymera_control_context_t *context, const qymera_entity_ref_t *entity_ref, uint8_t level, bool local_only);
+qymera_err_t qymera_registry_set_entity_desired(qymera_registry_t *registry, uint16_t entity_idx,
+                                                 const qymera_entity_value_t *desired,
+                                                 qymera_cmd_status_t status);
 
 /**
  * Check and update stale devices (called periodically)

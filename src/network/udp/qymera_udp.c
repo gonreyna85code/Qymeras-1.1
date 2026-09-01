@@ -156,16 +156,30 @@ qymera_err_t qymera_udp_transport_send_command(qymera_udp_transport_t *transport
                                                 uint32_t *cmd_seq) {
     if (!transport || !dest_ip || !cmd_seq) return QYMERA_ERR_INVALID_ARG;
     
-    qymera_payload_command_t cmd = {0};
-    cmd.entity_id = entity_id;
-    cmd.opcode = opcode;
-    cmd.value_f = value_f;
-    cmd.value_u32 = value_u32;
-    cmd.cmd_seq = transport->tx_seq;
-    *cmd_seq = transport->tx_seq++;
+    /* Allocate a single correlation ID for this command. It is used both as the
+     * message header.seq and as the payload cmd_seq so the remote peer has one
+     * unambiguous identifier to echo back in the ACK. */
+    uint32_t id = transport->tx_seq++;
     
-    return qymera_udp_transport_send(transport, QYMERA_MSG_COMMAND, dest_ip, QYMERA_UDP_PORT_CONTROL,
-                                     &cmd, sizeof(cmd));
+    uint8_t buffer[QYMERA_MAX_UDP_PACKET];
+    qymera_msg_header_t *header = (qymera_msg_header_t *)buffer;
+    header->magic = QYMERA_PROTOCOL_MAGIC;
+    header->version = QYMERA_PROTOCOL_VERSION;
+    header->kind = QYMERA_MSG_COMMAND;
+    header->seq = id;
+    header->src_uid = transport->local_uid;
+    header->len = (uint16_t)sizeof(qymera_payload_command_t);
+    
+    qymera_payload_command_t *cmd = (qymera_payload_command_t *)(buffer + sizeof(qymera_msg_header_t));
+    cmd->entity_id = entity_id;
+    cmd->opcode = opcode;
+    cmd->value_f = value_f;
+    cmd->value_u32 = value_u32;
+    cmd->cmd_seq = id;
+    *cmd_seq = id;
+    
+    return qymera_udp_socket_send(transport->control_sock, dest_ip, QYMERA_UDP_PORT_CONTROL,
+                                  buffer, sizeof(qymera_msg_header_t) + sizeof(qymera_payload_command_t));
 }
 
 void qymera_udp_transport_set_callback(qymera_udp_transport_t *transport, qymera_msg_type_t msg_type,
