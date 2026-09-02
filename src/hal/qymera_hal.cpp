@@ -222,23 +222,48 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     }
 }
 
+qymera_err_t qymera_netif_init(void) {
+    if (s_netif_initialized) return QYMERA_OK;
+    esp_err_t err = esp_netif_init();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
+    s_netif_initialized = true;
+    return QYMERA_OK;
+}
+
 qymera_err_t qymera_wifi_init(void) {
     if (s_wifi_initialized) return QYMERA_OK;
     
-    if (!s_netif_initialized) {
-        esp_err_t err = esp_netif_init();
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
-        err = esp_event_loop_create_default();
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
-        s_netif_initialized = true;
-    }
+    // Initialize WiFi via Arduino (initializes driver with correct buffer config)
+    WiFi.mode(WIFI_AP);
+    delay(500);
     
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_err_t err = esp_wifi_init(&cfg);
-    if (err != ESP_OK) return QYMERA_ERR_NETWORK;
+    // Stop Arduino's captive portal HTTP server on port 80
+    WebServer server(80);
+    server.stop();
+    delay(100);
     
-    err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    if (err != ESP_OK) return QYMERA_ERR_NETWORK;
+    // Now use ESP-IDF APIs directly for our HTTP server on port 80
+    qymera_err_t nerr = qymera_netif_init();
+    if (nerr != QYMERA_OK) return nerr;
+    
+    // Configure AP mode (already started by Arduino, just reconfigure)
+    wifi_config_t ap_cfg = {0};
+    snprintf((char *)ap_cfg.ap.ssid, sizeof(ap_cfg.ap.ssid), "Qymera-%08X", (unsigned int)qymera_system_get_chip_id());
+    ap_cfg.ap.ssid_len = strlen((char *)ap_cfg.ap.ssid);
+    ap_cfg.ap.channel = 1;
+    ap_cfg.ap.max_connection = 4;
+    ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
+    
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+    if (err != ESP_OK) { printf("[WIFI] set_config err=%d\n", (int)err); return QYMERA_ERR_NETWORK; }
+    
+    // Restart WiFi to apply new config
+    err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
+    err = esp_wifi_start();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) { printf("[WIFI] start err=%d\n", (int)err); return QYMERA_ERR_NETWORK; }
     
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
@@ -396,6 +421,9 @@ struct qymera_udp_socket {
 
 qymera_err_t qymera_udp_socket_create(const qymera_udp_socket_config_t *config, qymera_udp_socket_t *sock) {
     if (!config || !sock) return QYMERA_ERR_INVALID_ARG;
+    
+    qymera_err_t nerr = qymera_netif_init();
+    if (nerr != QYMERA_OK) return nerr;
     
     int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     if (sockfd < 0) return QYMERA_ERR_NETWORK;
@@ -589,10 +617,12 @@ qymera_err_t qymera_nvs_get_blob(const char *namespace_, const char *key, void *
     
     nvs_handle_t handle;
     esp_err_t err = nvs_open(namespace_, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return QYMERA_ERR_NOT_FOUND;
     if (err != ESP_OK) return QYMERA_ERR_STORAGE;
     
     err = nvs_get_blob(handle, key, data, len);
     nvs_close(handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return QYMERA_ERR_NOT_FOUND;
     return (err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_STORAGE;
 }
 

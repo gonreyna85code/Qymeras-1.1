@@ -20,6 +20,10 @@
 #include "qymera_skill.h"
 #include "qymera_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* =========================
  * HTTP API configuration
  * ========================= */
@@ -123,3 +127,7 @@ void qymera_http_api_serialize_error(qymera_skill_output_t *output,
 /* Send the HTTP result/envelope over the given request. */
 void qymera_http_api_send_result(httpd_req_t *req, qymera_http_api_result_t *result);
 void qymera_http_api_send_error(httpd_req_t *req, qymera_http_api_error_t *error);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif

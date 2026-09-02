@@ -13,6 +13,10 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <Arduino.h>
+#include <WiFi.h>
+
+SET_LOOP_TASK_STACK_SIZE(32768);
 
 /* =========================
  * User Configuration
@@ -132,7 +136,9 @@ static void simulate_sensor_reading(qymera_core_t *core) {
     }
 }
 
-int main(void) {
+static qymera_core_t *g_core = NULL;
+
+static void app_boot(void) {
     qymera_hal_init();
     
     qymera_core_config_t config = {0};
@@ -157,12 +163,16 @@ int main(void) {
         qymera_log_early("Core init failed: %d", err);
         while (1) { qymera_system_restart(); }
     }
+    g_core = core;
     
     qymera_log_t *log = qymera_core_get_log(core);
     qymera_log_system(log, "main", "Qymera Dashboard started");
     qymera_log_info(log, "main", "Device: %s (UID: %08X)", config.general.device_name, config.general.device_uid);
     
     setup_demo_rule(core);
+
+    qymera_err_t wifr = qymera_wifi_init();
+    if (wifr != QYMERA_OK) qymera_log_error(log, "main", "WiFi init failed: %d", wifr);
     
     if (config.network.sta_enabled) {
         qymera_wifi_sta_config_t sta_cfg = {0};
@@ -176,36 +186,67 @@ int main(void) {
         qymera_wifi_ap_config_t ap_cfg = {0};
         snprintf(ap_cfg.ssid, sizeof(ap_cfg.ssid), "Qymera-%08X", config.general.device_uid);
         ap_cfg.channel = 1;
-        qymera_wifi_ap_start(&ap_cfg);
+        qymera_err_t aperr = qymera_wifi_ap_start(&ap_cfg);
+        if (aperr != QYMERA_OK) {
+            qymera_log_error(log, "main", "AP start failed: %d", aperr);
+        } else {
+            // Wait for AP to get IP
+            for (int i = 0; i < 20; i++) {
+                char ip_str[16];
+                if (qymera_wifi_get_ap_ip(ip_str, sizeof(ip_str)) == QYMERA_OK && ip_str[0] != '\0') {
+                    qymera_log_info(log, "main", "AP ready at %s", ip_str);
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
     }
-
-    qymera_err_t herr = qymera_http_api_init(core);
+    
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    qymera_err_t herr = QYMERA_ERR_INVALID_STATE;
+    for (int i = 0; i < 3; i++) {
+        herr = qymera_http_api_init(core);
+        if (herr == QYMERA_OK) break;
+        qymera_log_warn(log, "main", "HTTP init retry %d/3: %d", i + 1, herr);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
     if (herr == QYMERA_OK) {
-        qymera_log_info(log, "main", "Dashboard HTTP API started on port 80");
+        qymera_log_info(log, "main", "Dashboard HTTP API started on port 8080");
     } else {
         qymera_log_error(log, "main", "Dashboard HTTP API init failed: %d", herr);
     }
-
-    qymera_log_info(log, "main", "Entering main loop");
     
+    qymera_log_info(log, "main", "Entering main loop");
+}
+
+static void app_tick(void) {
+    if (!g_core) return;
+    qymera_core_tick(g_core);
+    simulate_sensor_reading(g_core);
+}
+
+/* Arduino framework runs setup()/loop(); main() is provided for frameworks
+ * that invoke a real main entry point. The product logic lives in app_boot/
+ * app_tick so the device actually boots on hardware. */
+int main(void) {
+    app_boot();
+
     while (1) {
-        qymera_core_tick(core);
-        simulate_sensor_reading(core);
-        
+        app_tick();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    
+
     return 0;
 }
 
-/* Arduino framework entry points */
+/* Arduino framework entry points: setup()/loop() run inside loopTask() after
+ * the SDK boots, so all product boot work must live here to reach hardware. */
 void setup(void) {
-    // Initialize HAL first
-    qymera_hal_init();
+    app_boot();
 }
 
 void loop(void) {
-    // The actual application runs in main()
-    // Arduino loop is kept minimal
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    app_tick();
+    vTaskDelay(pdMS_TO_TICKS(10));
 }

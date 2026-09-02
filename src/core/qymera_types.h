@@ -12,11 +12,11 @@
  * Platform Configuration
  * ========================= */
 
-#define QYMERA_MAX_DEVICES        256
-#define QYMERA_MAX_ENTITIES       1024
-#define QYMERA_MAX_RULES          500
-#define QYMERA_MAX_EVENT_QUEUE    256
-#define QYMERA_MAX_LOG_ENTRIES    256
+#define QYMERA_MAX_DEVICES        64
+#define QYMERA_MAX_ENTITIES       32
+#define QYMERA_MAX_RULES          32
+#define QYMERA_MAX_EVENT_QUEUE    64
+#define QYMERA_MAX_LOG_ENTRIES    128
 #define QYMERA_MAX_UDP_PACKET     1280
 
 #define QYMERA_DEVICE_ID_LEN      32

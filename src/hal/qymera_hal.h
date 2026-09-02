@@ -75,6 +75,7 @@ typedef struct {
 } qymera_wifi_ap_config_t;
 
 qymera_err_t qymera_wifi_init(void);
+qymera_err_t qymera_netif_init(void);
 qymera_err_t qymera_wifi_set_mode(qymera_wifi_mode_t mode);
 qymera_err_t qymera_wifi_sta_connect(const qymera_wifi_sta_config_t *config);
 qymera_err_t qymera_wifi_ap_start(const qymera_wifi_ap_config_t *config);

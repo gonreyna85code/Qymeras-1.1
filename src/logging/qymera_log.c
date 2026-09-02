@@ -196,3 +196,12 @@ void qymera_log_get_stats(qymera_log_t *log, qymera_ring_stats_t *stats) {
     if (!log || !stats) return;
     qymera_ring_get_stats(&log->log_ring, stats);
 }
+
+void qymera_log_early(const char *fmt, ...) {
+    if (!fmt) return;
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+    printf("\n");
+}

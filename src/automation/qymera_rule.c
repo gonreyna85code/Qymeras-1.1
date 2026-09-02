@@ -465,6 +465,7 @@ size_t qymera_rule_engine_evaluate(qymera_rule_engine_t *engine, const qymera_ev
             }
         }
     }
+    }
     
     return evaluated;
 }
@@ -727,6 +728,5 @@ void qymera_timer_wheel_tick(qymera_timer_wheel_t *wheel, qymera_rule_engine_t *
         }
         
         wheel->slots[slot].active = false;
-    }
     }
 }

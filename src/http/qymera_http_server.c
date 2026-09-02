@@ -328,6 +328,20 @@ static esp_err_t h_rule_action(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t h_rules_dispatch(httpd_req_t *req) {
+    if (req->method == HTTP_GET) {
+        return h_rule_get(req);
+    } else if (req->method == HTTP_POST) {
+        return h_rule_action(req);
+    } else if (req->method == HTTP_PUT) {
+        return h_rules_put(req);
+    } else if (req->method == HTTP_DELETE) {
+        return h_rules_delete(req);
+    }
+    http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"METHOD_NOT_ALLOWED\"}}");
+    return ESP_OK;
+}
+
 static esp_err_t h_skills_get(httpd_req_t *req) {
     size_t count = qymera_skill_registry_count();
     char buf[2048];
@@ -384,15 +398,12 @@ static const httpd_uri_t routes[] = {
     { .uri = "/api/v1/status", .method = HTTP_GET, .handler = h_status_get },
     { .uri = "/api/v1/devices", .method = HTTP_GET, .handler = h_devices_get },
     { .uri = "/api/v1/entities", .method = HTTP_GET, .handler = h_entities_get },
-    { .uri = "/api/v1/entities/*", .method = HTTP_GET, .handler = h_entity_state_get },
+    { .uri = "/api/v1/entities*", .method = HTTP_GET, .handler = h_entity_state_get },
     { .uri = "/api/v1/control/relay", .method = HTTP_POST, .handler = h_relay_post },
     { .uri = "/api/v1/control/dimmer", .method = HTTP_POST, .handler = h_dimmer_post },
     { .uri = "/api/v1/rules", .method = HTTP_GET, .handler = h_rules_get },
-    { .uri = "/api/v1/rules/*", .method = HTTP_GET, .handler = h_rule_get },
     { .uri = "/api/v1/rules", .method = HTTP_POST, .handler = h_rules_post },
-    { .uri = "/api/v1/rules/*", .method = HTTP_POST, .handler = h_rule_action },
-    { .uri = "/api/v1/rules/*", .method = HTTP_PUT, .handler = h_rules_put },
-    { .uri = "/api/v1/rules/*", .method = HTTP_DELETE, .handler = h_rules_delete },
+    { .uri = "/api/v1/rules*", .method = HTTP_GET | HTTP_POST | HTTP_PUT | HTTP_DELETE, .handler = h_rules_dispatch },
     { .uri = "/api/v1/skills", .method = HTTP_GET, .handler = h_skills_get },
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
 };
@@ -402,19 +413,28 @@ static const httpd_uri_t routes[] = {
  * ========================= */
 
 qymera_err_t qymera_http_api_init(qymera_core_t *core) {
+    printf("[HTTP] Starting server on port 8080...\n");
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 80;
-    config.stack_size = 8192;
+    config.server_port = 8080;
+    config.stack_size = 16384;
     config.uri_match_fn = httpd_uri_match_wildcard;
     httpd_handle_t handle = NULL;
-    if (httpd_start(&handle, &config) != ESP_OK) return QYMERA_ERR_INVALID_STATE;
+    esp_err_t esp_err = httpd_start(&handle, &config);
+    printf("[HTTP] httpd_start returned: %d\n", (int)esp_err);
+    if (esp_err != ESP_OK) {
+        printf("[HTTP] httpd_start failed: %d\n", (int)esp_err);
+        return QYMERA_ERR_INVALID_STATE;
+    }
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_uri_t uri = routes[i];
         uri.user_ctx = core;
-        if (httpd_register_uri_handler(handle, &uri) != ESP_OK) {
+        esp_err_t reg_err = httpd_register_uri_handler(handle, &uri);
+        if (reg_err != ESP_OK) {
+            printf("[HTTP] Failed to register route %zu: %s (err=%d)\n", i, uri.uri, (int)reg_err);
             httpd_stop(handle);
             return QYMERA_ERR_INVALID_STATE;
         }
+        printf("[HTTP] Registered route %zu: %s\n", i, uri.uri);
     }
     return QYMERA_OK;
 }

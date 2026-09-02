@@ -69,13 +69,13 @@ struct qymera_core_s {
 
 static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     qymera_err_t err = qymera_storage_init(&core->storage);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("storage_init=%d", err); return err; }
     
     err = qymera_storage_load_network(core->storage, &core->config.network);
-    if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) return err;
+    if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_net=%d", err); return err; }
     
     err = qymera_storage_load_general(core->storage, &core->config.general);
-    if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) return err;
+    if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_gen=%d", err); return err; }
     
     qymera_log_config_t log_cfg = {0};
     log_cfg.log_ring.data = core->log_ring_storage;
@@ -116,13 +116,13 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     disc_sock_cfg.port = core->config.network.udp_discovery_port ? core->config.network.udp_discovery_port : QYMERA_UDP_PORT_DISCOVERY;
     disc_sock_cfg.broadcast = true;
     err = qymera_udp_socket_create(&disc_sock_cfg, &core->discovery_sock);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("disc_sock=%d", err); return err; }
     
     qymera_udp_socket_config_t ctrl_sock_cfg = {0};
     ctrl_sock_cfg.port = core->config.network.udp_control_port ? core->config.network.udp_control_port : QYMERA_UDP_PORT_CONTROL;
     ctrl_sock_cfg.broadcast = false;
     err = qymera_udp_socket_create(&ctrl_sock_cfg, &core->control_sock);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("ctrl_sock=%d", err); return err; }
     
     qymera_udp_transport_config_t udp_cfg = {0};
     udp_cfg.discovery_sock = core->discovery_sock;
@@ -139,19 +139,20 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     udp_cfg.tx_ring.overwrite = true;
     
     err = qymera_udp_transport_init(&core->udp, &udp_cfg);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("udp_transport=%d", err); return err; }
     
     qymera_rule_engine_config_t rule_cfg = {0};
     rule_cfg.rules = core->rules_storage;
     rule_cfg.max_rules = QYMERA_MAX_RULES;
     rule_cfg.event_bus = core->event_bus;
     rule_cfg.log = core->log;
+    rule_cfg.registry = core->registry;
     
     err = qymera_rule_engine_init(&core->rule_engine, &rule_cfg);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("rule_engine=%d", err); return err; }
     
     err = qymera_ai_init(&core->ai, &core->config.ai);
-    if (err != QYMERA_OK) return err;
+    if (err != QYMERA_OK) { qymera_log_early("ai_init=%d", err); return err; }
     
     qymera_rules_index_t rules_index;
     err = qymera_storage_load_rules_index(core->storage, &rules_index);
@@ -232,6 +233,7 @@ qymera_err_t qymera_core_init(qymera_core_t **core, const qymera_core_config_t *
     
     err = core_init_subsystems(c);
     if (err != QYMERA_OK) {
+        qymera_log_early("Core subsystem init failed: %d", err);
         qymera_core_shutdown(c);
         return err;
     }
