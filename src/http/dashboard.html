@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qymera Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{background:#f5f7fa;color:#1a1d21;min-height:100vh}
+header{background:#1a1d21;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{font-size:1.1rem;display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#ef4444}
+.dot.ok{background:#22c55e}
+#sysInfo{font-size:0.75rem;color:#a3a9b4}
+nav{display:flex;gap:4px;padding:8px 12px;background:#fff;border-bottom:1px solid #e2e8f0;overflow-x:auto;white-space:nowrap}
+.tab{padding:8px 16px;border:none;background:transparent;color:#475569;font-size:0.85rem;font-weight:500;cursor:pointer;border-bottom:2px solid transparent}
+.tab:hover{color:#1a1d21}.tab.active{color:#2563eb;border-bottom-color:#2563eb}
+main{padding:16px}
+.card{background:#fff;border-radius:8px;border:1px solid #e2e8f0;padding:16px;margin-bottom:16px}
+h2{font-size:0.9rem;font-weight:600;color:#334155;margin-bottom:12px}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.section-header h2{margin-bottom:0}
+.grid{display:grid;gap:12px}.grid-2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}.grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.metric{font-size:1.5rem;font-weight:600}
+.entity{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0}
+.entity-info{display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.entity-name{font-weight:500;font-size:0.85rem;word-break:break-word}
+.entity-meta{font-size:0.7rem;color:#64748b}
+.btn{padding:6px 12px;border:none;border-radius:4px;font-size:0.75rem;font-weight:500;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:#2563eb;color:#fff}.btn-danger{background:#ef4444;color:#fff}.btn-ghost{background:#f1f5f9;color:#475569}
+.toggle{position:relative;width:44px;height:24px;background:#cbd5e1;border:none;border-radius:12px;cursor:pointer}
+.toggle.on{background:#22c55e}.toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:0.2s}
+.toggle.on::after{left:22px}
+.slider{width:100%;height:6px;-webkit-appearance:none;appearance:none;background:#e2e8f0;border-radius:3px;outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;background:#2563eb;border-radius:50%;cursor:pointer}
+input,select{width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1a1d21;font-size:0.8rem}
+label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
+.form-row{display:flex;gap:12px}.form-row>div{flex:1}
+.log-entry{font-family:monospace;font-size:0.7rem;padding:6px 10px;background:#f8fafc;border-radius:4px;margin-bottom:4px;border-left:3px solid #2563eb;word-break:break-word}
+.log-entry.ERROR{border-left-color:#ef4444}.log-entry.WARNING{border-left-color:#f59e0b}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:600}
+.badge-online{background:#dcfce7;color:#166534}.badge-offline{background:#fee2e2;color:#991b1b}
+.badge-pending{background:#fef3c7;color:#92400e}.badge-confirmed{background:#dbeafe;color:#1e40af}.badge-error{background:#fee2e2;color:#991b1b}
+.badge-enabled{background:#dcfce7;color:#166534}.badge-disabled{background:#fee2e2;color:#991b1b}
+.badge-local{background:#e0e7ff;color:#3730a3}.badge-remote{background:#ede9fe;color:#5b21b6}
+.empty{color:#94a3b8;font-size:0.85rem;padding:8px 0}
+.error-card{color:#991b1b}
+@media(max-width:640px){header h1{font-size:1rem}main{padding:12px}.form-row{flex-direction:column;gap:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="dot" id="statusDot"></span>Qymera Dashboard <span id="netLabel" style="font-size:0.7rem;color:#a3a9b4"></span></h1>
+  <div id="sysInfo">—</div>
+</header>
+<nav id="navTabs">
+  <button class="tab active" data-tab="dashboard">Dashboard</button>
+  <button class="tab" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="entities">Entities</button>
+  <button class="tab" data-tab="rules">Rules</button>
+  <button class="tab" data-tab="skills">Skills</button>
+  <button class="tab" data-tab="logs">Logs</button>
+  <button class="tab" data-tab="system">System</button>
+</nav>
+<main id="mainContent"></main>
+<script>
+"use strict";
+var API='/api/v1',cur='dashboard',renderSeq=0,pending=new Set();
+
+function esc(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function fmtBool(v){ return v===true?'ON':(v===false?'OFF':esc(v)); }
+function fmtTs(sec){ if(!sec) return '—'; return new Date(sec*1000).toLocaleTimeString(); }
+function badgeForStatus(s){
+  if(!s) return '';
+  var st=String(s);
+  if(st==='STATE_CONFIRMED'||st==='CONFIRMED') return 'badge-confirmed';
+  if(st==='FAILED'||st==='TIMEOUT') return 'badge-error';
+  return 'badge-pending';
+}
+
+function apiFetch(path,opts){
+  opts=opts||{};
+  var ctrl=new AbortController();
+  var t=setTimeout(function(){ctrl.abort();},8000);
+  return fetch(API+path,{headers:{'Content-Type':'application/json'},signal:ctrl.signal,...opts})
+    .then(function(r){
+      clearTimeout(t);
+      return r.text().then(function(txt){
+        var j=null;
+        try{ j=JSON.parse(txt); }catch(e){ j=null; }
+        if(!j){ throw new Error('Invalid JSON response from '+path); }
+        if(!j.ok){ throw new Error((j.error&&j.error.code?j.error.code+': ':'')+(j.error&&j.error.message?j.error.message:'request failed')); }
+        return j.data;
+      });
+    }).catch(function(e){
+      clearTimeout(t);
+      if(e&&e.name==='AbortError') throw new Error('Timeout: '+path+' unreachable');
+      throw e;
+    });
+}
+function setOnline(b){
+  var dot=document.getElementById('statusDot');
+  var si=document.getElementById('sysInfo');
+  dot.className=b?'dot ok':'dot';
+  si.textContent=b?'':'OFFLINE';
+}
+function setNetLabel(txt){ document.getElementById('netLabel').textContent=txt; }
+
+function renderError(err){
+  var main=document.getElementById('mainContent');
+  main.innerHTML='<div class="card"><div class="empty error-card">Error: '+esc(err&&err.message?err.message:'unknown error')+'</div><div class="empty">The device may be offline. Actions will retry on the next refresh.</div></div>';
+}
+
+function showLoading(){
+  var main=document.getElementById('mainContent');
+  main.innerHTML='<div class="card"><div class="empty">Loading...</div></div>';
+}
+
+function renderDashboard(tag){
+  showLoading();
+  return apiFetch('/status').then(function(s){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
+    document.getElementById('sysInfo').textContent='IP: '+(s.ip||'—')+' | Heap: '+s.free_heap+' B';
+    main.innerHTML=
+      '<div class="section-header"><h2>Qymera Dashboard</h2></div>'+
+      '<div class="grid grid-3">'+
+      '<div class="card"><h2>Status</h2><div class="metric"><span class="badge badge-online">ONLINE</span></div></div>'+
+      '<div class="card"><h2>IP Address</h2><div class="metric">'+esc(s.ip||'—')+'</div></div>'+
+      '<div class="card"><h2>Free Heap</h2><div class="metric">'+esc(s.free_heap)+' B</div></div>'+
+      '<div class="card"><h2>Uptime</h2><div class="metric">'+esc(Math.floor(s.uptime_ms/1000))+'s</div></div>'+
+      '<div class="card"><h2>Device Count</h2><div class="metric">'+esc(s.device_count)+'</div></div>'+
+      '<div class="card"><h2>Entity Count</h2><div class="metric">'+esc(s.entity_count)+'</div></div>'+
+      '</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderDevices(tag){
+  showLoading();
+  return apiFetch('/devices').then(function(d){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    var list=d||[];
+    if(!list.length){ main.innerHTML='<div class="card"><div class="empty">No devices found</div></div>'; return; }
+    main.innerHTML='<div class="section-header"><h2>Devices ('+list.length+')</h2></div>'+
+      '<div class="grid grid-2">'+list.map(function(dev){
+        var local=(dev.role==='dashboard');
+        var mode=local?'LOCAL':'REMOTE';
+        var state=dev.state?esc(dev.state):(dev.online?'operational':'offline');
+        var loc=dev.location?esc(dev.location):'—';
+        return '<div class="card"><h2>'+esc(dev.name)+' <span class="badge '+(local?'badge-local':'badge-remote')+'">'+mode+'</span></h2>'+
+          '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+esc(dev.device_id)+'</span>'+
+          '<span class="entity-meta">Model: '+esc(dev.model)+' | Location: '+loc+' | Role: '+esc(dev.role||'—')+'</span></div>'+
+          '<span class="badge '+(dev.online?'badge-online':'badge-offline')+'">'+(dev.online?'Online':'Offline')+'</span></div>'+
+          '<div style="margin-top:8px"><span class="entity-meta">State: '+esc(state)+'</span></div>'+
+          '</div>';
+      }).join('')+'</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderEntities(tag){
+  showLoading();
+  return apiFetch('/entities').then(function(d){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    var list=d||[];
+    if(!list.length){ main.innerHTML='<div class="card"><div class="empty">No entities found</div></div>'; return; }
+    main.innerHTML='<div class="section-header"><h2>Entities ('+list.length+')</h2></div>'+
+      '<div class="grid grid-2">'+list.map(function(ent){
+        var caps=(ent.capabilities||[]).join(', ');
+        var cur=fmtBool(ent.current), des=fmtBool(ent.desired);
+        var isRelay=caps.indexOf('ACTUATOR_RELAY')>=0;
+        var isDimmer=caps.indexOf('ACTUATOR_DIMMER')>=0;
+        var devId=esc(ent.device_id), entId=esc(ent.entity_id);
+        var busy=pending.has(ent.device_id+'/'+ent.entity_id);
+        var control='';
+        if(isRelay){
+          var on=(ent.desired===true);
+          control='<label class="toggle '+(on?'on':'')+'" data-k="'+devId+'/'+entId+'" data-want="'+(on?'1':'0')+'" '+(busy?'disabled':'')+'></label>';
+        } else if(isDimmer){
+          var lv=(typeof ent.desired==='number')?ent.desired:(ent.current||0);
+          control='<input type="range" class="slider" min="0" max="100" value="'+lv+'" data-k="'+devId+'/'+entId+'" '+(busy?'disabled':'')+'>';
+        } else {
+          control=fmtBool(ent.desired);
+        }
+        return '<div class="card"><h2>'+esc(ent.name)+' <span class="entity-meta">('+devId+')</span></h2>'+
+          '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+entId+'</span>'+
+          '<span class="entity-meta">Type: '+esc(ent.type)+' | Caps: '+esc(caps)+' | Unit: '+esc(ent.unit||'')+'</span></div>'+
+          '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;align-items:flex-end">'+
+          '<span class="entity-meta">Cmd: <span class="badge '+badgeForStatus(ent.cmd_status)+'">'+esc(ent.cmd_status||'—')+'</span></span>'+
+          '<span class="entity-meta">Reliability: '+esc(ent.reliability)+'</span></div></div>'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">'+
+          '<span class="entity-meta"><strong>Current:</strong> '+cur+' &nbsp;<strong>Desired:</strong> '+des+(busy?' &nbsp;<em>(sending...)</em>':'')+'</span>'+
+          control+'</div>'+
+          '</div>';
+      }).join('')+'</div>';
+
+    Array.prototype.forEach.call(main.querySelectorAll('.toggle'),function(t){
+      t.addEventListener('click',function(){
+        if(t.disabled) return;
+        var kv=t.dataset.k.split('/');
+        t.disabled=true; pending.add(t.dataset.k);
+        var want=(t.dataset.want==='1');
+        var target=!want;
+        apiFetch('/control/relay',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],value:target})})
+          .then(function(){ pending.delete(t.dataset.k); renderTab(cur); })
+          .catch(function(e){ pending.delete(t.dataset.k); t.disabled=false; renderError(e); });
+      });
+    });
+    Array.prototype.forEach.call(main.querySelectorAll('.slider'),function(s){
+      s.addEventListener('change',function(){
+        if(s.disabled) return;
+        var kv=s.dataset.k.split('/');
+        s.disabled=true; pending.add(s.dataset.k);
+        apiFetch('/control/dimmer',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],level:parseInt(s.value,10)})})
+          .then(function(){ pending.delete(s.dataset.k); renderTab(cur); })
+          .catch(function(e){ pending.delete(s.dataset.k); s.disabled=false; renderError(e); });
+      });
+    });
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderRules(tag){
+  showLoading();
+  return apiFetch('/rules').then(function(r){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    var list=r||[];
+    var head='<div class="section-header"><h2>Rules ('+list.length+')</h2><button class="btn btn-primary" onclick="showCreateRule()">Create Rule</button></div>';
+    if(!list.length){ main.innerHTML=head+'<div class="card"><div class="empty">No rules found</div></div>'; return; }
+    main.innerHTML=head+'<div class="grid grid-2">'+list.map(function(rule){
+      var brief='—';
+      if(rule.trigger&&rule.trigger.length){
+        var t=rule.trigger[0];
+        if(t&&t.entity) brief=esc(t.entity.device_id+'/'+t.entity.entity_id)+' '+(t.operator?esc(t.operator):'')+' '+esc(t.threshold);
+      }
+      return '<div class="card"><h2>'+esc(rule.name)+'</h2>'+
+        '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+esc(rule.rule_id)+'</span>'+
+        '<span class="entity-meta">Priority: '+esc(rule.priority)+' | Cooldown: '+esc(rule.cooldown_ms/1000)+'s | Max/hr: '+esc(rule.max_activations_per_hour)+'</span>'+
+        '<span class="entity-meta">Trigger: '+brief+'</span></div>'+
+        '<span class="badge '+(rule.enabled?'badge-enabled':'badge-disabled')+'">'+(rule.enabled?'Enabled':'Disabled')+'</span></div>'+
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-ghost" onclick="editRule(\''+esc(rule.rule_id)+'\')">Edit</button>'+
+        '<button class="btn '+(rule.enabled?'btn-danger':'btn-primary')+'" onclick="toggleRule(\''+esc(rule.rule_id)+'\','+(!rule.enabled)+')">'+(rule.enabled?'Disable':'Enable')+'</button>'+
+        '<button class="btn btn-danger" onclick="deleteRule(\''+esc(rule.rule_id)+'\')">Delete</button>'+
+        '</div></div>';
+    }).join('')+'</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderSkills(tag){
+  showLoading();
+  return apiFetch('/skills').then(function(s){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    var list=s||[];
+    main.innerHTML='<div class="section-header"><h2>Skill Catalog ('+list.length+')</h2></div>'+
+      '<div class="grid grid-2">'+list.map(function(sk){
+        var perms='';
+        if(sk.permissions&1) perms+='READ ';
+        if(sk.permissions&2) perms+='CONTROL ';
+        if(sk.permissions&4) perms+='RULE_READ ';
+        if(sk.permissions&8) perms+='RULE_WRITE ';
+        return '<div class="card"><h2>'+esc(sk.name)+'</h2>'+
+          '<div class="entity"><div class="entity-info"><span class="entity-name">v'+esc(sk.version)+'</span>'+
+          '<span class="entity-meta">'+esc(sk.description)+'</span><span class="entity-meta">Schema: '+esc(sk.schema_id)+'</span>'+
+          '<span class="entity-meta">Perms: '+esc(perms)+'</span></div></div></div>';
+      }).join('')+'</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderLogs(tag){
+  showLoading();
+  return apiFetch('/logs').then(function(l){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    var list=l||[];
+    if(!list.length){ main.innerHTML='<div class="section-header"><h2>Recent Logs</h2></div><div class="card"><div class="empty">No logs available</div></div>'; return; }
+    main.innerHTML='<div class="section-header"><h2>Recent Logs ('+list.length+')</h2></div>'+
+      '<div class="card">'+list.slice(0,50).map(function(e){
+        var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
+        return '<div class="log-entry '+esc(e.layer||'')+'">'+
+          '<span style="color:#94a3b8">['+fmtTs(ts)+']</span> '+
+          '<span style="font-weight:500">'+esc(e.source)+'</span>: '+esc(e.msg)+'</div>';
+      }).join('')+'</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+function renderSystem(tag){
+  showLoading();
+  return apiFetch('/status').then(function(s){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
+    var net=s.network===void 0?'?':String(s.network);
+    main.innerHTML='<div class="section-header"><h2>System Information</h2></div>'+
+      '<div class="grid grid-3">'+
+      '<div class="card"><h2>Network Mode</h2><div class="metric" style="font-size:1.1rem">'+esc(net)+'</div></div>'+
+      '<div class="card"><h2>SSID</h2><div class="metric" style="font-size:1.1rem">'+esc(s.ssid||'—')+'</div></div>'+
+      '<div class="card"><h2>IP Address</h2><div class="metric" style="font-size:1.1rem">'+esc(s.ip||'—')+'</div></div>'+
+      '<div class="card"><h2>Free Heap</h2><div class="metric">'+esc(s.free_heap)+' B</div></div>'+
+      '<div class="card"><h2>Uptime</h2><div class="metric">'+esc(Math.floor(s.uptime_ms/1000))+'s</div></div>'+
+      '<div class="card"><h2>Build</h2><div class="metric" style="font-size:1.1rem">ESP32 Dashboard</div></div>'+
+      '</div>';
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+var RENDERERS={dashboard:renderDashboard,devices:renderDevices,entities:renderEntities,rules:renderRules,skills:renderSkills,logs:renderLogs,system:renderSystem};
+
+function renderTab(name){
+  renderSeq++;
+  var tag=renderSeq;
+  (RENDERERS[name]||renderDashboard)(tag);
+}
+window.loadTab=renderTab;
+
+window.showCreateRule=function(){
+  var main=document.getElementById('mainContent');
+  main.innerHTML='<div class="card"><h2>Create Rule</h2><p class="entity-meta">Example: temperature &gt; 30 &rarr; fan ON</p><form id="ruleForm">'+
+    '<div class="form-row"><div><label>Name</label><input name="name" required></div>'+
+    '<div><label>Rule ID (optional, auto-generated)</label><input name="rule_id" placeholder="rule-001"></div></div>'+
+    '<h2 style="margin-top:12px">Trigger</h2>'+
+    '<div class="form-row"><div><label>Device ID</label><input name="trg_dev" value="dashboard" required></div>'+
+    '<div><label>Entity ID</label><input name="trg_ent" value="temperature" required></div></div>'+
+    '<div class="form-row"><div><label>Operator</label><select name="trg_op"><option value="GT">&gt;</option><option value="LT">&lt;</option><option value="GE">&ge;</option><option value="LE">&le;</option><option value="EQ">=</option><option value="NE">&ne;</option></select></div>'+
+    '<div><label>Threshold</label><input name="trg_threshold" type="number" step="any" value="30" required></div></div>'+
+    '<div><label style="margin-top:8px"><input type="checkbox" name="trg_checkbox" checked> Activate trigger (uncheck to skip)</label></div>'+
+    '<h2 style="margin-top:12px">Action</h2>'+
+    '<div class="form-row"><div><label>Device ID</label><input name="act_dev" value="dashboard" required></div>'+
+    '<div><label>Entity ID</label><input name="act_ent" value="fan" required></div></div>'+
+    '<div class="form-row"><div><label>Action Type</label><select name="act_type"><option value="SET_BOOL">Set Bool</option><option value="SET_LEVEL">Set Level</option><option value="SET_VALUE">Set Value</option><option value="TOGGLE">Toggle</option></select></div>'+
+    '<div><label>Value</label><input name="act_value" type="number" step="any" value="1"></div></div>'+
+    '<div class="form-row"><div><label>Cooldown (ms)</label><input name="cooldown_ms" type="number" value="60000"></div>'+
+    '<div><label>Priority</label><input name="priority" type="number" value="10"></div></div>'+
+    '<div><label>Max activations / hour</label><input name="max_act" type="number" value="10"></div>'+
+    '<button type="submit" class="btn btn-primary" style="margin-top:12px;width:100%">Create</button>'+
+    '<button type="button" class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="loadTab(\'rules\')">Cancel</button>'+
+    '</form></div>';
+  document.getElementById('ruleForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    var f=e.target.elements;
+    var body={name:f.name.value};
+    if(f.rule_id.value) body.rule_id=f.rule_id.value;
+    if(f.trg_checkbox.checked){
+      body.trigger={entity:{device_id:f.trg_dev.value,entity_id:f.trg_ent.value},operator:f.trg_op.value,threshold:parseFloat(f.trg_threshold.value)};
+    }
+    body.actions=[{entity:{device_id:f.act_dev.value,entity_id:f.act_ent.value},action:f.act_type.value,value:parseFloat(f.act_value.value)}];
+    if(f.cooldown_ms.value) body.cooldown_ms=parseInt(f.cooldown_ms.value,10);
+    if(f.priority.value) body.priority=parseInt(f.priority.value,10);
+    if(f.max_act.value) body.max_activations_per_hour=parseInt(f.max_act.value,10);
+    body.enabled=true;
+    apiFetch('/rules',{method:'POST',body:JSON.stringify(body)})
+      .then(function(){ loadTab('rules'); })
+      .catch(renderError);
+  });
+};
+
+window.editRule=function(id){
+  apiFetch('/rules/'+encodeURIComponent(id)).then(function(rule){
+    var trig=(rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
+    var actions=rule.actions||[];
+    var main=document.getElementById('mainContent');
+    main.innerHTML='<div class="card"><h2>Edit Rule: '+esc(rule.name)+'</h2><form id="ruleForm">'+
+      '<input type="hidden" name="rule_id" value="'+esc(rule.rule_id)+'">'+
+      '<div class="form-group"><label>Name</label><input name="name" value="'+esc(rule.name)+'" required></div>'+
+      '<div class="form-row"><div><label>Priority</label><input name="priority" type="number" value="'+esc(rule.priority)+'"></div>'+
+      '<div><label>Cooldown (ms)</label><input name="cooldown_ms" type="number" value="'+esc(rule.cooldown_ms)+'"></div></div>'+
+      '<div><label>Max activations / hour</label><input name="max_act" type="number" value="'+esc(rule.max_activations_per_hour)+'"></div>'+
+      '<p class="entity-meta" style="margin-top:8px">Action: '+
+        (actions[0]?(esc(actions[0].entity.device_id)+'/'+esc(actions[0].entity.entity_id)+' '+esc(actions[0].action)):'—')+
+        ' | Trigger: '+(trig?esc(trig.entity.device_id)+'/'+esc(trig.entity.entity_id)+' '+esc(trig.operator)+' '+esc(trig.threshold):'—')+
+        '</p>'+
+      '<button type="submit" class="btn btn-primary" style="margin-top:12px;width:100%">Update</button>'+
+      '<button type="button" class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="loadTab(\'rules\')">Cancel</button>'+
+      '</form></div>';
+    document.getElementById('ruleForm').addEventListener('submit',function(e){
+      e.preventDefault();
+      var f=e.target.elements;
+      var body={name:f.name.value,priority:parseInt(f.priority.value,10),cooldown_ms:parseInt(f.cooldown_ms.value,10),max_activations_per_hour:parseInt(f.max_act.value,10)};
+      if(trig) body.trigger=trig;
+      if(actions.length) body.actions=actions;
+      apiFetch('/rules/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)})
+        .then(function(){ loadTab('rules'); })
+        .catch(renderError);
+    });
+  }).catch(renderError);
+};
+
+window.toggleRule=function(id,enabled){
+  apiFetch('/rules/'+encodeURIComponent(id)+(enabled?'/enable':'/disable'),{method:'POST'})
+    .then(function(){ loadTab('rules'); })
+    .catch(renderError);
+};
+window.deleteRule=function(id){
+  if(!window.confirm('Delete rule '+id+'?')) return;
+  apiFetch('/rules/'+encodeURIComponent(id),{method:'DELETE'})
+    .then(function(){ loadTab('rules'); })
+    .catch(renderError);
+};
+
+document.querySelectorAll('.tab').forEach(function(b){
+  b.addEventListener('click',function(){
+    cur=b.dataset.tab;
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x===b);});
+    renderTab(cur);
+  });
+});
+
+window.addEventListener('unhandledrejection',function(e){ setOnline(false); });
+
+renderTab('dashboard');
+setInterval(function(){ renderTab(cur); },10000);
+</script>
+</body>
+</html>

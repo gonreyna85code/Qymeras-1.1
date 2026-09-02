@@ -780,6 +780,8 @@ class SkillEnv:
                 return _Err("ENTITY_NOT_FOUND")
             if c.get("operator") not in _OP_VALID:
                 return _Err("RULE_INVALID")
+        if not trig and not body.get("conditions"):
+            return _Err("RULE_INVALID", "at least one condition or trigger required")
         if not body.get("actions"):
             return _Err("RULE_INVALID", "at least one action required")
         for a in body.get("actions", []):
@@ -1446,6 +1448,429 @@ check("P3C WORKFLOW: step order is discover->inspect->build->create->enable->act
 last = steps[-1][2]
 check("P3C WORKFLOW: final inspect reflects requested actuator state",
       last["ok"] and last["data"]["desired"] is True)
+
+# ==========================================================================
+# Phase 3D.1: HTTP parser + API envelope + routing
+#
+# Mirrors src/http/qymera_http_api.c (key-lookup JSON parser) and
+# src/http/qymera_http_server.c (envelope serialization + wildcard routing).
+# The critical Phase 3D.1 bug was parsing control values from the START of
+# the document instead of locating the "value"/"level" keys, which made
+# false/0 indistinguishable from "field absent". These tests pin that
+# distinction plus the parser result codes (OK/MISSING/TYPE/BAD_JSON).
+# ==========================================================================
+
+P3D1_OK, P3D1_BAD_JSON, P3D1_MISSING, P3D1_TYPE = 0, -1, -2, -3
+
+def _parse_json(doc):
+    try:
+        return True, json.loads(doc)
+    except (ValueError, TypeError):
+        return False, None
+
+def parse_simple(doc, field):
+    """Mirror qymera_http_api_parse_simple_input: find control_field by KEY in
+    the top-level object; value must be bool (relay) / number (dimmer)."""
+    ok, d = _parse_json(doc)
+    if not ok:
+        return P3D1_BAD_JSON, None
+    if not isinstance(d, dict) or field not in d:
+        return P3D1_MISSING, None
+    v = d[field]
+    if field == "value":
+        if not isinstance(v, bool):
+            return P3D1_TYPE, None
+    else:  # level
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return P3D1_TYPE, None
+    return P3D1_OK, v
+
+print("[p3d1 simple-input parser]")
+# relay: false must be distinguishable from "absent"; numeric/string wrong type
+check("P3D1 PRS: relay value:true -> OK(True)", parse_simple('{"value":true}', "value") == (P3D1_OK, True))
+check("P3D1 PRS: relay value:false -> OK(False), NOT missing",
+      parse_simple('{"value":false}', "value") == (P3D1_OK, False))
+check("P3D1 PRS: relay body without value -> MISSING",
+      parse_simple('{"device_id":"a","entity_id":"e"}', "value")[0] == P3D1_MISSING)
+check("P3D1 PRS: relay empty object -> MISSING", parse_simple('{}', "value")[0] == P3D1_MISSING)
+check("P3D1 PRS: relay value:1 (number) -> TYPE", parse_simple('{"value":1}', "value")[0] == P3D1_TYPE)
+check("P3D1 PRS: relay value:0 (number) -> TYPE (not false)", parse_simple('{"value":0}', "value")[0] == P3D1_TYPE)
+check("P3D1 PRS: relay value:\"true\" (string) -> TYPE", parse_simple('{"value":"true"}', "value")[0] == P3D1_TYPE)
+check("P3D1 PRS: relay value:null -> TYPE", parse_simple('{"value":null}', "value")[0] == P3D1_TYPE)
+check("P3D1 PRS: relay malformed JSON -> BAD_JSON", parse_simple('{"value":', "value")[0] == P3D1_BAD_JSON)
+check("P3D1 PRS: relay nested value NOT read from sub-object (key lookup at top level)",
+      parse_simple('{"data":{"value":true}}', "value")[0] == P3D1_MISSING)
+# dimmer: 0 and 100 must parse as real values; -1/101 parse then get rejected
+# downstream; missing/wrong-type never become 0.
+check("P3D1 PRS: dimmer level:0 -> OK(0)", parse_simple('{"level":0}', "level") == (P3D1_OK, 0))
+check("P3D1 PRS: dimmer level:1 -> OK(1)", parse_simple('{"level":1}', "level") == (P3D1_OK, 1))
+check("P3D1 PRS: dimmer level:50 -> OK(50)", parse_simple('{"level":50}', "level") == (P3D1_OK, 50))
+check("P3D1 PRS: dimmer level:100 -> OK(100)", parse_simple('{"level":100}', "level") == (P3D1_OK, 100))
+check("P3D1 PRS: dimmer level:101 parses OK (range checked downstream)",
+      parse_simple('{"level":101}', "level") == (P3D1_OK, 101))
+check("P3D1 PRS: dimmer level:-1 parses OK (range checked downstream)",
+      parse_simple('{"level":-1}', "level") == (P3D1_OK, -1))
+check("P3D1 PRS: dimmer body without level -> MISSING (never silent 0)",
+      parse_simple('{"device_id":"a","entity_id":"e"}', "level")[0] == P3D1_MISSING)
+check("P3D1 PRS: dimmer level:\"50\" (string) -> TYPE", parse_simple('{"level":"50"}', "level")[0] == P3D1_TYPE)
+check("P3D1 PRS: dimmer level:true (bool) -> TYPE", parse_simple('{"level":true}', "level")[0] == P3D1_TYPE)
+
+# 'value' and 'level' must NOT be interchangeable control fields.
+check("P3D1 PRS: relay ignores 'level' only body -> MISSING",
+      parse_simple('{"level":1}', "value")[0] == P3D1_MISSING)
+check("P3D1 PRS: dimmer ignores 'value' only body -> MISSING",
+      parse_simple('{"value":true}', "level")[0] == P3D1_MISSING)
+print("[p3d1 rule parser]")
+_OP_SET = set(_OP_VALID)
+_ACT_SET = set(_ACTION_CAP.keys())
+
+def parse_rule(doc):
+    """Mirror qymera_http_api_parse_rule_input: name required string; trigger
+    object or one-element array; actions required array (>=1 object, each with
+    entity + valid action)."""
+    ok, d = _parse_json(doc)
+    if not ok:
+        return P3D1_BAD_JSON, None
+    if not isinstance(d, dict):
+        return P3D1_MISSING, None
+    if "name" not in d:
+        return P3D1_MISSING, None
+    if not isinstance(d["name"], str):
+        return P3D1_TYPE, None
+    if "rule_id" in d and not isinstance(d["rule_id"], str):
+        return P3D1_TYPE, None
+    if "enabled" in d and not isinstance(d["enabled"], bool):
+        return P3D1_TYPE, None
+    trig = d.get("trigger")
+    if trig is not None:
+        if isinstance(trig, list):
+            trig = trig[0] if trig else None
+        if trig is not None and not isinstance(trig, dict):
+            return P3D1_TYPE, None
+        if isinstance(trig, dict):
+            ent = trig.get("entity")
+            if ent is not None:
+                if not isinstance(ent, dict):
+                    return P3D1_TYPE, None
+                for fld in ("device_id", "entity_id"):
+                    if fld in ent and not isinstance(ent[fld], str):
+                        return P3D1_TYPE, None
+            op = trig.get("operator", trig.get("operator_"))
+            if op is not None and (not isinstance(op, str) or op not in _OP_SET):
+                return P3D1_TYPE, None
+            thr = trig.get("threshold")
+            if thr is not None and (not isinstance(thr, (int, float)) or isinstance(thr, bool)):
+                return P3D1_TYPE, None
+    conds = d.get("conditions")
+    if conds is not None:
+        if not isinstance(conds, list):
+            return P3D1_TYPE, None
+        for it in conds:
+            if not isinstance(it, dict):
+                return P3D1_TYPE, None
+            op = it.get("operator", it.get("operator_"))
+            if op is not None and (not isinstance(op, str) or op not in _OP_SET):
+                return P3D1_TYPE, None
+    acts = d.get("actions")
+    if acts is None:
+        return P3D1_MISSING, None
+    if not isinstance(acts, list):
+        return P3D1_TYPE, None
+    if len(acts) == 0:
+        return P3D1_MISSING, None
+    for a in acts:
+        if not isinstance(a, dict):
+            return P3D1_TYPE, None
+        ent = a.get("entity")
+        if ent is None:
+            return P3D1_MISSING, None
+        if not isinstance(ent, dict):
+            return P3D1_TYPE, None
+        for fld in ("device_id", "entity_id"):
+            if fld in ent and not isinstance(ent[fld], str):
+                return P3D1_TYPE, None
+        act = a.get("action")
+        if act is None:
+            return P3D1_MISSING, None
+        if not isinstance(act, str) or act not in _ACT_SET:
+            return P3D1_TYPE, None
+        if "value" in a:
+            v = a["value"]
+            if not (isinstance(v, (int, float)) or isinstance(v, bool)):
+                return P3D1_TYPE, None
+        for fld in ("value_u32", "duration_ms"):
+            if fld in a and (not isinstance(a[fld], (int, float)) or isinstance(a[fld], bool)):
+                return P3D1_TYPE, None
+    return P3D1_OK, d
+
+valid_rule = {"name": "Temp fan",
+              "trigger": {"entity": {"device_id": "node-a", "entity_id": "temperature"},
+                          "operator": "GT", "threshold": 30},
+              "actions": [{"entity": {"device_id": "node-a", "entity_id": "relay0"},
+                           "action": "SET_BOOL", "value": True, "duration_ms": 0}]}
+valid_rule_raw = json.dumps(valid_rule)
+check("P3D1 RUL: valid nested rule -> OK", parse_rule(valid_rule_raw) == (P3D1_OK, valid_rule))
+check("P3D1 RUL: missing name -> MISSING", parse_rule('{"trigger":{},"conditions":[],"actions":[{"entity":{"device_id":"d","entity_id":"e"},"action":"SET_BOOL"}]}')[0] == P3D1_MISSING)
+check("P3D1 RUL: missing actions -> MISSING", parse_rule('{"name":"r","trigger":{}}')[0] == P3D1_MISSING)
+check("P3D1 RUL: empty actions array -> MISSING",
+      parse_rule('{"name":"r","actions":[]}')[0] == P3D1_MISSING)
+check("P3D1 RUL: action missing entity -> MISSING",
+      parse_rule('{"name":"r","actions":[{"action":"SET_BOOL"}]}')[0] == P3D1_MISSING)
+check("P3D1 RUL: action missing action -> MISSING",
+      parse_rule('{"name":"r","actions":[{"entity":{"device_id":"d","entity_id":"e"}}]}')[0] == P3D1_MISSING)
+check("P3D1 RUL: trigger array form (get_rule shape) -> OK",
+      parse_rule(json.dumps({"name": "r",
+                             "trigger": [{"entity": {"device_id": "d", "entity_id": "e"}, "operator": "GT", "threshold": 5}],
+                             "actions": [{"entity": {"device_id": "d", "entity_id": "e"}, "action": "SET_BOOL"}]}))[0] == P3D1_OK)
+check("P3D1 RUL: invalid operator -> TYPE",
+      parse_rule('{"name":"r","trigger":{"operator":"BOGUS"},"actions":[{"entity":{"device_id":"d","entity_id":"e"},"action":"SET_BOOL"}]}')[0] == P3D1_TYPE)
+check("P3D1 RUL: invalid action -> TYPE",
+      parse_rule('{"name":"r","actions":[{"entity":{"device_id":"d","entity_id":"e"},"action":"FLY"}]}')[0] == P3D1_TYPE)
+check("P3D1 RUL: threshold as string -> TYPE",
+      parse_rule('{"name":"r","trigger":{"threshold":"30"},"actions":[{"entity":{"device_id":"d","entity_id":"e"},"action":"SET_BOOL"}]}')[0] == P3D1_TYPE)
+check("P3D1 RUL: entity not an object -> TYPE",
+      parse_rule('{"name":"r","actions":[{"entity":"node-a","action":"SET_BOOL"}]}')[0] == P3D1_TYPE)
+check("P3D1 RUL: malformed body -> BAD_JSON", parse_rule('{"name":')[0] == P3D1_BAD_JSON)
+
+# ==========================================================================
+# Phase 3D.1: full HTTP flow - parse -> skill dispatch -> envelope + status
+# The GUI contract: {ok:true,data} on success, {ok:false,error{code,message}}
+# on failure, and the envelope is authoritative (never the status alone).
+# ==========================================================================
+
+class HttpApiMirror:
+    """Mirror of the Phase 3D.1 server: parser gates the skill dispatch, and
+    every response is the standard envelope with a mapped HTTP status."""
+    _STATUS = {"SKILL_NOT_FOUND": 404, "ENTITY_NOT_FOUND": 404, "RULE_CONFLICT": 409,
+               "INVALID_VALUE": 400, "INVALID_INPUT": 400, "INVALID_CAPABILITY": 422,
+               "PERMISSION_DENIED": 403, "STORAGE_ERROR": 500, "RULE_INVALID": 400,
+               "NO_SPACE": 507, "DEPENDENCY_MISSING": 503}
+
+    def __init__(self, env):
+        self.env = env
+
+    @staticmethod
+    def _wrap(res):
+        if res["ok"]:
+            return {"ok": True, "data": res["data"]}
+        return {"ok": False,
+                "error": {"code": res["error"]["code"],
+                          "message": res["error"].get("message", "")}}
+
+    def _status(self, code):
+        return self._STATUS.get(code, 500)
+
+    def _reject(self, reason):
+        return 400, {"ok": False, "error": {"code": "INVALID_INPUT", "message": reason}}
+
+    def relay(self, doc):
+        pr, v = parse_simple(doc, "value")
+        if pr == P3D1_BAD_JSON: return self._reject("Malformed JSON body")
+        if pr == P3D1_MISSING: return self._reject("Missing required field in request body")
+        if pr == P3D1_TYPE: return self._reject("Request body field has the wrong type")
+        d = json.loads(doc)
+        res = self.env.execute("set_relay", {"device_id": d.get("device_id", ""),
+                                             "entity_id": d.get("entity_id", ""),
+                                             "value": v})
+        return ((200 if res["ok"] else self._status(res["error"]["code"])), self._wrap(res))
+
+    def dimmer(self, doc):
+        pr, v = parse_simple(doc, "level")
+        if pr == P3D1_BAD_JSON: return self._reject("Malformed JSON body")
+        if pr == P3D1_MISSING: return self._reject("Missing required field in request body")
+        if pr == P3D1_TYPE: return self._reject("Request body field has the wrong type")
+        # Firmware stores level as uint8: negative JSON wraps (e.g. -1 -> 255).
+        level = v if v >= 0 else (int(v) & 0xFF)
+        d = json.loads(doc)
+        res = self.env.execute("set_dimmer", {"device_id": d.get("device_id", ""),
+                                              "entity_id": d.get("entity_id", ""),
+                                              "level": level})
+        return ((200 if res["ok"] else self._status(res["error"]["code"])), self._wrap(res))
+
+    def create_rule(self, doc):
+        pr, d = parse_rule(doc)
+        if pr == P3D1_BAD_JSON: return self._reject("Malformed JSON body")
+        if pr == P3D1_MISSING: return self._reject("Missing required field in request body")
+        if pr == P3D1_TYPE: return self._reject("Request body field has the wrong type")
+        res = self.env.execute("create_rule", d)
+        return ((200 if res["ok"] else self._status(res["error"]["code"])), self._wrap(res))
+
+    def get_rule(self, rule_id):
+        res = self.env.execute("get_rule", {"rule_id": rule_id})
+        return ((200 if res["ok"] else self._status(res["error"]["code"])), self._wrap(res))
+
+
+env31 = SkillEnv()
+env31.add_device("node-a")
+env31.add_device("node-b")
+env31.add_entity("node-a", "temperature", "Temp", "sensor.numeric", ["sensor.numeric"], obs=25.0)
+env31.add_entity("node-a", "relay0", "Relay", "actuator.relay", ["actuator.relay"], obs=False, des=False)
+env31.add_entity("node-b", "dimmer0", "Dimmer", "actuator.dimmer", ["actuator.dimmer"], obs=0, des=0)
+env31.control = FakeControl(cap=1 << 30)  # no command-table contention in these tests
+http31 = HttpApiMirror(env31)
+R31 = {"device_id": "node-a", "entity_id": "relay0"}
+D31 = {"device_id": "node-b", "entity_id": "dimmer0"}
+
+print("[p3d1 http api]")
+st, envp = http31.relay(json.dumps(dict(R31, value=False)))
+check("P3D1 HTTP: relay false -> 200 + {ok:true,data}",
+      st == 200 and envp["ok"] is True and envp["data"]["requested"] is False)
+st, envp = http31.relay(json.dumps(dict(R31, value=True)))
+check("P3D1 HTTP: relay true -> 200 + requested true",
+      st == 200 and envp["data"]["requested"] is True)
+st, envp = http31.relay(json.dumps(dict(R31)))          # value absent
+check("P3D1 HTTP: relay missing value -> 400 INVALID_INPUT (not false)",
+      st == 400 and envp["ok"] is False and envp["error"]["code"] == "INVALID_INPUT")
+st, envp = http31.relay(json.dumps(dict(R31, value=1)))  # wrong type
+check("P3D1 HTTP: relay numeric value -> 400 INVALID_INPUT",
+      st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+st, envp = http31.relay(json.dumps({"device_id": "node-a", "entity_id": "ghost", "value": True}))
+check("P3D1 HTTP: relay unknown entity -> 404 ENTITY_NOT_FOUND (envelope, not text)",
+      st == 404 and envp["ok"] is False and envp["error"]["code"] == "ENTITY_NOT_FOUND")
+st, envp = http31.relay('{"value":')
+check("P3D1 HTTP: relay malformed JSON -> 400 INVALID_INPUT", st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+
+for lvl in (0, 1, 50, 100):
+    st, envp = http31.dimmer(json.dumps(dict(D31, level=lvl)))
+    check("P3D1 HTTP: dimmer %d -> 200 requested %d" % (lvl, lvl),
+          st == 200 and envp["ok"] is True and envp["data"]["requested"] == lvl)
+st, envp = http31.dimmer(json.dumps(dict(D31, level=101)))
+check("P3D1 HTTP: dimmer 101 -> 400 INVALID_VALUE (skill gate)",
+      st == 400 and envp["ok"] is False and envp["error"]["code"] == "INVALID_VALUE")
+st, envp = http31.dimmer(json.dumps(dict(D31, level=-1)))
+check("P3D1 HTTP: dimmer -1 -> 400 INVALID_VALUE (wrap to 255 > 100, no silent 0)",
+      st == 400 and envp["error"]["code"] == "INVALID_VALUE")
+st, envp = http31.dimmer(json.dumps(dict(D31)))
+check("P3D1 HTTP: dimmer missing level -> 400 INVALID_INPUT (never silent 0)",
+      st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+st, envp = http31.dimmer(json.dumps(dict(D31, level="50")))
+check("P3D1 HTTP: dimmer string level -> 400 INVALID_INPUT", st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+
+rule31 = valid_rule
+st, envp = http31.create_rule(json.dumps(rule31))
+check("P3D1 HTTP: create valid rule -> 200 activated", st == 200 and envp["ok"] is True and envp["data"]["activated"] is True)
+rid31 = envp["data"]["rule_id"]
+st, envp = http31.create_rule(json.dumps(dict(rule31, rule_id=rid31)))
+check("P3D1 HTTP: duplicate rule_id -> 409 RULE_CONFLICT",
+      st == 409 and envp["ok"] is False and envp["error"]["code"] == "RULE_CONFLICT")
+st, envp = http31.create_rule(json.dumps({"name": "No actions", "trigger": rule31["trigger"]}))
+check("P3D1 HTTP: rule missing actions -> 400 INVALID_INPUT (parse gate)",
+      st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+st, envp = http31.create_rule(json.dumps({"name": "No gate", "actions": rule31["actions"]}))
+check("P3D1 HTTP: rule without trigger/conditions -> 400 RULE_INVALID (engine gate)",
+      st == 400 and envp["ok"] is False and envp["error"]["code"] == "RULE_INVALID")
+st, envp = http31.create_rule(json.dumps({"name": "Bad cap", "actions": [
+    {"entity": {"device_id": "node-b", "entity_id": "dimmer0"}, "action": "SET_BOOL", "value": True}]}))
+check("P3D1 HTTP: rule action incompatible capability -> 400 RULE_INVALID",
+      st == 400 and envp["error"]["code"] == "RULE_INVALID")
+st, envp = http31.create_rule(json.dumps({"name": "Ghost", "trigger": {
+    "entity": {"device_id": "node-a", "entity_id": "ghost"}, "operator": "GT", "threshold": 1},
+    "actions": [{"entity": {"device_id": "node-a", "entity_id": "relay0"}, "action": "SET_BOOL"}]}))
+check("P3D1 HTTP: rule ghost trigger entity -> 404 ENTITY_NOT_FOUND",
+      st == 404 and envp["error"]["code"] == "ENTITY_NOT_FOUND")
+st, envp = http31.create_rule(json.dumps({"name": "Bad thr", "trigger": {
+    "entity": {"device_id": "node-a", "entity_id": "temperature"}, "operator": "GT", "threshold": "30"},
+    "actions": [{"entity": {"device_id": "node-a", "entity_id": "relay0"}, "action": "SET_BOOL"}]}))
+check("P3D1 HTTP: rule string threshold -> 400 INVALID_INPUT (parse gate)",
+      st == 400 and envp["error"]["code"] == "INVALID_INPUT")
+st, envp = http31.get_rule("nope-not-a-rule")
+check("P3D1 HTTP: get unknown rule -> 400 RULE_INVALID envelope",
+      st == 400 and envp["ok"] is False)
+check("P3D1 HTTP: error->status map stable",
+      http31._status("ENTITY_NOT_FOUND") == 404 and http31._status("RULE_INVALID") == 400 and
+      http31._status("INVALID_VALUE") == 400 and http31._status("RULE_CONFLICT") == 409)
+
+# The envelope must be authoritative regardless of HTTP status: assert the
+# error envelope always carries code+message even for non-2xx statuses.
+envp_last = env31.execute("get_rule", {"rule_id": "missing_rule"})
+check("P3D1 HTTP: error envelope independent of status carries code+message",
+      envp_last["ok"] is False and "code" in envp_last["error"] and "message" in envp_last["error"])
+
+print("[p3d1 routing]")
+
+def match_wildcard(template, uri):
+    """Exact mirror of ESP-IDF httpd_uri_match_wildcard()."""
+    tpl_len = len(template)
+    exact = tpl_len
+    last = template[-1] if tpl_len > 0 else ""
+    prevlast = template[-2] if tpl_len > 1 else ""
+    asterisk = last == "*" or (prevlast == "*" and last == "?")
+    quest = last == "?" or (prevlast == "?" and last == "*")
+    if exact < asterisk + quest * 2:
+        return False
+    exact -= asterisk + quest * 2
+    if len(uri) < exact:
+        return False
+    if not quest:
+        if not asterisk and len(uri) != exact:
+            return False
+        return template[:exact] == uri[:exact]
+    else:
+        if len(uri) > exact and template[exact] != uri[exact]:
+            return False
+        if template[:exact] != uri[:exact]:
+            return False
+        return asterisk or len(uri) <= exact + 1
+
+check("P3D1 ROUTE: wildcard matches /rules/<id>",
+      match_wildcard("/api/v1/rules/*", "/api/v1/rules/rule_1"))
+check("P3D1 ROUTE: wildcard matches /rules/<id>/enable",
+      match_wildcard("/api/v1/rules/*", "/api/v1/rules/rule_1/enable"))
+check("P3D1 ROUTE: wildcard does NOT swallow the exact list URI /rules",
+      not match_wildcard("/api/v1/rules/*", "/api/v1/rules"))
+check("P3D1 ROUTE: exact list template requires exact length (no /rules/123)",
+      not match_wildcard("/api/v1/rules", "/api/v1/rules/rule_1"))
+check("P3D1 ROUTE: entities wildcard matches full path",
+      match_wildcard("/api/v1/entities/*", "/api/v1/entities/node-a/relay0"))
+check("P3D1 ROUTE: entities wildcard does not match bare /entities",
+      not match_wildcard("/api/v1/entities/*", "/api/v1/entities"))
+
+# Previous bug: two POST /api/v1/rules/ handers (enable+disable) collided on
+# registration -> ESP_ERR_HTTPD_HANDLER_EXISTS. The new table has exactly one
+# handler per (template, method); a dispatcher reads the action suffix.
+def route_conflicts(table):
+    bad = []
+    for i, (tmpl, m, _) in enumerate(table):
+        for j in range(i):
+            if table[j][1] != m:
+                continue
+            if match_wildcard(table[j][0], tmpl):
+                bad.append((table[j], (tmpl, m)))
+    return bad
+
+old_table = [("/api/v1/rules/", "POST", "enable"), ("/api/v1/rules/", "POST", "disable")]
+check("P3D1 ROUTE: OLD table (2x POST /rules/) has a registration conflict",
+      len(route_conflicts(old_table)) == 1)
+
+routes31 = [
+    ("/", "GET", "root"), ("/api/v1/status", "GET", "status"),
+    ("/api/v1/devices", "GET", "devices"), ("/api/v1/entities", "GET", "entities"),
+    ("/api/v1/entities/*", "GET", "entity_state"),
+    ("/api/v1/control/relay", "POST", "relay"), ("/api/v1/control/dimmer", "POST", "dimmer"),
+    ("/api/v1/rules", "GET", "list_rules"), ("/api/v1/rules/*", "GET", "get_rule"),
+    ("/api/v1/rules", "POST", "create_rule"), ("/api/v1/rules/*", "POST", "rule_action"),
+    ("/api/v1/rules/*", "PUT", "update_rule"), ("/api/v1/rules/*", "DELETE", "delete_rule"),
+    ("/api/v1/skills", "GET", "skills"), ("/api/v1/logs", "GET", "logs"),
+]
+check("P3D1 ROUTE: new table registers cleanly (no handler_exist conflicts)",
+      len(route_conflicts(routes31)) == 0)
+
+def resolve_route(table, method, uri):
+    """First (template,method) whose template matches the URI (registration order)."""
+    for tmpl, m, _ in table:
+        if m == method and match_wildcard(tmpl, uri):
+            return tmpl
+    return None
+
+check("P3D1 ROUTE: GET /rules -> list (not get_rule)", resolve_route(routes31, "GET", "/api/v1/rules") == "/api/v1/rules")
+check("P3D1 ROUTE: GET /rules/<id> -> get_rule", resolve_route(routes31, "GET", "/api/v1/rules/r1") == "/api/v1/rules/*")
+check("P3D1 ROUTE: POST /rules/<id>/enable -> rule_action", resolve_route(routes31, "POST", "/api/v1/rules/r1/enable") == "/api/v1/rules/*")
+check("P3D1 ROUTE: POST /rules -> create", resolve_route(routes31, "POST", "/api/v1/rules") == "/api/v1/rules")
+check("P3D1 ROUTE: GET /entities/<dev>/<ent> -> entity_state", resolve_route(routes31, "GET", "/api/v1/entities/a/b") == "/api/v1/entities/*")
+check("P3D1 ROUTE: GET /status -> status", resolve_route(routes31, "GET", "/api/v1/status") == "/api/v1/status")
+check("P3D1 ROUTE: GET /logs -> logs", resolve_route(routes31, "GET", "/api/v1/logs") == "/api/v1/logs")
+check("P3D1 ROUTE: unknown endpoint -> 404 (no route)",
+      resolve_route(routes31, "GET", "/api/v1/nope") is None)
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))

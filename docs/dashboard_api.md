@@ -42,6 +42,7 @@ The `error.code` is the canonical machine-readable error (from the Skill layer).
 | SKILL_NOT_FOUND | 404 | Skill does not exist |
 | ENTITY_NOT_FOUND | 404 | Device or entity not found |
 | RULE_CONFLICT | 409 | Rule ID already exists |
+| RULE_INVALID | 400 | Rule fails validation (see Rule Validation below) |
 | INVALID_VALUE | 400 | Value out of range or invalid |
 | INVALID_INPUT | 400 | Malformed JSON or missing fields |
 | INVALID_CAPABILITY | 422 | Entity doesn't support requested action |
@@ -51,6 +52,11 @@ The `error.code` is the canonical machine-readable error (from the Skill layer).
 | NO_SPACE | 507 | Storage/table full |
 | STORAGE_ERROR | 500 | Persistence failure |
 | DEPENDENCY_MISSING | 503 | Required runtime dependency missing |
+
+> **Important:** `INVALID_INPUT` (HTTP 400) means the request body failed strict JSON parsing —
+> it is *never* silently coerced. For example a relay with `{"value": 1}` returns
+> `INVALID_INPUT` because `value` must be the JSON boolean `true`/`false`, and a missing
+> `value`/`level` field returns `INVALID_INPUT` (never a silent default).
 
 ## Endpoints
 
@@ -64,19 +70,23 @@ System health and metrics.
 {
   "ok": true,
   "data": {
+    "network": "AP",
+    "ssid": "Qymera-12345678",
+    "ip": "192.168.4.1",
     "free_heap": 21116,
     "uptime_ms": 123456,
-    "ip": "192.168.1.42",
     "device_count": 2,
     "entity_count": 5
   }
 }
 ```
 
+`network` is one of `"AP"`, `"APSTA"`, `"STA"` and `ssid` is the SoftAP SSID (empty in pure STA mode).
+
 ### Devices
 
 #### GET `/api/v1/devices`
-List all registered devices.
+List all registered devices. The `role` and `state` fields are strings, not numbers.
 
 **Response:**
 ```json
@@ -87,17 +97,17 @@ List all registered devices.
       "device_id": "dashboard",
       "name": "Qymera-12345678",
       "model": "ESP32",
-      "fw_version": "1.0.0",
-      "role": 0,
-      "state": 0,
-      "entity_count": 3,
-      "ip_addr": "192.168.1.42",
-      "port": 13345,
+      "role": "dashboard",
+      "state": "operational",
+      "location": "",
       "online": true
     }
   ]
 }
 ```
+
+`role` is one of `"dashboard"`, `"remote"`, `"provisioning"`; `state` is one of
+`"operational"`, `"offline"`, `"degraded"` (see `device_state_str`).
 
 ### Entities
 
@@ -113,18 +123,21 @@ List all entities across all devices.
       "device_id": "dashboard",
       "entity_id": "temperature",
       "name": "Temperature Sensor",
-      "type": 1,
+      "type": "SENSOR_TEMPERATURE",
       "capabilities": ["SENSOR_NUMERIC"],
       "unit": "°C",
       "current": 25.5,
       "desired": 25.5,
       "cmd_status": "STATE_CONFIRMED",
-      "reliability": "CONFIRMED",
-      "last_updated": {"seconds": 123456, "millis": 789}
+      "reliability": "CONFIRMED"
     }
   ]
 }
 ```
+
+`type` and `capabilities` are strings. Relay entities carry boolean `current`/`desired`;
+numeric entities (like dimmer) carry numbers. There is no `last_updated` field in this
+response — the UI renders refresh timing from the 10 s autopoll only.
 
 #### GET `/api/v1/entities/:device/:entity`
 Get state of a specific entity.
@@ -144,6 +157,8 @@ Set relay state.
   "value": true
 }
 ```
+
+`value` **must be a JSON boolean** (`true`/`false`). `1`/`0`/`"true"`/null/absent are rejected — the parser performs a key lookup so `false` is never confused with "field missing".
 
 **Response:**
 ```json
@@ -166,40 +181,60 @@ Set dimmer level.
 }
 ```
 
+`level` must be a JSON number in `0..100`:
+- Missing/wrong type/non-numeric → `INVALID_INPUT` (400).
+- Out of range (e.g. `101`, or a negative that wraps to `>100` at uint8) → `INVALID_VALUE` (400) from the skill range gate.
+- An absent `level` is **never** silently treated as `0`.
+
 **Response:** Same as relay.
 
 ### Rules
 
 #### GET `/api/v1/rules`
-List all rules.
+List all rules. The list is a compact form — it does **not** include trigger/actions.
 
 **Response:**
 ```json
 {
   "ok": true,
   "data": [
-    {
-      "rule_id": "rule-temp-fan-001",
-      "name": "Temperature Fan Control",
-      "enabled": true,
-      "priority": 10,
-      "cooldown_ms": 60000,
-      "max_activations_per_hour": 10,
-      "trigger": {
-        "entity": {"device_id": "dashboard", "entity_id": "temperature"},
-        "operator_": "GT",
-        "threshold": 30.0
-      },
-      "actions": [
-        {"entity": {"device_id": "dashboard", "entity_id": "fan"}, "action": "SET_BOOL", "value_u32": 1}
-      ]
-    }
+    {"rule_id": "rule-temp-fan-001", "name": "Temperature Fan Control", "enabled": true, "revision": 1}
   ]
 }
 ```
 
 #### GET `/api/v1/rules/:id`
-Get single rule.
+Get single rule (full form, see below). Unknown `:id` → `RULE_INVALID` (400).
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": {
+    "rule_id": "rule-temp-fan-001",
+    "name": "Temperature Fan Control",
+    "enabled": true,
+    "revision": 1,
+    "priority": 10,
+    "cooldown_ms": 60000,
+    "max_activations_per_hour": 10,
+    "created_ts": 1234,
+    "updated_ts": 1235,
+    "state": {"activation_count": 0, "last_triggered": 0},
+    "trigger": [
+      {"entity": {"device_id": "dashboard", "entity_id": "temperature"}, "operator": "GT",
+       "threshold": 30, "threshold_high": 0, "duration_ms": 0, "negate": false}
+    ],
+    "conditions": [],
+    "actions": [
+      {"entity": {"device_id": "dashboard", "entity_id": "fan"}, "action": "SET_BOOL",
+       "value": 1, "duration_ms": 0}
+    ]
+  }
+}
+```
+
+`trigger` is emitted as an array (0 or 1 element) plus `conditions` as a separate array.
 
 #### POST `/api/v1/rules`
 Create a new rule.
@@ -211,11 +246,11 @@ Create a new rule.
   "rule_id": "my-rule-001",
   "trigger": {
     "entity": {"device_id": "dashboard", "entity_id": "temperature"},
-    "operator_": "GT",
+    "operator": "GT",
     "threshold": 30.0
   },
   "actions": [
-    {"entity": {"device_id": "dashboard", "entity_id": "fan"}, "action": "SET_BOOL", "value_u32": 1}
+    {"entity": {"device_id": "dashboard", "entity_id": "fan"}, "action": "SET_BOOL", "value": 1}
   ],
   "cooldown_ms": 60000,
   "priority": 10,
@@ -224,8 +259,16 @@ Create a new rule.
 }
 ```
 
+Parsing contract (see `parse_rule_input`):
+- `name` required, `rule_id` optional (auto-generated; duplicates → `RULE_CONFLICT` 409).
+- `trigger` may be an object **or** a single-element array (the `GET /rules/:id` shape). All fields are optional at parse time.
+- `actions` must be a non-empty array; each entry needs `entity` (object with `device_id`+`entity_id`) and `action` (one of `SET_BOOL`, `SET_LEVEL`, `SET_VALUE`, `TOGGLE`). `value` accepts a JSON number or boolean; `value_u32`/`duration_ms` are numbers.
+- Any missing field / wrong type / malformed JSON → `INVALID_INPUT` (400) at the HTTP boundary.
+
+**Rule Validation (engine gate, after parsing):** a rule is **invalid** (`RULE_INVALID`, 400) unless it has **at least one action** and (**a trigger or at least one condition**). Every referenced entity must exist (`ENTITY_NOT_FOUND`, 404) and actions must be compatible with the entity's capabilities. Rules are enabled at creation (`enabled` in the request is informational only).
+
 #### PUT `/api/v1/rules/:id`
-Update a rule. Requires full rule definition.
+Update a rule. The request must carry the **full rule definition** (repeat `trigger` and `actions`, as in POST); partial updates are rejected. If editing triggers/actions is not intended, fetch the rule first and resend its arrays unchanged.
 
 #### DELETE `/api/v1/rules/:id`
 Delete a rule.
@@ -235,6 +278,21 @@ Enable a rule.
 
 #### POST `/api/v1/rules/:id/disable`
 Disable a rule.
+
+### Logs
+
+#### GET `/api/v1/logs`
+Most recent log entries (up to 50) from the ring buffer.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "data": [
+    {"seq": 42, "ts": 123456, "layer": "INFO", "source": "main", "msg": "Dashboard HTTP API started on port 80"}
+  ]
+}
+```
 
 ### Skills
 
@@ -298,6 +356,36 @@ Client code should:
 3. Check `ok` field
 4. On error, use `error.code` for programmatic handling, `error.message` for display
 5. Never rely solely on HTTP status - always check the error code
+
+The server sets an explicit HTTP status per error (see the mapping table) and the body always
+carries the envelope, so callers can branch on either — but `error.code` is canonical.
+
+## Routing
+
+Routes are registered with wildcard matching (`httpd_uri_match_wildcard`), so each
+(template, method) appears exactly once:
+
+| Method | URI template | Handler |
+|--------|--------------|---------|
+| GET | `/api/v1/status` | status |
+| GET | `/api/v1/devices` | devices |
+| GET | `/api/v1/entities` | entities |
+| GET | `/api/v1/entities/*` | entity state |
+| POST | `/api/v1/control/relay` | dispatch control (relay) |
+| POST | `/api/v1/control/dimmer` | dispatch control (dimmer) |
+| GET | `/api/v1/rules` | list rules |
+| POST | `/api/v1/rules` | create rule |
+| GET | `/api/v1/rules/*` | get rule |
+| PUT | `/api/v1/rules/*` | update rule |
+| DELETE | `/api/v1/rules/*` | delete rule |
+| POST | `/api/v1/rules/*` | enable/disable (parses trailing `/enable` or `/disable`) |
+| GET | `/api/v1/skills`, `/api/v1/logs` | catalog / recent logs |
+| GET | `/` | embedded dashboard (HTML) |
+
+A wildcard template never swallows its exact base URI (e.g. `GET /api/v1/entities` is the
+list, `GET /api/v1/entities/*` is entity state). Duplicate registration of a (template,
+method) pair is rejected by the HTTP server (`ESP_ERR_HTTPD_HANDLER_EXISTS`) and aborts the
+server with `QYMERA_ERR_INVALID_STATE`.
 
 ## Rate Limiting
 

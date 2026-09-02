@@ -347,6 +347,38 @@ int8_t qymera_wifi_get_rssi(void) {
     return -128;
 }
 
+qymera_wifi_mode_t qymera_wifi_get_mode(void) {
+    if (!s_wifi_initialized) return QYMERA_WIFI_MODE_STA;
+    wifi_mode_t mode = WIFI_MODE_MAX;
+    if (esp_wifi_get_mode(&mode) != ESP_OK) return QYMERA_WIFI_MODE_STA;
+    if (mode == WIFI_MODE_AP) return QYMERA_WIFI_MODE_AP;
+    if (mode == WIFI_MODE_APSTA) return QYMERA_WIFI_MODE_APSTA;
+    return QYMERA_WIFI_MODE_STA;
+}
+
+qymera_err_t qymera_wifi_get_ap_ssid(char *ssid, size_t len) {
+    if (!s_wifi_initialized || !ssid || len == 0) return QYMERA_ERR_INVALID_ARG;
+    ssid[0] = '\0';
+    wifi_config_t cfg;
+    if (esp_wifi_get_config(WIFI_IF_AP, &cfg) != ESP_OK) return QYMERA_ERR_NETWORK;
+    size_t slen = strnlen((const char *)cfg.ap.ssid, sizeof(cfg.ap.ssid));
+    if (slen >= len) slen = len - 1;
+    memcpy(ssid, cfg.ap.ssid, slen);
+    ssid[slen] = '\0';
+    return QYMERA_OK;
+}
+
+qymera_err_t qymera_wifi_get_ap_ip(char *ip_str, size_t len) {
+    if (!s_wifi_initialized || !ip_str || len < 16) return QYMERA_ERR_INVALID_ARG;
+    ip_str[0] = '\0';
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if (!netif) return QYMERA_ERR_NETWORK;
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK) return QYMERA_ERR_NETWORK;
+    snprintf(ip_str, len, IPSTR, IP2STR(&ip_info.ip));
+    return QYMERA_OK;
+}
+
 void qymera_wifi_set_auto_reconnect(bool enable) {
     if (s_wifi_initialized) {
         WiFi.setAutoReconnect(enable);

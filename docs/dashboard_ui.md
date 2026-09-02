@@ -25,18 +25,19 @@ The UI is intentionally lightweight:
 ## Pages/Tabs
 
 ### 1. Dashboard (System Overview)
+- Network mode + AP SSID (**AP mode → "AP · Qymera-XXXX" badge**, STA → "STA")
+- IP address
 - Free heap
 - Uptime
-- IP address
 - Device count
 - Entity count
+- Online dot that turns red with an OFFLINE label when the API stops responding
 
 ### 2. Devices
 Grid of device cards showing:
-- Device ID, name, model, firmware version
-- Role (Dashboard/Remote/Provisioning)
-- Online/offline badge
-- Entity count, IP, port
+- Device ID, name, model, location
+- Local/Remote badge (role `"dashboard"` = LOCAL, otherwise REMOTE)
+- Online/offline badge + state (operational/offline/degraded)
 
 ### 3. Entities
 Grid of entity cards showing:
@@ -58,12 +59,18 @@ Grid of rule cards showing:
 
 **Create Rule Form:**
 - Name, Rule ID (optional, auto-generated)
-- Trigger: entity (device_id + entity_id), operator (GT/LT/GE/LE/EQ), threshold
-- Action: entity, action type (SET_BOOL/SET_LEVEL), value
-- Cooldown (ms), Priority
+- Trigger: entity (device_id + entity_id), operator (GT/LT/GE/LE/EQ/NE), threshold; checkbox to skip trigger (conditions-only)
+- Action: entity, action type (SET_BOOL/SET_LEVEL/SET_VALUE/TOGGLE), value
+- Cooldown (ms), Priority, Max activations/hour
 
 **Edit Rule Form:**
-- Name, Enabled toggle
+- Name, priority, cooldown, max activations/hour
+- The Edit form **round-trips** the rule's existing `trigger` and `actions` unchanged and resends them with the PUT, because updates require a full rule definition (partial updates are rejected with `INVALID_INPUT`/`RULE_INVALID`).
+- Enable/disable is done with the dedicated buttons on the Rules tab.
+
+**Failure UX:** no optimistic UI — controls disable while a request is in flight, the card is
+re-rendered from the server response, and failures show the API error card. After each
+Create/Edit/Enable/Disable/Delete the Rules tab reloads from the API.
 
 ### 5. Skills
 Skill catalog showing:
@@ -73,11 +80,11 @@ Skill catalog showing:
 - Permission bits (READ/CONTROL/RULE_READ/RULE_WRITE)
 
 ### 6. Logs
-Recent log entries (up to 50) with:
-- Timestamp
+Recent log entries (up to 50) from `/api/v1/logs` with:
+- Timestamp (`ts` numeric seconds, rendered as local time; falls back to `timestamp.seconds`)
 - Source
 - Message
-- Color-coded by level (ERROR=red, WARNING=amber, INFO=blue)
+- Color-coded by level (`layer` value; ERROR=red, WARNING=amber, INFO=blue)
 
 ### 7. System
 Same as Dashboard but with Build info.
@@ -85,7 +92,10 @@ Same as Dashboard but with Build info.
 ## Key UI Concepts
 
 ### Current vs Desired State
-The UI **always shows both** `current` (observed) and `desired` (requested) state for actuators.
+The UI **always shows both** `current` (observed) and `desired` (requested) state for actuators,
+and it does not coerce missing values: a dimmer's current/desired render from the JSON `current`/
+`desired` fields only, and control requests are built as JSON booleans for relays (`value`) and
+numbers for dimmers (`level`).
 
 ```
 Current: ON
@@ -112,15 +122,20 @@ The UI auto-refreshes the current tab every 10 seconds. Manual refresh via tab c
 ## JavaScript API
 
 ```javascript
-// Base API call
+// Base API call: returns j.data on {ok:true}, throws on {ok:false} or invalid JSON
 async function api(path, opts = {}) {
-  const r = await fetch('/api/v1' + path, {
-    headers: {'Content-Type': 'application/json'},
-    ...opts
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error?.message || r.statusText);
-  return j;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch('/api/v1' + path, {
+      headers: {'Content-Type': 'application/json'}, signal: ctrl.signal, ...opts
+    });
+    const txt = await r.text();
+    let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('Invalid JSON response'); }
+    if (!j.ok) throw new Error((j.error && j.error.code || '') + ': ' +
+                               (j.error && j.error.message || 'request failed'));
+    return j.data;
+  } finally { clearTimeout(t); }
 }
 
 // Tab switching
@@ -130,6 +145,9 @@ loadTab('dashboard') // 'dashboard' | 'devices' | 'entities' | 'rules' | 'skills
 toggleRule(ruleId, enabled)  // POST /rules/:id/enable|disable
 deleteRule(ruleId)           // DELETE /rules/:id
 ```
+
+The UI never optimistically mutates state — it disables the control while the request is in
+flight, then re-renders the active tab from the server.
 
 ## Adding Custom Entities/Devices
 
@@ -143,13 +161,14 @@ They automatically appear in the Dashboard UI after restart.
 
 ## Development
 
-The UI is embedded in `src/http/qymera_http_server.c` as the `DASHBOARD_HTML` constant. To modify:
+The UI source lives at `src/http/dashboard.html` and is embedded into firmware as the
+`DASHBOARD_HTML` constant in `src/http/qymera_dashboard_html.h`. That header is **generated**
+and committed to the repo (so plain `pio run` works without extra steps). To modify the UI:
 
-1. Edit the HTML/CSS/JS in the constant
-2. Rebuild: `pio run -e esp32_devkit`
-3. Flash: `pio run -e esp32_devkit -t upload`
-
-No build step for the UI - it's served directly from Flash.
+1. Edit `src/http/dashboard.html`
+2. Regenerate the header: `python tools/gen_dashboard_html.py`
+3. Rebuild: `pio run -e esp32_devkit`
+4. Flash: `pio run -e esp32_devkit -t upload`
 
 ## Browser Compatibility
 

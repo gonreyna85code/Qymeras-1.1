@@ -62,18 +62,46 @@ typedef struct {
 qymera_err_t qymera_http_api_init(qymera_core_t *core);
 
 /* =========================
+ * JSON parse results
+ * ========================= */
+
+typedef enum {
+    QYMERA_HTTP_PARSE_OK = 0,        /* parsed; all required fields validated */
+    QYMERA_HTTP_PARSE_BAD_JSON = -1, /* document is malformed JSON */
+    QYMERA_HTTP_PARSE_MISSING = -2,  /* a required field is absent */
+    QYMERA_HTTP_PARSE_TYPE = -3,     /* a field is present but has the wrong type */
+} qymera_http_parse_result_t;
+
+/* =========================
  * Skill-to-endpoint mapping helpers
  * ========================= */
 
-/* Build a qymera_skill_input_t from a simple JSON body extracted from
- * an httpd_req_t. Returns true on success, false on parse failure. */
-bool qymera_http_api_parse_simple_input(const char *json_body,
-                                        qymera_skill_input_t *out);
+/* Build a qymera_skill_input_t from a simple JSON control body.
+ *
+ * `control_field` selects the required typed field: "value" (set_relay) or
+ * "level" (set_dimmer). The parser locates the field by key inside the JSON
+ * document (never by parsing from the document start), so "value":false and
+ * "level":0 are correctly distinguished from an absent field - a missing
+ * required field returns QYMERA_HTTP_PARSE_MISSING instead of silently
+ * defaulting, and a field with the wrong JSON type returns
+ * QYMERA_HTTP_PARSE_TYPE. Neither condition is ever encoded into the output.
+ *
+ * device_id / entity_id are extracted as optional strings; they are validated
+ * downstream by the Skill layer.
+ *
+ * Returns QYMERA_HTTP_PARSE_OK on success. */
+qymera_http_parse_result_t qymera_http_api_parse_simple_input(
+    const char *json_body, qymera_skill_input_t *out, const char *control_field);
 
 /* Build a qymera_skill_input_t from a rule JSON body (create_rule /
- * update_rule). Returns true on success. */
-bool qymera_http_api_parse_rule_input(const char *json_body,
-                                      qymera_skill_input_t *out);
+ * update_rule). Fully populates out->rule (trigger, actions, cooldown,
+ * priority, max_activations_per_hour) from nested objects/arrays. Returns
+ * QYMERA_HTTP_PARSE_OK on success. Semantic errors (unknown entity, bad
+ * capability, invalid enum value) are left to the Skill layer which returns
+ * the stable codes (ENTITY_NOT_FOUND / INVALID_CAPABILITY / RULE_INVALID /
+ * RULE_CONFLICT). */
+qymera_http_parse_result_t qymera_http_api_parse_rule_input(
+    const char *json_body, qymera_skill_input_t *out);
 
 /* Map a skill error code to an HTTP status code. The caller should
  * also include the error_code string in the HTTP response body. */

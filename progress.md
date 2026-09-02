@@ -871,3 +871,120 @@ Deterministic runtime
 ### NEXT PHASE
 
 Add a concrete LLM provider transport (Ollama/OpenAI HTTP against `qymera_llm_provider_t`) plus the request path (HTTP/UI) that hosts an adapter instance — mapping provider tool calls onto `qymera_skill_execute()` with the existing permission/budget/recursion guards intact.
+
+---
+
+## Phase 3D.1: Hardware-Test GUI Stabilization (2026-09-01)
+
+### Objective
+
+Make the Phase 3D embedded GUI reliably drive real ESP32 hardware by fixing the
+firmware-side JSON parsing and HTTP routing bugs that a host-model audit exposed
+(299-check phase rollout). **No runtime changes, no new skills, no LLM.**
+
+### BRANCH / BASE
+
+- Branch `feature/ai-experiments`; base Phase 3D commit `d9e2a27`.
+
+### Root Cause (Primary Bug)
+
+The old control parser read `"value"` / `"level"` from the start of the JSON doc
+instead of by key lookup, making `false` / `0` indistinguishable from "field
+absent". Consequences: a relay body `{"value": false}` was (mis)treated as
+missing → silent 0/false call, and a missing `"level"` could become a silent 0.
+
+### Cross-Cutting Fixes (Phase)
+
+- **Strict key-lookup parsing** (`src/http/qymera_http_api.c`):
+  - `parse_simple_input`: relay `value` must be a JSON **boolean** (missing /
+    numeric / string / null / malformed → `MISSING` / `TYPE` / `BAD_JSON`, all →
+    HTTP 400 `{ok:false,error:{code:"INVALID_INPUT"}}`); dimmer `level` must be a
+    JSON **number**. `false` is never treated as "missing".
+  - `parse_rule_input`: `name` required; `trigger` accepts object **or**
+    single-element array (the `GET /rules/:id` shape); `actions` non-empty array;
+    each action needs `entity` + valid `action`; `value` accepts number or bool;
+    `value_u32`/`duration_ms` numeric.
+- **Rule engine gate** must reject a rule with no trigger AND no conditions
+  (`RULE_INVALID`), in addition to the ≥1-action requirement.
+- **Envelope contract**: `qymera_http_api_send_result` wraps success as
+  `{ok:true,"data":...}` (previously raw data) — GUI and `docs/dashboard_api.md`
+  rely on the envelope, never on HTTP status alone.
+- **Routing**: register exactly one handler per (template, method) using
+  `esp_http_server`'s `httpd_uri_match_wildcard` with wildcard templates
+  `/api/v1/rules/*` and `/api/v1/entities/*`. The OLD duplicate `POST
+  /api/v1/rules/` (enable + disable) collided on `ESP_ERR_HTTPD_HANDLER_EXISTS`.
+  A single POST dispatcher parses the trailing `/enable` | `/disable` suffix.
+  Fixed `httpd_resp_set_status` misuse (plain `const char*`, not varargs).
+  `config.stack_size = 8192` for handler stack headroom.
+- **Logs endpoint**: `GET /api/v1/logs` = `qymera_log_get_recent_json` (≤50),
+  wrapped in the success envelope; server log buffer 4096 B.
+- **Status**: `/api/v1/status` now emits `network` (`AP`/`APSTA`/`STA`) and `ssid`
+  (SoftAP SSID) from new HAL accessors.
+- **HAL**: `qymera_wifi_get_mode()`, `qymera_wifi_get_ap_ssid()`,
+  `qymera_wifi_get_ap_ip()` (via `esp_netif_get_handle_from_ifkey("WIFI_AP_DEF")`).
+
+### Embedded GUI (`src/http/dashboard.html` + generator)
+
+- `tools/gen_dashboard_html.py` emits the committed header
+  `src/http/qymera_dashboard_html.h` (`static const char DASHBOARD_HTML[]`, one
+  string-literal line per source line) — plain `pio run` needs no custom step.
+- No optimistic UI: controls disable while a request is in flight; each op
+  re-renders from the server response.
+- Relay sends JSON boolean `value`; dimmer sends numeric `level`; missing
+  current/desired never silently render as 0.
+- Rules Edit round-trips `trigger` + `actions` unchanged (updates require full
+  definition), toggle via Enable/Disable; after each rule op the tab reloads.
+- Logs: reads numeric `ts` and `msg` (falls back to `timestamp.seconds`).
+- Devices: LOCAL/REMOTE from string `role`; fixed to show real fields
+  (`model`, `location`, `state`) — no invented `fw_version`/`port`/`entity_count`.
+
+### Host Tests
+
+- `python tests/host_sanity.py`: **299/299** (226 Phase 3C + **73 new**).
+- New Phase 3D.1 checks: `parse_simple`/`parse_rule` mirrors (OK/MISSING/TYPE/
+  BAD_JSON incl. `false`≠missing, nested-value trap, empty-array handout edge);
+  `HttpApiMirror` end-to-end (envelope + status 200/400/404/409 incl. dimmer
+  101 & -1→255→`INVALID_VALUE`, rule gates, duplicate `rule_id`, get-unknown);
+  wildcard matcher (exact ESP-IDF port: wildcard never swallows the exact base
+  URI); route-conflict proof that the OLD table fails (`HANDLER_EXISTS`) and the
+  NEW table registers cleanly; `resolve_route` for every endpoint.
+
+### ESP32 Build / Flash / Boot
+
+- `pio run -e esp32_devkit`: **SUCCESS**, no new warnings. RAM 21116 B, Flash
+  234165 B (unchanged — fixes reuse existing HTML/rodata budget).
+- Uploaded to attached ESP32 on COM3 (**SUCCESS**) with the project's clean-reset
+  hook; a fresh reset boots once cleanly (ROM boot → `[HAL] Initialized`, no
+  reboot loop). Log-to-UART is optional in the log system (`serial_output`,
+  default off) so the rest of boot is read via `GET /api/v1/logs`.
+- Browser walkthrough on hardware (join `Qymera-<UID>` AP → `http://192.168.4.1/`)
+  is the user's hands-on step for this phase.
+
+### Files
+
+- `src/http/qymera_http_api.c` / `.h` — strict parsers, envelope serializer,
+  RULE_INVALID→400 in `qymera_http_api_map_error_to_status`.
+- `src/http/qymera_http_server.c` — rewritten handlers (wildcard route table,
+  logs, status AP fields, embedded-GUI header, 8192 stack).
+- `src/http/dashboard.html` — hardened GUI source.
+- `tools/gen_dashboard_html.py` + `src/http/qymera_dashboard_html.h` — generator
+  + committed generated header (new).
+- `src/hal/qymera_hal.h` / `.cpp` — `qymera_wifi_get_mode`,
+  `qymera_wifi_get_ap_ssid`, `qymera_wifi_get_ap_ip`.
+- `tests/host_sanity.py` — +73 Phase 3D.1 checks.
+- `docs/dashboard_api.md`, `docs/dashboard_ui.md` — corrected to the real field
+  shapes, strict parsing contract, routing table, logs endpoint.
+- `progress.md` — this entry.
+
+### KNOWN LIMITATIONS
+
+- No authentication, HTTP only, polling refresh (unchanged).
+- HTTP server registration failures abort the server with
+  `QYMERA_ERR_INVALID_STATE` (loud) rather than partially serving routes.
+- `RULE_INVALID` is 400 (validation), 409 stays reserved for id collisions.
+
+### NEXT PHASE
+
+Concrete LLM provider transport (Ollama/OpenAI HTTP against
+`qymera_llm_provider_t`) plus the request path hosting an adapter instance —
+routed through `qymera_skill_execute()` with permission/budget/recursion guards.

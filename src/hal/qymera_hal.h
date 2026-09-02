@@ -83,6 +83,11 @@ qymera_err_t qymera_wifi_get_ip(char *ip_str, size_t len);
 int8_t qymera_wifi_get_rssi(void);
 void qymera_wifi_set_auto_reconnect(bool enable);
 
+/* Network-mode introspection for the status endpoint / UI. */
+qymera_wifi_mode_t qymera_wifi_get_mode(void);
+qymera_err_t qymera_wifi_get_ap_ssid(char *ssid, size_t len);
+qymera_err_t qymera_wifi_get_ap_ip(char *ip_str, size_t len);
+
 /* =========================
  * UDP Sockets (raw socket API)
  * ========================= */
