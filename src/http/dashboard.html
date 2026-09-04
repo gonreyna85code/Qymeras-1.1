@@ -37,7 +37,7 @@ h2{font-size:0.9rem;font-weight:600;color:#334155;margin-bottom:12px}
 input,select{width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1a1d21;font-size:0.8rem}
 label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
 .form-row{display:flex;gap:12px}.form-row>div{flex:1}
-.log-entry{font-family:monospace;font-size:0.7rem;padding:6px 10px;background:#f8fafc;border-radius:4px;margin-bottom:4px;border-left:3px solid #2563eb;word-break:break-word}
+.log-entry{font-family:monospace;font-size:0.7rem;padding:6px 10px;background:#f8fafc;border-radius:4px;margin-bottom:4px;border-left:3px solid #2563eb;word-break:break-word;display:flex;gap:6px;flex-wrap:wrap}
 .log-entry.ERROR{border-left-color:#ef4444}.log-entry.WARNING{border-left-color:#f59e0b}
 .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:600}
 .badge-online{background:#dcfce7;color:#166534}.badge-offline{background:#fee2e2;color:#991b1b}
@@ -45,7 +45,9 @@ label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
 .badge-enabled{background:#dcfce7;color:#166534}.badge-disabled{background:#fee2e2;color:#991b1b}
 .badge-local{background:#e0e7ff;color:#3730a3}.badge-remote{background:#ede9fe;color:#5b21b6}
 .empty{color:#94a3b8;font-size:0.85rem;padding:8px 0}
-.error-card{color:#991b1b}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#991b1b;color:#fff;padding:10px 14px;border-radius:6px;font-size:0.8rem;z-index:99;max-width:90vw;display:none;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;display:none;overflow-y:auto;padding:24px}
+#overlay .card{max-width:720px;margin:0 auto}
 @media(max-width:640px){header h1{font-size:1rem}main{padding:12px}.form-row{flex-direction:column;gap:0}}
 </style>
 </head>
@@ -65,11 +67,100 @@ label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
   <button class="tab" data-tab="network">Network</button>
 </nav>
 <main id="mainContent"></main>
+<div id="toast"></div>
+<div id="overlay"></div>
 <script>
 "use strict";
-var API='/api/v1',cur='dashboard',renderSeq=0,pending=new Set(),scanCache=[];
+var API='/api/v1',cur='dashboard',pending=new Set();
 var main=document.getElementById('mainContent');
+var toastEl=document.getElementById('toast');
+var overlayEl=document.getElementById('overlay');
 
+/* =====================================================================
+ * Application state (separated from the DOM)
+ * ===================================================================== */
+var uiState={formActive:false,editingRuleId:null};
+
+/* =====================================================================
+ * Tiny DOM update helpers - each skips the DOM write when unchanged.
+ * ===================================================================== */
+function setText(node,value){
+  if(!node) return;
+  var next=String(value==null?'':value);
+  if(node.textContent!==next) node.textContent=next;
+}
+function setClass(node,cls,on){
+  if(!node) return;
+  if(on) node.classList.add(cls); else node.classList.remove(cls);
+}
+function setDisabled(node,d){
+  if(!node) return;
+  if(node.disabled!==!!d) node.disabled=!!d;
+}
+function setAttr(node,name,value){
+  if(!node) return;
+  var next=String(value==null?'':value);
+  if(node.getAttribute(name)!==next) node.setAttribute(name,next);
+}
+
+/* DOM builder: minimal, no framework. */
+function el(tag,attrs,children){
+  var n=document.createElement(tag);
+  if(attrs) for(var k in attrs){
+    if(!Object.prototype.hasOwnProperty.call(attrs,k)) continue;
+    if(k==='class') n.className=attrs[k];
+    else if(k==='text') n.textContent=attrs[k];
+    else if(k==='html') n.innerHTML=attrs[k];
+    else n.setAttribute(k,attrs[k]);
+  }
+  if(children){
+    (Array.isArray(children)?children:[children]).forEach(function(c){
+      if(c==null) return;
+      n.appendChild(typeof c==='string'?document.createTextNode(c):c);
+    });
+  }
+  return n;
+}
+function insertAt(container,node,idx){
+  var kids=container.children;
+  if(idx>=kids.length) container.appendChild(node);
+  else container.insertBefore(node,kids[idx]);
+}
+
+/* =====================================================================
+ * Collection diff (reconcile server state onto the DOM in place).
+ *   - removes nodes whose stable key is gone
+ *   - updates existing nodes via apply()
+ *   - creates new nodes via create() and inserts them in the right order
+ * Never wipes the container.
+ * ===================================================================== */
+function reconcile(container,list,keyFn,attr,create,apply){
+  var byKey={};
+  list.forEach(function(it){ byKey[keyFn(it)]=it; });
+  Array.prototype.slice.call(container.children).forEach(function(node){
+    var k=node.getAttribute(attr);
+    if(k==null||!byKey[k]) container.removeChild(node);
+  });
+  var kids=container.children;
+  list.forEach(function(it,idx){
+    var k=keyFn(it);
+    var node=null;
+    Array.prototype.some.call(kids,function(n){ if(n.getAttribute(attr)===k){node=n;return true;} return false; });
+    if(!node){
+      node=create(it);
+      node.setAttribute(attr,k);
+      apply(it,node);
+      insertAt(container,node,idx);
+    } else {
+      apply(it,node);
+      if(kids[idx]!==node) container.insertBefore(node,kids[idx]||null);
+    }
+  });
+}
+
+/* =====================================================================
+ * API + online status
+ * ===================================================================== */
 function esc(s){
   return String(s==null?'':s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -84,13 +175,14 @@ function badgeForStatus(s){
   if(st==='FAILED'||st==='TIMEOUT') return 'badge-error';
   return 'badge-pending';
 }
-
 function apiFetch(path,opts){
   opts=opts||{};
   var ctrl=new AbortController();
   var t=setTimeout(function(){ctrl.abort();},8000);
-  return fetch(API+path,{headers:{'Content-Type':'application/json'},signal:ctrl.signal,...opts})
-    .then(function(r){
+  var init={headers:{'Content-Type':'application/json'},signal:ctrl.signal};
+  if(opts.method){ init.method=opts.method; }
+  if(opts.body){ init.body=opts.body; }
+  return fetch(API+path,init).then(function(r){
       clearTimeout(t);
       return r.text().then(function(txt){
         var j=null;
@@ -106,224 +198,553 @@ function apiFetch(path,opts){
     });
 }
 function setOnline(b){
-  var dot=document.getElementById('statusDot');
-  var si=document.getElementById('sysInfo');
-  dot.className=b?'dot ok':'dot';
-  si.textContent=b?'':'OFFLINE';
+  document.getElementById('statusDot').className=b?'dot ok':'dot';
+  document.getElementById('sysInfo').textContent=b?'':'OFFLINE';
 }
 function setNetLabel(txt){ document.getElementById('netLabel').textContent=txt; }
-
-function renderError(err){
-  main.innerHTML='<div class="card"><div class="empty error-card">Error: '+esc(err&&err.message?err.message:'unknown error')+'</div><div class="empty">The device may be offline. Actions will retry on the next refresh.</div></div>';
+var toastTimer;
+function showError(err){
+  toastEl.textContent='Error: '+(err&&err.message?err.message:'unknown');
+  toastEl.style.display='block';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ toastEl.style.display='none'; },4000);
 }
 
-function showLoading(){
-  main.innerHTML='<div class="card"><div class="empty">Loading...</div></div>';
+/* =====================================================================
+ * Polling engine: active view only + request dedup + stale protection.
+ * ===================================================================== */
+var views={};
+function makeRefresh(path,viewName){
+  return function(gen){
+    return apiFetch(path).then(function(data){
+      if(gen===views[viewName].gen){
+        setOnline(true);
+        views[viewName].update(data);
+      }
+    });
+  };
+}
+function runViewRefresh(v){
+  if(!v||!v.refresh||v.inflight) return;
+  if(v.pollable===false) return;
+  if(uiState.formActive) return;
+  if(typeof v.gen!=='number') v.gen=0;
+  v.inflight=true;
+  var gen=++v.gen;
+  v.refresh(gen).then(function(){ v.inflight=false; })
+    .catch(function(err){ v.inflight=false; setOnline(false); showError(err); });
+}
+function showView(name){
+  cur=name;
+  Array.prototype.forEach.call(document.querySelectorAll('#navTabs .tab'),function(b){
+    setClass(b,'active',b.getAttribute('data-tab')===name);
+  });
+  var v=views[name];
+  var host=document.getElementById('view-'+name);
+  if(!host){
+    host=document.createElement('div');
+    host.id='view-'+name;
+    main.appendChild(host);
+    v.host=host;
+    if(v.mount) v.mount(host);
+    v.mounted=true;
+  }
+  Object.keys(views).forEach(function(n){
+    var h=document.getElementById('view-'+n);
+    if(h) h.style.display=(n===name)?'':'none';
+  });
+  if(v.refresh&&v.pollable!==false) runViewRefresh(v);
+}
+function pollTick(){
+  var v=views[cur];
+  if(v&&v.refresh&&v.pollable!==false&&!uiState.formActive) runViewRefresh(v);
 }
 
-function renderDashboard(tag){
-  showLoading();
-  return apiFetch('/status').then(function(s){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
-    document.getElementById('sysInfo').textContent='IP: '+(s.ip||'—')+' | Heap: '+s.free_heap+' B';
-    main.innerHTML=
+/* =====================================================================
+ * DASHBOARD view
+ * ===================================================================== */
+views.dashboard={
+  mount:function(host){
+    host.innerHTML=
       '<div class="section-header"><h2>Qymera Dashboard</h2></div>'+
       '<div class="grid grid-3">'+
       '<div class="card"><h2>Status</h2><div class="metric"><span class="badge badge-online">ONLINE</span></div></div>'+
-      '<div class="card"><h2>IP Address</h2><div class="metric">'+esc(s.ip||'—')+'</div></div>'+
-      '<div class="card"><h2>Free Heap</h2><div class="metric">'+esc(s.free_heap)+' B</div></div>'+
-      '<div class="card"><h2>Uptime</h2><div class="metric">'+esc(Math.floor(s.uptime_ms/1000))+'s</div></div>'+
-      '<div class="card"><h2>Device Count</h2><div class="metric">'+esc(s.device_count)+'</div></div>'+
-      '<div class="card"><h2>Entity Count</h2><div class="metric">'+esc(s.entity_count)+'</div></div>'+
+      '<div class="card"><h2>IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
+      '<div class="card"><h2>Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
+      '<div class="card"><h2>Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
+      '<div class="card"><h2>Device Count</h2><div class="metric" data-field="device_count">—</div></div>'+
+      '<div class="card"><h2>Entity Count</h2><div class="metric" data-field="entity_count">—</div></div>'+
       '</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
-}
-
-function renderDevices(tag){
-  showLoading();
-  return apiFetch('/devices').then(function(d){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    var list=d||[];
-    if(!list.length){ main.innerHTML='<div class="card"><div class="empty">No devices found</div></div>'; return; }
-    main.innerHTML='<div class="section-header"><h2>Devices ('+list.length+')</h2></div>'+
-      '<div class="grid grid-2">'+list.map(function(dev){
-        var local=(dev.role==='dashboard');
-        var mode=local?'LOCAL':'REMOTE';
-        var state=dev.state?esc(dev.state):(dev.online?'operational':'offline');
-        var loc=dev.location?esc(dev.location):'—';
-        return '<div class="card"><h2>'+esc(dev.name)+' <span class="badge '+(local?'badge-local':'badge-remote')+'">'+mode+'</span></h2>'+
-          '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+esc(dev.device_id)+'</span>'+
-          '<span class="entity-meta">Model: '+esc(dev.model)+' | Location: '+loc+' | Role: '+esc(dev.role||'—')+'</span></div>'+
-          '<span class="badge '+(dev.online?'badge-online':'badge-offline')+'">'+(dev.online?'Online':'Offline')+'</span></div>'+
-          '<div style="margin-top:8px"><span class="entity-meta">State: '+esc(state)+'</span></div>'+
-          '</div>';
-      }).join('')+'</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
-}
-
-function renderEntities(tag){
-  showLoading();
-  return apiFetch('/entities').then(function(d){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    var list=d||[];
-    if(!list.length){ main.innerHTML='<div class="card"><div class="empty">No entities found</div></div>'; return; }
-    main.innerHTML='<div class="section-header"><h2>Entities ('+list.length+')</h2></div>'+
-      '<div class="grid grid-2">'+list.map(function(ent){
-        var caps=(ent.capabilities||[]).join(', ');
-        var cur=fmtBool(ent.current), des=fmtBool(ent.desired);
-        var isRelay=caps.indexOf('ACTUATOR_RELAY')>=0;
-        var isDimmer=caps.indexOf('ACTUATOR_DIMMER')>=0;
-        var devId=esc(ent.device_id), entId=esc(ent.entity_id);
-        var busy=pending.has(ent.device_id+'/'+ent.entity_id);
-        var control='';
-        if(isRelay){
-          var on=(ent.desired===true);
-          control='<label class="toggle '+(on?'on':'')+'" data-k="'+devId+'/'+entId+'" data-want="'+(on?'1':'0')+'" '+(busy?'disabled':'')+'></label>';
-        } else if(isDimmer){
-          var lv=(typeof ent.desired==='number')?ent.desired:(ent.current||0);
-          control='<input type="range" class="slider" min="0" max="100" value="'+lv+'" data-k="'+devId+'/'+entId+'" '+(busy?'disabled':'')+'>';
-        } else {
-          control=fmtBool(ent.desired);
-        }
-        return '<div class="card"><h2>'+esc(ent.name)+' <span class="entity-meta">('+devId+')</span></h2>'+
-          '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+entId+'</span>'+
-          '<span class="entity-meta">Type: '+esc(ent.type)+' | Caps: '+esc(caps)+' | Unit: '+esc(ent.unit||'')+'</span></div>'+
-          '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;align-items:flex-end">'+
-          '<span class="entity-meta">Cmd: <span class="badge '+badgeForStatus(ent.cmd_status)+'">'+esc(ent.cmd_status||'—')+'</span></span>'+
-          '<span class="entity-meta">Reliability: '+esc(ent.reliability)+'</span></div></div>'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">'+
-          '<span class="entity-meta"><strong>Current:</strong> '+cur+' &nbsp;<strong>Desired:</strong> '+des+(busy?' &nbsp;<em>(sending...)</em>':'')+'</span>'+
-          control+'</div>'+
-          '</div>';
-      }).join('')+'</div>';
-
-    Array.prototype.forEach.call(main.querySelectorAll('.toggle'),function(t){
-      t.addEventListener('click',function(){
-        if(t.disabled) return;
-        var kv=t.dataset.k.split('/');
-        t.disabled=true; pending.add(t.dataset.k);
-        var want=(t.dataset.want==='1');
-        var target=!want;
-        apiFetch('/control/relay',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],value:target})})
-          .then(function(){ pending.delete(t.dataset.k); renderTab(cur); })
-          .catch(function(e){ pending.delete(t.dataset.k); t.disabled=false; renderError(e); });
-      });
+    var f={};
+    ['ip','heap','uptime','device_count','entity_count'].forEach(function(n){
+      f[n]=host.querySelector('[data-field="'+n+'"]');
     });
-    Array.prototype.forEach.call(main.querySelectorAll('.slider'),function(s){
-      s.addEventListener('change',function(){
-        if(s.disabled) return;
-        var kv=s.dataset.k.split('/');
-        s.disabled=true; pending.add(s.dataset.k);
-        apiFetch('/control/dimmer',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],level:parseInt(s.value,10)})})
-          .then(function(){ pending.delete(s.dataset.k); renderTab(cur); })
-          .catch(function(e){ pending.delete(s.dataset.k); s.disabled=false; renderError(e); });
-      });
-    });
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
-}
+    host.__f=f;
+  },
+  refresh:makeRefresh('/status','dashboard'),
+  update:function(s){
+    var f=this.__f;
+    setNetLabel(s.network&&s.network==='AP'?('AP · '+(s.ssid||'')):'STA');
+    setText(f.ip,s.ip||'—');
+    setText(f.heap,s.free_heap+' B');
+    setText(f.uptime,Math.floor(s.uptime_ms/1000)+'s');
+    setText(f.device_count,s.device_count);
+    setText(f.entity_count,s.entity_count);
+  }
+};
 
-function renderRules(tag){
-  showLoading();
-  return apiFetch('/rules').then(function(r){
-    if(tag!==renderSeq) return;
-    setOnline(true);
+/* =====================================================================
+ * DEVICES view
+ * ===================================================================== */
+function deviceCardNew(){ return el('div',{'class':'card','data-device-key':''}); }
+function updateDeviceCard(dev,node){
+  var local=(dev.role==='dashboard');
+  var mode=local?'LOCAL':'REMOTE';
+  var state=dev.state?String(dev.state):(dev.online?'operational':'offline');
+  if(!node.__built){
+    node.innerHTML=''+
+      '<h2></h2>'+
+      '<div class="entity"><div class="entity-info">'+
+      '<span class="entity-name" data-field="id"></span>'+
+      '<span class="entity-meta" data-field="meta"></span></div>'+
+      '<span class="badge" data-field="online"></span></div>'+
+      '<div style="margin-top:8px"><span class="entity-meta" data-field="state"></span></div>';
+    node.__built=true;
+  }
+  var h2=node.querySelector('h2');
+  h2.textContent='';
+  h2.appendChild(el('span',{'text':esc(dev.name)}));
+  h2.appendChild(el('span',{'class':'badge '+(local?'badge-local':'badge-remote'),'text':mode}));
+  setText(node.querySelector('[data-field="id"]'),'ID: '+dev.device_id);
+  setText(node.querySelector('[data-field="meta"]'),'Model: '+(dev.model||'')+' | Location: '+(dev.location||'—')+' | Role: '+(dev.role||'—'));
+  setText(node.querySelector('[data-field="state"]'),'State: '+esc(state));
+  var ob=node.querySelector('[data-field="online"]');
+  setText(ob,dev.online?'Online':'Offline');
+  setClass(ob,'badge-online',!!dev.online);
+  setClass(ob,'badge-offline',!dev.online);
+}
+views.devices={
+  mount:function(host){
+    host.innerHTML='<div class="section-header"><h2>Devices (<span data-field="count">0</span>)</h2></div><div id="deviceList" class="grid grid-2"></div>';
+    host.__list=host.querySelector('#deviceList');
+  },
+  refresh:makeRefresh('/devices','devices'),
+  update:function(d){
+    var list=d||[];
+    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
+    reconcile(this.__list,list,function(x){return x.device_id;},'data-device-key',deviceCardNew,updateDeviceCard);
+  }
+};
+
+/* =====================================================================
+ * ENTITIES view (architectural reference: incremental + event delegation)
+ * ===================================================================== */
+function entityCardNew(){ return el('div',{'class':'card','data-entity-key':''}); }
+function updateEntityCard(ent,node){
+  var key=ent.device_id+'/'+ent.entity_id;
+  if(!node.__built){
+    node.innerHTML=''+
+      '<h2></h2>'+
+      '<div class="entity"><div class="entity-info">'+
+      '<span class="entity-name" data-field="devkey"></span>'+
+      '<span class="entity-meta" data-field="meta"></span></div>'+
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;align-items:flex-end">'+
+      '<span class="entity-meta" data-field="cmds"></span>'+
+      '<span class="entity-meta" data-field="reliability"></span></div></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">'+
+      '<span class="entity-meta" data-field="values"></span>'+
+      '<span data-control></span></div>';
+    node.__built=true;
+  }
+  var h2=node.querySelector('h2');
+  h2.textContent='';
+  h2.appendChild(el('span',{'text':esc(ent.name)}));
+  h2.appendChild(el('span',{'class':'entity-meta','text':' ('+esc(ent.device_id)+')'}));
+  setText(node.querySelector('[data-field="devkey"]'),'ID: '+esc(key));
+  setText(node.querySelector('[data-field="meta"]'),
+    'Type: '+(ent.type||'')+' | Caps: '+((ent.capabilities||[]).join(', '))+' | Unit: '+(ent.unit||''));
+  var cmds=node.querySelector('[data-field="cmds"]');
+  cmds.textContent='Cmd: ';
+  var b=el('span',{'class':'badge '+badgeForStatus(ent.cmd_status)});
+  setText(b,ent.cmd_status||'—');
+  cmds.appendChild(b);
+  setText(node.querySelector('[data-field="reliability"]'),'Reliability: '+(ent.reliability==null?'':ent.reliability));
+  setText(node.querySelector('[data-field="values"]'),'Current: '+fmtBool(ent.current)+'  Desired: '+fmtBool(ent.desired));
+  updateEntityControl(ent,node);
+}
+function updateEntityControl(ent,node){
+  var key=ent.device_id+'/'+ent.entity_id;
+  var caps=ent.capabilities||[];
+  var isRelay=caps.indexOf('actuator.relay')>=0;
+  var isDimmer=caps.indexOf('actuator.dimmer')>=0;
+  var type=isRelay?'relay':(isDimmer?'dimmer':'none');
+  var holder=node.querySelector('[data-control]');
+  var busy=pending.has(key);
+  if(node.__ctlType!==type){
+    holder.innerHTML='';
+    if(type==='relay'){
+      node.__ctl=el('button',{'class':'toggle','data-action':'toggle','data-k':key,'aria-label':'toggle'});
+      holder.appendChild(node.__ctl);
+    } else if(type==='dimmer'){
+      node.__ctl=el('input',{'type':'range','class':'slider','min':'0','max':'100','data-action':'dimmer','data-k':key});
+      holder.appendChild(node.__ctl);
+    } else {
+      node.__ctl=null;
+      holder.appendChild(document.createTextNode(fmtBool(ent.desired)));
+    }
+    node.__ctlType=type;
+  }
+  var ctl=node.__ctl;
+  if(type==='relay'){
+    setClass(ctl,'on',ent.desired===true);
+    setAttr(ctl,'data-want',ent.desired===true?'1':'0');
+    setDisabled(ctl,busy);
+  } else if(type==='dimmer'){
+    setDisabled(ctl,busy);
+    var lv=(typeof ent.desired==='number')?ent.desired:(ent.current||0);
+    if(ctl!==document.activeElement&&String(ctl.value)!==String(lv)) ctl.value=lv;
+  }
+}
+function handleToggle(t){
+  if(t.disabled) return;
+  var key=t.getAttribute('data-k');
+  var kv=key.split('/');
+  var want=(t.getAttribute('data-want')==='1');
+  t.disabled=true; pending.add(key);
+  apiFetch('/control/relay',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],value:!want})})
+    .then(function(){ pending.delete(key); runViewRefresh(views.entities); })
+    .catch(function(e){ pending.delete(key); showError(e); });
+}
+function handleDimmer(s){
+  if(s.disabled) return;
+  var key=s.getAttribute('data-k');
+  var kv=key.split('/');
+  s.disabled=true; pending.add(key);
+  apiFetch('/control/dimmer',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],level:parseInt(s.value,10)})})
+    .then(function(){ pending.delete(key); runViewRefresh(views.entities); })
+    .catch(function(e){ pending.delete(key); showError(e); });
+}
+views.entities={
+  mount:function(host){
+    host.innerHTML='<div class="section-header"><h2>Entities (<span data-field="count">0</span>)</h2></div><div id="entityList" class="grid grid-2"></div>';
+    host.__list=host.querySelector('#entityList');
+    /* Event delegation: installed once at mount, never re-attached. */
+    host.addEventListener('click',function(e){
+      var t=e.target.closest?e.target.closest('[data-action="toggle"]'):null;
+      if(t){ e.preventDefault(); handleToggle(t); }
+    });
+    host.addEventListener('change',function(e){
+      var s=e.target.closest?e.target.closest('[data-action="dimmer"]'):null;
+      if(s) handleDimmer(s);
+    });
+  },
+  refresh:makeRefresh('/entities','entities'),
+  update:function(d){
+    var list=d||[];
+    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
+    reconcile(this.__list,list,function(x){return x.device_id+'/'+x.entity_id;},'data-entity-key',entityCardNew,updateEntityCard);
+  }
+};
+
+/* =====================================================================
+ * RULES view (collection refreshed incrementally; editor is an overlay)
+ * ===================================================================== */
+function ruleBrief(rule){
+  if(rule.trigger&&rule.trigger.length){
+    var t=rule.trigger[0];
+    if(t&&t.entity) return esc(t.entity.device_id+'/'+t.entity.entity_id)+' '+(t.operator?esc(t.operator):'')+' '+esc(t.threshold);
+  }
+  return '—';
+}
+function ruleCardNew(){ return el('div',{'class':'card','data-rule-key':''}); }
+function updateRuleCard(rule,node){
+  if(!node.__built){
+    node.innerHTML=''+
+      '<h2></h2>'+
+      '<div class="entity"><div class="entity-info">'+
+      '<span class="entity-name" data-field="id"></span>'+
+      '<span class="entity-meta" data-field="meta"></span>'+
+      '<span class="entity-meta" data-field="trigger"></span></div>'+
+      '<span class="badge" data-field="enabled"></span></div>'+
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" data-action="edit-rule">Edit</button>'+
+      '<button class="btn" data-action="toggle-rule">Toggle</button>'+
+      '<button class="btn btn-danger" data-action="del-rule">Delete</button></div>';
+    node.__built=true;
+  }
+  var h2=node.querySelector('h2');
+  h2.textContent='';
+  h2.appendChild(el('span',{'text':esc(rule.name)}));
+  setText(node.querySelector('[data-field="id"]'),'ID: '+rule.rule_id);
+  setText(node.querySelector('[data-field="meta"]'),'Revision: '+(rule.revision||0));
+  setText(node.querySelector('[data-field="trigger"]'),'Trigger: '+(rule.trigger&&rule.trigger.length?ruleBrief(rule):'—'));
+  var eb=node.querySelector('[data-field="enabled"]');
+  setText(eb,rule.enabled?'Enabled':'Disabled');
+  setClass(eb,'badge-enabled',!!rule.enabled);
+  setClass(eb,'badge-disabled',!rule.enabled);
+  node.querySelector('[data-action="edit-rule"]').setAttribute('data-rule',rule.rule_id);
+  var tb=node.querySelector('[data-action="toggle-rule"]');
+  tb.setAttribute('data-rule',rule.rule_id);
+  setText(tb,rule.enabled?'Disable':'Enable');
+  setClass(tb,'btn-danger',!!rule.enabled);
+  setClass(tb,'btn-primary',!rule.enabled);
+  node.querySelector('[data-action="del-rule"]').setAttribute('data-rule',rule.rule_id);
+}
+views.rules={
+  mount:function(host){
+    host.innerHTML='<div class="section-header"><h2>Rules (<span data-field="count">0</span>)</h2>'+
+      '<button class="btn btn-primary" data-action="new-rule">Create Rule</button></div><div id="ruleList"></div>';
+    host.__list=host.querySelector('#ruleList');
+    host.addEventListener('click',function(e){
+      var t=null;
+      if(e.target.closest) t=e.target.closest('[data-action]');
+      if(!t) return;
+      var a=t.getAttribute('data-action');
+      if(a==='new-rule') openRuleEditor(null);
+      else if(a==='edit-rule') openRuleEditor(t.getAttribute('data-rule'));
+      else if(a==='toggle-rule') toggleRule(t.getAttribute('data-rule'));
+      else if(a==='del-rule') deleteRule(t.getAttribute('data-rule'));
+    });
+  },
+  refresh:makeRefresh('/rules','rules'),
+  update:function(r){
     var list=r||[];
-    var head='<div class="section-header"><h2>Rules ('+list.length+')</h2><button class="btn btn-primary" onclick="showCreateRule()">Create Rule</button></div>';
-    if(!list.length){ main.innerHTML=head+'<div class="card"><div class="empty">No rules found</div></div>'; return; }
-    main.innerHTML=head+'<div class="grid grid-2">'+list.map(function(rule){
-      var brief='—';
-      if(rule.trigger&&rule.trigger.length){
-        var t=rule.trigger[0];
-        if(t&&t.entity) brief=esc(t.entity.device_id+'/'+t.entity.entity_id)+' '+(t.operator?esc(t.operator):'')+' '+esc(t.threshold);
-      }
-      return '<div class="card"><h2>'+esc(rule.name)+'</h2>'+
-        '<div class="entity"><div class="entity-info"><span class="entity-name">ID: '+esc(rule.rule_id)+'</span>'+
-        '<span class="entity-meta">Priority: '+esc(rule.priority)+' | Cooldown: '+esc(rule.cooldown_ms/1000)+'s | Max/hr: '+esc(rule.max_activations_per_hour)+'</span>'+
-        '<span class="entity-meta">Trigger: '+brief+'</span></div>'+
-        '<span class="badge '+(rule.enabled?'badge-enabled':'badge-disabled')+'">'+(rule.enabled?'Enabled':'Disabled')+'</span></div>'+
-        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
-        '<button class="btn btn-ghost" onclick="editRule(\''+esc(rule.rule_id)+'\')">Edit</button>'+
-        '<button class="btn '+(rule.enabled?'btn-danger':'btn-primary')+'" onclick="toggleRule(\''+esc(rule.rule_id)+'\','+(!rule.enabled)+')">'+(rule.enabled?'Disable':'Enable')+'</button>'+
-        '<button class="btn btn-danger" onclick="deleteRule(\''+esc(rule.rule_id)+'\')">Delete</button>'+
-        '</div></div>';
-    }).join('')+'</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
+    reconcile(this.__list,list,function(x){return x.rule_id;},'data-rule-key',ruleCardNew,updateRuleCard);
+  }
+};
+function toggleRule(id){
+  var card=document.querySelector('[data-rule-key="'+id+'"]');
+  var en=card?card.querySelector('[data-field="enabled"]').textContent==='Enabled':false;
+  apiFetch('/rules/'+encodeURIComponent(id)+(en?'/disable':'/enable'),{method:'POST'})
+    .then(function(){ runViewRefresh(views.rules); })
+    .catch(showError);
+}
+function deleteRule(id){
+  if(!window.confirm('Delete rule '+id+'?')) return;
+  apiFetch('/rules/'+encodeURIComponent(id),{method:'DELETE'})
+    .then(function(){ runViewRefresh(views.rules); })
+    .catch(showError);
 }
 
-function renderSkills(tag){
-  showLoading();
-  return apiFetch('/skills').then(function(s){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    var list=s||[];
-    main.innerHTML='<div class="section-header"><h2>Skill Catalog ('+list.length+')</h2></div>'+
-      '<div class="grid grid-2">'+list.map(function(sk){
-        var perms='';
-        if(sk.permissions&1) perms+='READ ';
-        if(sk.permissions&2) perms+='CONTROL ';
-        if(sk.permissions&4) perms+='RULE_READ ';
-        if(sk.permissions&8) perms+='RULE_WRITE ';
-        return '<div class="card"><h2>'+esc(sk.name)+'</h2>'+
-          '<div class="entity"><div class="entity-info"><span class="entity-name">v'+esc(sk.version)+'</span>'+
-          '<span class="entity-meta">'+esc(sk.description)+'</span><span class="entity-meta">Schema: '+esc(sk.schema_id)+'</span>'+
-          '<span class="entity-meta">Perms: '+esc(perms)+'</span></div></div></div>';
-      }).join('')+'</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+/* ---- Rule editor (overlay, not part of the collection DOM) ---- */
+function collectRuleBody(f){
+  var body={name:f.name.value};
+  if(f.rule_id&&f.rule_id.value) body.rule_id=f.rule_id.value;
+  body.trigger={entity:{device_id:f.trg_dev.value,entity_id:f.trg_ent.value},operator:f.trg_op.value,threshold:parseFloat(f.trg_threshold.value)};
+  body.actions=[{entity:{device_id:f.act_dev.value,entity_id:f.act_ent.value},action:f.act_type.value,value:parseFloat(f.act_value.value)}];
+  if(f.cooldown_ms.value) body.cooldown_ms=parseInt(f.cooldown_ms.value,10);
+  if(f.priority.value) body.priority=parseInt(f.priority.value,10);
+  if(f.max_act.value) body.max_activations_per_hour=parseInt(f.max_act.value,10);
+  body.enabled=true;
+  return body;
+}
+function closeRuleEditor(){
+  overlayEl.style.display='none';
+  overlayEl.innerHTML='';
+  uiState.formActive=false;
+  uiState.editingRuleId=null;
+  runViewRefresh(views.rules);
+}
+function openRuleEditor(id){
+  uiState.formActive=true;
+  uiState.editingRuleId=id;
+  overlayEl.style.display='block';
+  if(id){
+    apiFetch('/rules/'+encodeURIComponent(id)).then(function(rule){
+      buildRuleForm(rule);
+    }).catch(showError);
+  } else {
+    buildRuleForm(null);
+  }
+}
+function buildRuleForm(rule){
+  var card=el('div',{'class':'card'},[
+    el('h2',{'text':rule?'Edit Rule':'Create Rule'}),
+    el('form',{'id':'ruleForm'})
+  ]);
+  var form=card.querySelector('form');
+  var trig=(rule&&rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
+  var actions=(rule&&rule.actions&&rule.actions.length)?rule.actions:[];
+  var act=actions[0]||null;
+  addRow(form,'Name',input('name',rule?rule.name:''),true);
+  addRow(form,'Rule ID (optional)',input('rule_id',(rule?rule.rule_id:'')));
+  addRow(form,'Trigger - Device ID',input('trg_dev',trig?(trig.entity?trig.entity.device_id:''):'dashboard'));
+  addRow(form,'Trigger - Entity ID',input('trg_ent',trig?(trig.entity?trig.entity.entity_id:''):'temperature'));
+  addRow(form,'Operator',sel('trg_op',[['GT','>'],['LT','<'],['GE','≥'],['LE','≤'],['EQ','='],['NE','≠']],trig?trig.operator:'GT'));
+  addRow(form,'Threshold',input('trg_threshold','number',trig?trig.threshold:30));
+  addRow(form,'Action - Device ID',input('act_dev',act?(act.entity?act.entity.device_id:''):'dashboard'));
+  addRow(form,'Action - Entity ID',input('act_ent',act?(act.entity?act.entity.entity_id:''):'fan'));
+  addRow(form,'Action Type',sel('act_type',[['SET_BOOL','Set Bool'],['SET_LEVEL','Set Level'],['SET_VALUE','Set Value'],['TOGGLE','Toggle']],act?act.action:'SET_BOOL'));
+  addRow(form,'Value',input('act_value','number',act?(act.value==null?1:act.value):1));
+  addRow(form,'Cooldown (ms)',input('cooldown_ms','number',rule?rule.cooldown_ms:60000));
+  addRow(form,'Priority',input('priority','number',rule?rule.priority:10));
+  addRow(form,'Max activations / hour',input('max_act','number',rule?rule.max_activations_per_hour:10));
+  var save=el('button',{'type':'button','class':'btn btn-primary','style':'margin-top:12px;width:100%'},{'text':'Save'});
+  var cancel=el('button',{'type':'button','class':'btn btn-ghost','style':'margin-top:8px;width:100%'},{'text':'Cancel'});
+  var btnRow=el('div',{'style':'margin-top:12px'},[save,cancel]);
+  form.appendChild(btnRow);
+  save.addEventListener('click',function(){ saveRuleForm(); });
+  cancel.addEventListener('click',function(){ closeRuleEditor(); });
+  if(uiState.editingRuleId){
+    var hc=el('input',{'type':'hidden','name':'origRuleId','value':uiState.editingRuleId});
+    form.appendChild(hc);
+  }
+  overlayEl.innerHTML='';
+  overlayEl.appendChild(card);
+}
+function addRow(form,labelText,inputEl){
+  var d=el('div');
+  d.appendChild(el('label',{'text':labelText}));
+  d.appendChild(inputEl);
+  form.appendChild(d);
+}
+function input(name,value,type){
+  var i=el('input',{'name':name,'type':type||'text','value':value==null?'':value});
+  return i;
+}
+function sel(name,opts,selVal){
+  var s=el('select',{'name':name});
+  opts.forEach(function(o){
+    var v=o[0],lab=o[1];
+    var opt=el('option',{'value':v,'text':lab});
+    if(String(v)===String(selVal)) setAttr(opt,'selected','selected');
+    s.appendChild(opt);
+  });
+  return s;
+}
+function saveRuleForm(){
+  var f=document.getElementById('ruleForm');
+  if(!f) return;
+  var fels=f.elements;
+  var elt=fels.name;
+  if(!elt||!elt.value.trim()){ showError(new Error('Name is required')); return; }
+  var body=collectRuleBody(fels);
+  var id=uiState.editingRuleId;
+  var isNew=!id;
+  apiFetch(isNew?'/rules':'/rules/'+encodeURIComponent(id),{method:isNew?'POST':'PUT',body:JSON.stringify(body)})
+    .then(function(){
+      closeRuleEditor();
+    }).catch(showError);
 }
 
-function renderLogs(tag){
-  showLoading();
-  return apiFetch('/logs').then(function(l){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    var list=l||[];
-    if(!list.length){ main.innerHTML='<div class="section-header"><h2>Recent Logs</h2></div><div class="card"><div class="empty">No logs available</div></div>'; return; }
-    main.innerHTML='<div class="section-header"><h2>Recent Logs ('+list.length+')</h2></div>'+
-      '<div class="card">'+list.slice(0,50).map(function(e){
-        var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
-        return '<div class="log-entry '+esc(e.layer||'')+'">'+
-          '<span style="color:#94a3b8">['+fmtTs(ts)+']</span> '+
-          '<span style="font-weight:500">'+esc(e.source)+'</span>: '+esc(e.msg)+'</div>';
-      }).join('')+'</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+/* =====================================================================
+ * SKILLS view (rarely changes; reconciled incrementally anyway)
+ * ===================================================================== */
+function skillCardNew(){ return el('div',{'class':'card','data-skill-key':''}); }
+function updateSkillCard(sk,node){
+  if(!node.__built){
+    node.innerHTML=''+
+      '<h2></h2>'+
+      '<div class="entity"><div class="entity-info">'+
+      '<span class="entity-name" data-field="ver"></span>'+
+      '<span class="entity-meta" data-field="desc"></span>'+
+      '<span class="entity-meta" data-field="schema"></span>'+
+      '<span class="entity-meta" data-field="perms"></span></div></div>';
+    node.__built=true;
+  }
+  var h2=node.querySelector('h2');
+  h2.textContent='';
+  h2.appendChild(el('span',{'text':esc(sk.name)}));
+  setText(node.querySelector('[data-field="ver"]'),'v'+sk.version);
+  setText(node.querySelector('[data-field="desc"]'),sk.description||'');
+  setText(node.querySelector('[data-field="schema"]'),'Schema: '+(sk.schema_id||''));
+  var perms='';
+  if(sk.permissions&1) perms+='READ ';
+  if(sk.permissions&2) perms+='CONTROL ';
+  if(sk.permissions&4) perms+='RULE_READ ';
+  if(sk.permissions&8) perms+='RULE_WRITE ';
+  setText(node.querySelector('[data-field="perms"]'),'Perms: '+perms);
 }
+views.skills={
+  mount:function(host){
+    host.innerHTML='<div class="section-header"><h2>Skill Catalog (<span data-field="count">0</span>)</h2></div><div id="skillList" class="grid grid-2"></div>';
+    host.__list=host.querySelector('#skillList');
+  },
+  refresh:makeRefresh('/skills','skills'),
+  update:function(sk){
+    var list=sk||[];
+    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
+    reconcile(this.__list,list,function(x){return x.name;},'data-skill-key',skillCardNew,updateSkillCard);
+  }
+};
 
-function renderSystem(tag){
-  showLoading();
-  return apiFetch('/status').then(function(s){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
-    var net=s.network===void 0?'?':String(s.network);
-    main.innerHTML='<div class="section-header"><h2>System Information</h2></div>'+
+/* =====================================================================
+ * LOGS view (append new, remove overflow, keep DOM stable)
+ * ===================================================================== */
+function logKey(e){
+  var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
+  return ts+':'+(e.source||'')+':'+(e.msg||'');
+}
+function logCardNew(){ return el('div',{'class':'log-entry','data-log-key':''}); }
+function updateLogCard(e,node){
+  var lvl=String(e.level||e.layer||'');
+  setClass(node,'ERROR',lvl==='ERROR');
+  setClass(node,'WARNING',lvl==='WARNING');
+  var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
+  node.textContent='';
+  node.appendChild(el('span',{'style':'color:#94a3b8','text':'['+fmtTs(ts)+']'}));
+  node.appendChild(el('span',{'style':'font-weight:500','text':(e.source||'')+': '}));
+  node.appendChild(el('span',{'text':e.msg||''}));
+}
+views.logs={
+  mount:function(host){
+    host.innerHTML='<div class="section-header"><h2>Recent Logs (<span data-field="count">0</span>)</h2></div><div id="logList"></div>';
+    host.__list=host.querySelector('#logList');
+  },
+  refresh:makeRefresh('/logs','logs'),
+  update:function(l){
+    var list=(l||[]).slice(0,50);
+    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
+    reconcile(this.__list,list,logKey,'data-log-key',logCardNew,updateLogCard);
+  }
+};
+
+/* =====================================================================
+ * SYSTEM view
+ * ===================================================================== */
+views.system={
+  mount:function(host){
+    host.innerHTML=
+      '<div class="section-header"><h2>System Information</h2></div>'+
       '<div class="grid grid-3">'+
-      '<div class="card"><h2>Network Mode</h2><div class="metric" style="font-size:1.1rem">'+esc(net)+'</div></div>'+
-      '<div class="card"><h2>SSID</h2><div class="metric" style="font-size:1.1rem">'+esc(s.ssid||'—')+'</div></div>'+
-      '<div class="card"><h2>IP Address</h2><div class="metric" style="font-size:1.1rem">'+esc(s.ip||'—')+'</div></div>'+
-      '<div class="card"><h2>Free Heap</h2><div class="metric">'+esc(s.free_heap)+' B</div></div>'+
-      '<div class="card"><h2>Uptime</h2><div class="metric">'+esc(Math.floor(s.uptime_ms/1000))+'s</div></div>'+
-      '<div class="card"><h2>Build</h2><div class="metric" style="font-size:1.1rem">ESP32 Dashboard</div></div>'+
+      '<div class="card"><h2>Network Mode</h2><div class="metric" data-field="net">—</div></div>'+
+      '<div class="card"><h2>SSID</h2><div class="metric" data-field="ssid">—</div></div>'+
+      '<div class="card"><h2>IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
+      '<div class="card"><h2>Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
+      '<div class="card"><h2>Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
+      '<div class="card"><h2>Build</h2><div class="metric" data-field="build">ESP32 Dashboard</div></div>'+
       '</div>';
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
-}
+    var f={};
+    ['net','ssid','ip','heap','uptime','build'].forEach(function(n){
+      f[n]=host.querySelector('[data-field="'+n+'"]');
+    });
+    host.__f=f;
+  },
+  refresh:makeRefresh('/status','system'),
+  update:function(s){
+    var f=this.__f;
+    setNetLabel(s.network&&s.network==='AP'?('AP · '+(s.ssid||'')):'STA');
+    setText(f.net,s.network===void 0?'?':String(s.network));
+    setText(f.ssid,s.ssid||'—');
+    setText(f.ip,s.ip||'—');
+    setText(f.heap,s.free_heap+' B');
+    setText(f.uptime,Math.floor(s.uptime_ms/1000)+'s');
+  }
+};
 
-function renderNetwork(tag){
-  showLoading();
-  return apiFetch('/status').then(function(s){
-    if(tag!==renderSeq) return;
-    setOnline(true);
-    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
-    main.innerHTML=
+/* =====================================================================
+ * NETWORK view (mount-once, explicit scan, never auto-refreshed)
+ * ===================================================================== */
+var scanCache=[];
+views.network={
+  pollable:false,
+  mount:function(host){
+    host.innerHTML=
       '<div class="section-header"><h2>WiFi Network Setup</h2></div>'+
       '<div class="card"><p class="entity-meta">Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).</p></div>'+
       '<div class="card"><h2>Scan Networks</h2>'+
         '<button class="btn btn-primary" id="scanBtn">Scan for networks</button>'+
-        '<div id="scanList" style="margin-top:12px"></div>'+
-      '</div>'+
+        '<div id="scanList" style="margin-top:12px"></div></div>'+
       '<div class="card"><h2>Connect to WiFi</h2>'+
         '<div class="form-row"><div><label>SSID</label><input id="netSsid" list="scanOpts" placeholder="Network name..."></div>'+
         '<div><label>Password</label><input id="netPassword" type="password" placeholder="Leave empty for open networks"></div></div>'+
@@ -340,7 +761,7 @@ function renderNetwork(tag){
       sl.innerHTML='<div class="empty" style="margin-bottom:6px">Click an SSID to select it:</div>'+
         nets.map(function(n){ return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>'; }).join('');
       Array.prototype.forEach.call(sl.querySelectorAll('[data-ssid]'),function(b){
-        b.addEventListener('click',function(){ document.getElementById('netSsid').value=b.dataset.ssid; });
+        b.addEventListener('click',function(){ document.getElementById('netSsid').value=b.getAttribute('data-ssid'); });
       });
     };
     scanBtn.addEventListener('click',function(){
@@ -363,139 +784,25 @@ function renderNetwork(tag){
       msg.textContent='Saving...';
       connectBtn.disabled=true;
       apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable})})
-        .then(function(d){
-          msg.textContent='Saved. Rebooting into STA mode...';
-          setTimeout(function(){ setOnline(false); },500);
-        })
+        .then(function(){ msg.textContent='Saved. Rebooting into STA mode...'; setTimeout(function(){ setOnline(false); },500); })
         .catch(function(e){ msg.textContent='Save failed: '+(e&&e.message?e.message:'error'); connectBtn.disabled=false; });
     });
-  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
-}
-
-var RENDERERS={dashboard:renderDashboard,devices:renderDevices,entities:renderEntities,rules:renderRules,skills:renderSkills,logs:renderLogs,system:renderSystem,network:renderNetwork};
-
-/* True while a create/edit form (or the network setup form) owns the main
- * content area. The auto-refresh must not re-render (and thereby wipe) these
- * because they hold live form state (e.g. WiFi scan results, unsaved edits). */
-var inFormView=false;
-/* Tabs whose content is a read-only data view and therefore safe to refresh
- * automatically. "network" is intentionally excluded (live form + scan state). */
-var REFRESHABLE={dashboard:1,devices:1,entities:1,rules:1,skills:1,logs:1,system:1};
-
-function renderTab(name){
-  renderSeq++;
-  var tag=renderSeq;
-  inFormView=false;
-  (RENDERERS[name]||renderDashboard)(tag);
-}
-window.loadTab=renderTab;
-
-/* Selective refresh: only re-render data-only tabs, and never clobber an
- * active form view. This avoids gratuitous server calls and heap churn. */
-function refreshVisible(){
-  if(inFormView) return;
-  if(!(cur in REFRESHABLE)) return;
-  renderTab(cur);
-}
-
-window.showCreateRule=function(){
-  inFormView=true;
-  var main=document.getElementById('mainContent');
-  main.innerHTML='<div class="card"><h2>Create Rule</h2><p class="entity-meta">Example: temperature &gt; 30 &rarr; fan ON</p><form id="ruleForm">'+
-    '<div class="form-row"><div><label>Name</label><input name="name" required></div>'+
-    '<div><label>Rule ID (optional, auto-generated)</label><input name="rule_id" placeholder="rule-001"></div></div>'+
-    '<h2 style="margin-top:12px">Trigger</h2>'+
-    '<div class="form-row"><div><label>Device ID</label><input name="trg_dev" value="dashboard" required></div>'+
-    '<div><label>Entity ID</label><input name="trg_ent" value="temperature" required></div></div>'+
-    '<div class="form-row"><div><label>Operator</label><select name="trg_op"><option value="GT">&gt;</option><option value="LT">&lt;</option><option value="GE">&ge;</option><option value="LE">&le;</option><option value="EQ">=</option><option value="NE">&ne;</option></select></div>'+
-    '<div><label>Threshold</label><input name="trg_threshold" type="number" step="any" value="30" required></div></div>'+
-    '<div><label style="margin-top:8px"><input type="checkbox" name="trg_checkbox" checked> Activate trigger (uncheck to skip)</label></div>'+
-    '<h2 style="margin-top:12px">Action</h2>'+
-    '<div class="form-row"><div><label>Device ID</label><input name="act_dev" value="dashboard" required></div>'+
-    '<div><label>Entity ID</label><input name="act_ent" value="fan" required></div></div>'+
-    '<div class="form-row"><div><label>Action Type</label><select name="act_type"><option value="SET_BOOL">Set Bool</option><option value="SET_LEVEL">Set Level</option><option value="SET_VALUE">Set Value</option><option value="TOGGLE">Toggle</option></select></div>'+
-    '<div><label>Value</label><input name="act_value" type="number" step="any" value="1"></div></div>'+
-    '<div class="form-row"><div><label>Cooldown (ms)</label><input name="cooldown_ms" type="number" value="60000"></div>'+
-    '<div><label>Priority</label><input name="priority" type="number" value="10"></div></div>'+
-    '<div><label>Max activations / hour</label><input name="max_act" type="number" value="10"></div>'+
-    '<button type="submit" class="btn btn-primary" style="margin-top:12px;width:100%">Create</button>'+
-    '<button type="button" class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="loadTab(\'rules\')">Cancel</button>'+
-    '</form></div>';
-  document.getElementById('ruleForm').addEventListener('submit',function(e){
-    e.preventDefault();
-    var f=e.target.elements;
-    var body={name:f.name.value};
-    if(f.rule_id.value) body.rule_id=f.rule_id.value;
-    if(f.trg_checkbox.checked){
-      body.trigger={entity:{device_id:f.trg_dev.value,entity_id:f.trg_ent.value},operator:f.trg_op.value,threshold:parseFloat(f.trg_threshold.value)};
-    }
-    body.actions=[{entity:{device_id:f.act_dev.value,entity_id:f.act_ent.value},action:f.act_type.value,value:parseFloat(f.act_value.value)}];
-    if(f.cooldown_ms.value) body.cooldown_ms=parseInt(f.cooldown_ms.value,10);
-    if(f.priority.value) body.priority=parseInt(f.priority.value,10);
-    if(f.max_act.value) body.max_activations_per_hour=parseInt(f.max_act.value,10);
-    body.enabled=true;
-    apiFetch('/rules',{method:'POST',body:JSON.stringify(body)})
-      .then(function(){ loadTab('rules'); })
-      .catch(renderError);
-  });
+  }
 };
 
-window.editRule=function(id){
-  inFormView=true;
-  apiFetch('/rules/'+encodeURIComponent(id)).then(function(rule){
-    var trig=(rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
-    var actions=rule.actions||[];
-    var main=document.getElementById('mainContent');
-    main.innerHTML='<div class="card"><h2>Edit Rule: '+esc(rule.name)+'</h2><form id="ruleForm">'+
-      '<input type="hidden" name="rule_id" value="'+esc(rule.rule_id)+'">'+
-      '<div class="form-group"><label>Name</label><input name="name" value="'+esc(rule.name)+'" required></div>'+
-      '<div class="form-row"><div><label>Priority</label><input name="priority" type="number" value="'+esc(rule.priority)+'"></div>'+
-      '<div><label>Cooldown (ms)</label><input name="cooldown_ms" type="number" value="'+esc(rule.cooldown_ms)+'"></div></div>'+
-      '<div><label>Max activations / hour</label><input name="max_act" type="number" value="'+esc(rule.max_activations_per_hour)+'"></div>'+
-      '<p class="entity-meta" style="margin-top:8px">Action: '+
-        (actions[0]?(esc(actions[0].entity.device_id)+'/'+esc(actions[0].entity.entity_id)+' '+esc(actions[0].action)):'—')+
-        ' | Trigger: '+(trig?esc(trig.entity.device_id)+'/'+esc(trig.entity.entity_id)+' '+esc(trig.operator)+' '+esc(trig.threshold):'—')+
-        '</p>'+
-      '<button type="submit" class="btn btn-primary" style="margin-top:12px;width:100%">Update</button>'+
-      '<button type="button" class="btn btn-ghost" style="margin-top:8px;width:100%" onclick="loadTab(\'rules\')">Cancel</button>'+
-      '</form></div>';
-    document.getElementById('ruleForm').addEventListener('submit',function(e){
-      e.preventDefault();
-      var f=e.target.elements;
-      var body={name:f.name.value,priority:parseInt(f.priority.value,10),cooldown_ms:parseInt(f.cooldown_ms.value,10),max_activations_per_hour:parseInt(f.max_act.value,10)};
-      if(trig) body.trigger=trig;
-      if(actions.length) body.actions=actions;
-      apiFetch('/rules/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify(body)})
-        .then(function(){ loadTab('rules'); })
-        .catch(renderError);
-    });
-  }).catch(renderError);
-};
-
-window.toggleRule=function(id,enabled){
-  apiFetch('/rules/'+encodeURIComponent(id)+(enabled?'/enable':'/disable'),{method:'POST'})
-    .then(function(){ loadTab('rules'); })
-    .catch(renderError);
-};
-window.deleteRule=function(id){
-  if(!window.confirm('Delete rule '+id+'?')) return;
-  apiFetch('/rules/'+encodeURIComponent(id),{method:'DELETE'})
-    .then(function(){ loadTab('rules'); })
-    .catch(renderError);
-};
-
-document.querySelectorAll('.tab').forEach(function(b){
-  b.addEventListener('click',function(){
-    cur=b.dataset.tab;
-    document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x===b);});
-    renderTab(cur);
-  });
+/* =====================================================================
+ * Wiring
+ * ===================================================================== */
+document.getElementById('navTabs').addEventListener('click',function(e){
+  var b=e.target.closest?e.target.closest('.tab'):null;
+  if(!b||!b.getAttribute('data-tab')) return;
+  e.preventDefault();
+  showView(b.getAttribute('data-tab'));
 });
+window.addEventListener('unhandledrejection',function(){ setOnline(false); });
 
-window.addEventListener('unhandledrejection',function(e){ setOnline(false); });
-
-renderTab('dashboard');
-setInterval(refreshVisible,10000);
+showView('dashboard');
+setInterval(pollTick,10000);
 </script>
 </body>
 </html>
