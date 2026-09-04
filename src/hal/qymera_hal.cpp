@@ -211,14 +211,26 @@ bool qymera_pwm_is_fading(int channel) {
  * WiFi / Network Implementation
  * ========================= */
 
-static void wifi_event_handler(void *arg, esp_event_base_t event_base,
-                                int32_t event_id, void *event_data) {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        printf("[HAL] WiFi disconnected, reconnecting...\n");
-        esp_wifi_connect();
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        printf("[HAL] Got IP: " IPSTR "\n", IP2STR(&event->ip_info.ip));
+/* Arduino WiFi event callback for AP-side diagnostics (association / DHCP). */
+static void onArduinoWiFiEvent(arduino_event_id_t event) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+            printf("[HAL] AP station connected\n");
+            break;
+        case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+            printf("[HAL] AP station disconnected\n");
+            break;
+        case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
+            printf("[HAL] AP assigned IP to station\n");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            printf("[HAL] WiFi STA disconnected\n");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            printf("[HAL] STA got IP\n");
+            break;
+        default:
+            break;
     }
 }
 
@@ -234,42 +246,22 @@ qymera_err_t qymera_netif_init(void) {
 
 qymera_err_t qymera_wifi_init(void) {
     if (s_wifi_initialized) return QYMERA_OK;
-    
-    // Initialize WiFi via Arduino (initializes driver with correct buffer config)
-    WiFi.mode(WIFI_AP);
-    delay(500);
-    
-    // Stop Arduino's captive portal HTTP server on port 80
-    WebServer server(80);
-    server.stop();
-    delay(100);
-    
-    // Now use ESP-IDF APIs directly for our HTTP server on port 80
+
+    /* In the Arduino-ESP32 framework the WiFi driver, netif instances and DHCP
+     * are owned by the Arduino WiFi library: it calls esp_wifi_init() itself
+     * (with its own rx/tx buffer config) and creates the default AP/STA netifs.
+     * Calling esp_wifi_init() or esp_wifi_stop()/start() directly here would
+     * either fail with ESP_ERR_INVALID_ARG (double init) or tear down the AP
+     * netif/DHCP configured by Arduino. So we delegate the whole WiFi lifecycle
+     * to the Arduino API and only wrap it behind qymera_* functions. */
     qymera_err_t nerr = qymera_netif_init();
     if (nerr != QYMERA_OK) return nerr;
-    
-    // Configure AP mode (already started by Arduino, just reconfigure)
-    wifi_config_t ap_cfg = {0};
-    snprintf((char *)ap_cfg.ap.ssid, sizeof(ap_cfg.ap.ssid), "Qymera-%08X", (unsigned int)qymera_system_get_chip_id());
-    ap_cfg.ap.ssid_len = strlen((char *)ap_cfg.ap.ssid);
-    ap_cfg.ap.channel = 1;
-    ap_cfg.ap.max_connection = 4;
-    ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
-    
-    esp_err_t err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
-    if (err != ESP_OK) { printf("[WIFI] set_config err=%d\n", (int)err); return QYMERA_ERR_NETWORK; }
-    
-    // Restart WiFi to apply new config
-    err = esp_wifi_stop();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return QYMERA_ERR_NETWORK;
-    err = esp_wifi_start();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) { printf("[WIFI] start err=%d\n", (int)err); return QYMERA_ERR_NETWORK; }
-    
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id);
-    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip);
-    
+
+    /* Force the Arduino WiFi subsystem to perform its low-level init (creates
+     * the driver + netifs) without starting any mode yet. */
+    WiFi.mode(WIFI_OFF);
+    WiFi.onEvent(onArduinoWiFiEvent);
+
     s_wifi_initialized = true;
     return QYMERA_OK;
 }
@@ -292,122 +284,126 @@ qymera_err_t qymera_wifi_set_mode(qymera_wifi_mode_t mode) {
 qymera_err_t qymera_wifi_sta_connect(const qymera_wifi_sta_config_t *config) {
     if (!s_wifi_initialized) return QYMERA_ERR_INVALID_STATE;
     if (!config) return QYMERA_ERR_INVALID_ARG;
-    
-    if (xSemaphoreTake(s_wifi_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return QYMERA_ERR_BUSY;
-    }
-    
-    wifi_config_t wifi_cfg = {0};
-    strncpy((char *)wifi_cfg.sta.ssid, config->ssid, sizeof(wifi_cfg.sta.ssid) - 1);
-    strncpy((char *)wifi_cfg.sta.password, config->password, sizeof(wifi_cfg.sta.password) - 1);
-    wifi_cfg.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    
-    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
-    if (err != ESP_OK) {
-        xSemaphoreGive(s_wifi_mutex);
-        return QYMERA_ERR_NETWORK;
-    }
-    
-    if (config->hostname[0]) {
-        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        if (netif) esp_netif_set_hostname(netif, config->hostname);
-    }
-    
-    esp_err_t start_err = esp_wifi_start();
-    if (start_err != ESP_OK && start_err != ESP_ERR_INVALID_STATE) {
-        xSemaphoreGive(s_wifi_mutex);
-        return QYMERA_ERR_NETWORK;
-    }
-    
-    esp_err_t conn_err = esp_wifi_connect();
-    xSemaphoreGive(s_wifi_mutex);
-    return (conn_err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_NETWORK;
+
+    /* Use the Arduino WiFi library as the single owner of the driver/netif
+     * lifecycle (same rule as AP mode). Calling esp_wifi_* directly here would
+     * desync the driver state that Arduino owns, which is why STA never came up
+     * after saving credentials. Switch to STA and begin the connection. */
+    if (config->hostname[0]) WiFi.setHostname(config->hostname);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    WiFi.begin(config->ssid, config->password);
+
+    /* The ARDUINO_EVENT_WIFI_STA_* events (handled by onArduinoWiFiEvent) and
+     * qymera_wifi_is_connected() / qymera_wifi_get_mode() reflect the result. */
+    return QYMERA_OK;
 }
 
 qymera_err_t qymera_wifi_ap_start(const qymera_wifi_ap_config_t *config) {
     if (!s_wifi_initialized) return QYMERA_ERR_INVALID_STATE;
     if (!config) return QYMERA_ERR_INVALID_ARG;
-    
-    wifi_config_t wifi_cfg = {0};
-    strncpy((char *)wifi_cfg.ap.ssid, config->ssid, sizeof(wifi_cfg.ap.ssid) - 1);
-    wifi_cfg.ap.ssid_len = strlen(config->ssid);
-    strncpy((char *)wifi_cfg.ap.password, config->password, sizeof(wifi_cfg.ap.password) - 1);
-    wifi_cfg.ap.channel = config->channel ? config->channel : 1;
-    wifi_cfg.ap.max_connection = config->max_connections ? config->max_connections : 4;
-    wifi_cfg.ap.authmode = (config->password[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
-    
-    esp_err_t err = esp_wifi_set_config(WIFI_IF_AP, &wifi_cfg);
-    if (err != ESP_OK) return QYMERA_ERR_NETWORK;
-    
-    err = esp_wifi_start();
-    return (err == ESP_OK || err == ESP_ERR_INVALID_STATE) ? QYMERA_OK : QYMERA_ERR_NETWORK;
+
+    /* Use the Arduino WiFi library as the single owner of the driver/netif
+     * lifecycle. softAP() configures AP mode, the AP netif and DHCP server. */
+    uint8_t channel = config->channel ? config->channel : 1;
+    int max_conn = config->max_connections ? config->max_connections : 4;
+    bool ok = WiFi.softAP(config->ssid,
+                          config->password[0] ? config->password : NULL,
+                          channel,
+                          max_conn);
+    if (!ok) {
+        printf("[WIFI] softAP failed\n");
+        return QYMERA_ERR_NETWORK;
+    }
+    WiFi.setSleep(false);
+    return QYMERA_OK;
 }
 
 bool qymera_wifi_is_connected(void) {
     if (!s_wifi_initialized) return false;
-    wifi_ap_record_t ap_info;
-    return esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK;
+    return WiFi.status() == WL_CONNECTED;
 }
 
 qymera_err_t qymera_wifi_get_ip(char *ip_str, size_t len) {
     if (!s_wifi_initialized || !ip_str || len < 16) return QYMERA_ERR_INVALID_ARG;
-    
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (!netif) return QYMERA_ERR_NETWORK;
-    
-    esp_netif_ip_info_t ip_info;
-    esp_err_t err = esp_netif_get_ip_info(netif, &ip_info);
-    if (err != ESP_OK) return QYMERA_ERR_NETWORK;
-    
-    snprintf(ip_str, len, IPSTR, IP2STR(&ip_info.ip));
+    IPAddress ip = WiFi.localIP();
+    if (ip.toString() == "0.0.0.0") return QYMERA_ERR_NETWORK;
+    snprintf(ip_str, len, "%s", ip.toString().c_str());
     return QYMERA_OK;
 }
 
 int8_t qymera_wifi_get_rssi(void) {
     if (!s_wifi_initialized) return -128;
-    wifi_ap_record_t ap_info;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        return ap_info.rssi;
-    }
-    return -128;
+    int32_t rssi = WiFi.RSSI();
+    return (rssi == 0) ? -128 : (int8_t)rssi;
 }
 
 qymera_wifi_mode_t qymera_wifi_get_mode(void) {
     if (!s_wifi_initialized) return QYMERA_WIFI_MODE_STA;
-    wifi_mode_t mode = WIFI_MODE_MAX;
-    if (esp_wifi_get_mode(&mode) != ESP_OK) return QYMERA_WIFI_MODE_STA;
-    if (mode == WIFI_MODE_AP) return QYMERA_WIFI_MODE_AP;
-    if (mode == WIFI_MODE_APSTA) return QYMERA_WIFI_MODE_APSTA;
-    return QYMERA_WIFI_MODE_STA;
+    switch (WiFi.getMode()) {
+        case WIFI_MODE_AP: return QYMERA_WIFI_MODE_AP;
+        case WIFI_MODE_APSTA: return QYMERA_WIFI_MODE_APSTA;
+        case WIFI_MODE_STA: return QYMERA_WIFI_MODE_STA;
+        default: return QYMERA_WIFI_MODE_STA;
+    }
 }
 
 qymera_err_t qymera_wifi_get_ap_ssid(char *ssid, size_t len) {
     if (!s_wifi_initialized || !ssid || len == 0) return QYMERA_ERR_INVALID_ARG;
-    ssid[0] = '\0';
-    wifi_config_t cfg;
-    if (esp_wifi_get_config(WIFI_IF_AP, &cfg) != ESP_OK) return QYMERA_ERR_NETWORK;
-    size_t slen = strnlen((const char *)cfg.ap.ssid, sizeof(cfg.ap.ssid));
-    if (slen >= len) slen = len - 1;
-    memcpy(ssid, cfg.ap.ssid, slen);
-    ssid[slen] = '\0';
+    String s = WiFi.softAPSSID();
+    if (s.length() >= len) return QYMERA_ERR_NETWORK;
+    strncpy(ssid, s.c_str(), len - 1);
+    ssid[len - 1] = '\0';
     return QYMERA_OK;
 }
 
 qymera_err_t qymera_wifi_get_ap_ip(char *ip_str, size_t len) {
     if (!s_wifi_initialized || !ip_str || len < 16) return QYMERA_ERR_INVALID_ARG;
-    ip_str[0] = '\0';
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-    if (!netif) return QYMERA_ERR_NETWORK;
-    esp_netif_ip_info_t ip_info;
-    if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK) return QYMERA_ERR_NETWORK;
-    snprintf(ip_str, len, IPSTR, IP2STR(&ip_info.ip));
+    IPAddress ip = WiFi.softAPIP();
+    if (ip.toString() == "0.0.0.0") return QYMERA_ERR_NETWORK;
+    snprintf(ip_str, len, "%s", ip.toString().c_str());
     return QYMERA_OK;
+}
+
+int8_t qymera_wifi_ap_client_count(void) {
+    if (!s_wifi_initialized) return -1;
+    return (int8_t)WiFi.softAPgetStationNum();
 }
 
 void qymera_wifi_set_auto_reconnect(bool enable) {
     if (s_wifi_initialized) {
         WiFi.setAutoReconnect(enable);
     }
+}
+
+qymera_err_t qymera_wifi_scan(char *out, size_t len) {
+    if (!out || len == 0) return QYMERA_ERR_INVALID_ARG;
+    out[0] = '[';
+    size_t used = 1;
+    int n = WiFi.scanNetworks();
+    if (n < 0) {
+        if (len >= 3) { out[0] = '['; out[1] = ']'; out[2] = '\0'; }
+        return QYMERA_OK;
+    }
+    for (int i = 0; i < n; i++) {
+        String ssid = WiFi.SSID(i);
+        int rssi = WiFi.RSSI(i);
+        /* Bound: { "ssid" : "..escaped.." , "rssi" : .. , } worst case ~ 8 + 2*slen. */
+        size_t need = 8 + ssid.length() * 2 + 12;
+        if (used + need + 2 > len) break;
+        if (i > 0) out[used++] = ',';
+        out[used++] = '{';
+        memcpy(out + used, "\"ssid\":\"", 8); used += 8;
+        for (size_t k = 0; k < ssid.length(); k++) {
+            char c = ssid.charAt(k);
+            if (c == '"' || c == '\\') out[used++] = '\\';
+            out[used++] = c;
+        }
+        used += (size_t)snprintf(out + used, len - used, "\",\"rssi\":%d}", rssi);
+    }
+    if (used + 1 < len) { out[used++] = ']'; out[used] = '\0'; }
+    WiFi.scanDelete();
+    return QYMERA_OK;
 }
 
 /* =========================

@@ -16,7 +16,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-SET_LOOP_TASK_STACK_SIZE(32768);
+SET_LOOP_TASK_STACK_SIZE(24576);
 
 /* =========================
  * User Configuration
@@ -137,8 +137,18 @@ static void simulate_sensor_reading(qymera_core_t *core) {
 }
 
 static qymera_core_t *g_core = NULL;
+static bool s_boot_done = false;
 
 static void app_boot(void) {
+    /* Idempotent boot: only the first invocation performs boot work. On the
+     * Arduino framework only setup() runs, but main() is kept for frameworks
+     * that invoke a real main entry point. This guard prevents the core, WiFi
+     * and HTTP from being initialized more than once regardless of entry. */
+    if (s_boot_done) return;
+    s_boot_done = true;
+
+    printf("[BOOT] reset_reason=%s\n", qymera_system_get_reset_reason());
+    printf("[MEM] free before hal/core: %u\n", (unsigned)esp_get_free_heap_size());
     qymera_hal_init();
     
     qymera_core_config_t config = {0};
@@ -164,23 +174,31 @@ static void app_boot(void) {
         while (1) { qymera_system_restart(); }
     }
     g_core = core;
+    printf("[MEM] free after core: %u\n", (unsigned)esp_get_free_heap_size());
     
     qymera_log_t *log = qymera_core_get_log(core);
     qymera_log_system(log, "main", "Qymera Dashboard started");
     qymera_log_info(log, "main", "Device: %s (UID: %08X)", config.general.device_name, config.general.device_uid);
-    
+
+    printf("[NET] main config sta_enabled=%d\n", (int)config.network.sta_enabled);
+
     setup_demo_rule(core);
 
     qymera_err_t wifr = qymera_wifi_init();
     if (wifr != QYMERA_OK) qymera_log_error(log, "main", "WiFi init failed: %d", wifr);
+    printf("[MEM] free after wifi_init: %u\n", (unsigned)esp_get_free_heap_size());
     
-    if (config.network.sta_enabled) {
+    /* Prefer the network config persisted in NVS (the core loaded it over the
+     * compile-time placeholder). This lets the Network tab's saved STA
+     * credentials take effect on the next boot. */
+    const qymera_core_config_t *boot_cfg = qymera_core_get_config(core);
+    if (boot_cfg->network.sta_enabled) {
         qymera_wifi_sta_config_t sta_cfg = {0};
-        strncpy(sta_cfg.ssid, config.network.sta_ssid, sizeof(sta_cfg.ssid) - 1);
-        strncpy(sta_cfg.password, config.network.sta_password, sizeof(sta_cfg.password) - 1);
-        strncpy(sta_cfg.hostname, config.network.sta_hostname, sizeof(sta_cfg.hostname) - 1);
+        strncpy(sta_cfg.ssid, boot_cfg->network.sta_ssid, sizeof(sta_cfg.ssid) - 1);
+        strncpy(sta_cfg.password, boot_cfg->network.sta_password, sizeof(sta_cfg.password) - 1);
+        strncpy(sta_cfg.hostname, boot_cfg->network.sta_hostname, sizeof(sta_cfg.hostname) - 1);
         qymera_wifi_sta_connect(&sta_cfg);
-        qymera_log_info(log, "main", "Connecting to WiFi: %s", config.network.sta_ssid);
+        qymera_log_info(log, "main", "Connecting to WiFi: %s", boot_cfg->network.sta_ssid);
     } else {
         qymera_log_warn(log, "main", "WiFi not configured, starting AP mode");
         qymera_wifi_ap_config_t ap_cfg = {0};
@@ -212,18 +230,41 @@ static void app_boot(void) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     if (herr == QYMERA_OK) {
-        qymera_log_info(log, "main", "Dashboard HTTP API started on port 8080");
+        qymera_log_info(log, "main", "Dashboard HTTP API started on port 80");
     } else {
         qymera_log_error(log, "main", "Dashboard HTTP API init failed: %d", herr);
     }
+    printf("[MEM] free after http: %u\n", (unsigned)esp_get_free_heap_size());
     
     qymera_log_info(log, "main", "Entering main loop");
 }
+
+static uint32_t s_last_heartbeat = 0;
 
 static void app_tick(void) {
     if (!g_core) return;
     qymera_core_tick(g_core);
     simulate_sensor_reading(g_core);
+
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now - s_last_heartbeat >= 5000) {
+        s_last_heartbeat = now;
+        const char *mode = "?";
+        switch (qymera_wifi_get_mode()) {
+            case QYMERA_WIFI_MODE_STA: mode = "STA"; break;
+            case QYMERA_WIFI_MODE_AP: mode = "AP"; break;
+            case QYMERA_WIFI_MODE_APSTA: mode = "APSTA"; break;
+            default: mode = "UNKNOWN"; break;
+        }
+        char ipbuf[16];
+        qymera_wifi_get_ip(ipbuf, sizeof(ipbuf));
+        printf("[HEARTBEAT] uptime=%ums wifi_mode=%s AP_clients=%d free_heap=%u loop_wm=%u ip=%s\n",
+               (unsigned)qymera_system_get_uptime_ms(),
+               mode, (int)qymera_wifi_ap_client_count(),
+               (unsigned)esp_get_free_heap_size(),
+               (unsigned)uxTaskGetStackHighWaterMark(NULL),
+               ipbuf);
+    }
 }
 
 /* Arduino framework runs setup()/loop(); main() is provided for frameworks

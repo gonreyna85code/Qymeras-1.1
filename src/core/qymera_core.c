@@ -73,13 +73,14 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     
     err = qymera_storage_load_network(core->storage, &core->config.network);
     if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_net=%d", err); return err; }
+    qymera_log_early("[NET] core config sta_enabled=%d (persisted/NVS)", (int)core->config.network.sta_enabled);
     
     err = qymera_storage_load_general(core->storage, &core->config.general);
     if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_gen=%d", err); return err; }
     
     qymera_log_config_t log_cfg = {0};
     log_cfg.log_ring.data = core->log_ring_storage;
-    log_cfg.log_ring.capacity = 256;
+    log_cfg.log_ring.capacity = QYMERA_MAX_LOG_ENTRIES;
     log_cfg.log_ring.element_size = sizeof(qymera_log_entry_t);
     log_cfg.log_ring.overwrite = true;
     log_cfg.min_layer = QYMERA_LOG_INFO;
@@ -210,7 +211,7 @@ qymera_err_t qymera_core_init(qymera_core_t **core, const qymera_core_config_t *
     c->devices_storage = calloc(QYMERA_MAX_DEVICES, sizeof(qymera_device_t));
     c->entities_storage = calloc(QYMERA_MAX_ENTITIES, sizeof(qymera_entity_t));
     c->rules_storage = calloc(QYMERA_MAX_RULES, sizeof(qymera_compiled_rule_t));
-    c->log_ring_storage = calloc(256, sizeof(qymera_log_entry_t));
+    c->log_ring_storage = calloc(QYMERA_MAX_LOG_ENTRIES, sizeof(qymera_log_entry_t));
     c->event_ring_storage = calloc(QYMERA_MAX_EVENT_QUEUE, sizeof(qymera_event_t));
     c->udp_rx_storage = calloc(32, 256);
     c->udp_tx_storage = calloc(16, 256);
@@ -262,12 +263,15 @@ qymera_err_t qymera_core_tick(qymera_core_t *core) {
     }
     
     if (core->config.network.sta_enabled && !qymera_wifi_is_connected()) {
-        qymera_log_warn(core->log, "core", "WiFi disconnected, attempting reconnect");
-        qymera_wifi_sta_config_t sta_cfg = {0};
-        strncpy(sta_cfg.ssid, core->config.network.sta_ssid, sizeof(sta_cfg.ssid) - 1);
-        strncpy(sta_cfg.password, core->config.network.sta_password, sizeof(sta_cfg.password) - 1);
-        strncpy(sta_cfg.hostname, core->config.network.sta_hostname, sizeof(sta_cfg.hostname) - 1);
-        qymera_wifi_sta_connect(&sta_cfg);
+        qymera_wifi_mode_t mode = qymera_wifi_get_mode();
+        if (mode == QYMERA_WIFI_MODE_STA || mode == QYMERA_WIFI_MODE_APSTA) {
+            qymera_log_warn(core->log, "core", "WiFi disconnected, attempting reconnect");
+            qymera_wifi_sta_config_t sta_cfg = {0};
+            strncpy(sta_cfg.ssid, core->config.network.sta_ssid, sizeof(sta_cfg.ssid) - 1);
+            strncpy(sta_cfg.password, core->config.network.sta_password, sizeof(sta_cfg.password) - 1);
+            strncpy(sta_cfg.hostname, core->config.network.sta_hostname, sizeof(sta_cfg.hostname) - 1);
+            qymera_wifi_sta_connect(&sta_cfg);
+        }
     }
     
     return QYMERA_OK;
@@ -291,6 +295,10 @@ qymera_udp_transport_t *qymera_core_get_udp(qymera_core_t *core) {
 
 qymera_storage_t *qymera_core_get_storage(qymera_core_t *core) {
     return core ? core->storage : NULL;
+}
+
+const qymera_core_config_t *qymera_core_get_config(const qymera_core_t *core) {
+    return core ? &core->config : NULL;
 }
 
 qymera_rule_engine_t *qymera_core_get_rule_engine(qymera_core_t *core) {

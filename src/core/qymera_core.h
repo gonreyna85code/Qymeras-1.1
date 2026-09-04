@@ -45,6 +45,7 @@ qymera_rule_engine_t *qymera_core_get_rule_engine(qymera_core_t *core);
 qymera_ai_t *qymera_core_get_ai(qymera_core_t *core);
 qymera_control_context_t *qymera_core_get_control(qymera_core_t *core);
 qymera_skill_context_t *qymera_core_get_skills(qymera_core_t *core);
+const qymera_core_config_t *qymera_core_get_config(const qymera_core_t *core);
 
 void qymera_core_shutdown(qymera_core_t *core);
 

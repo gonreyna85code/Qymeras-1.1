@@ -21,7 +21,10 @@
 #include "qymera_log.h"
 #include "qymera_registry.h"
 #include "qymera_dashboard_html.h"
+#include "qymera_storage.h"
 #include <esp_http_server.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -211,6 +214,16 @@ static esp_err_t h_entity_state_get(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/* Single handler for /api/v1/entities* that dispatches:
+ * - GET /api/v1/entities -> list_entities
+ * - GET /api/v1/entities/device/entity -> get_entity_state */
+static esp_err_t h_entities_dispatch(httpd_req_t *req) {
+    if (strcmp(req->uri, "/api/v1/entities") == 0) {
+        return h_entities_get(req);
+    }
+    return h_entity_state_get(req);
+}
+
 static esp_err_t h_control_post(httpd_req_t *req, const char *control_field,
                                 const char *skill_name) {
     qymera_core_t *core = (qymera_core_t *)req->user_ctx;
@@ -276,6 +289,19 @@ static esp_err_t h_rules_post(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/* Single handler for /api/v1/rules that dispatches by HTTP method.
+ * ESP-IDF httpd does not allow multiple handlers for the same URI path
+ * even with different methods in this version. */
+static esp_err_t h_rules_base(httpd_req_t *req) {
+    if (req->method == HTTP_GET) {
+        return h_rules_get(req);
+    } else if (req->method == HTTP_POST) {
+        return h_rules_post(req);
+    }
+    http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"METHOD_NOT_ALLOWED\"}}");
+    return ESP_OK;
+}
+
 static esp_err_t h_rules_put(httpd_req_t *req) {
     qymera_core_t *core = (qymera_core_t *)req->user_ctx;
     char rid[QYMERA_RULE_ID_LEN];
@@ -329,6 +355,15 @@ static esp_err_t h_rule_action(httpd_req_t *req) {
 }
 
 static esp_err_t h_rules_dispatch(httpd_req_t *req) {
+    /* Base path: /api/v1/rules */
+    if (strcmp(req->uri, "/api/v1/rules") == 0) {
+        if (req->method == HTTP_GET) {
+            return h_rules_get(req);
+        } else if (req->method == HTTP_POST) {
+            return h_rules_post(req);
+        }
+    }
+    /* Parameterized paths: /api/v1/rules/<id>, /api/v1/rules/<id>/enable, etc. */
     if (req->method == HTTP_GET) {
         return h_rule_get(req);
     } else if (req->method == HTTP_POST) {
@@ -348,22 +383,27 @@ static esp_err_t h_skills_get(httpd_req_t *req) {
     char *p = buf;
     size_t remaining = sizeof(buf);
     int n = snprintf(p, remaining, "{\"ok\":true,\"data\":[");
-    p += n; remaining -= n;
+    if (n < 0) { http_send_json(req, "{\"ok\":true,\"data\":[]}"); return ESP_OK; }
+    p += (size_t)n; remaining -= (size_t)n;
     for (size_t i = 0; i < count; i++) {
         const qymera_skill_entry_t *entry = NULL;
         qymera_skill_id_t id = qymera_skill_registry_get(i, &entry);
         (void)id;
         if (!entry) continue;
-        if (i > 0) { n = snprintf(p, remaining, ","); p += n; remaining -= n; }
+        if (i > 0) { n = snprintf(p, remaining, ",");
+                     if (n < 0 || (size_t)n >= remaining) break;
+                     p += (size_t)n; remaining -= (size_t)n; }
         n = snprintf(p, remaining,
             "{\"name\":\"%s\",\"version\":\"%s\",\"description\":\"%s\","
             "\"schema_id\":\"%s\",\"permissions\":%u}",
             entry->meta.name, entry->meta.version, entry->meta.description,
             entry->meta.schema_id, entry->meta.permissions);
-        p += n; remaining -= n;
+        if (n < 0 || (size_t)n >= remaining) break; /* stop cleanly if full */
+        p += (size_t)n; remaining -= (size_t)n;
     }
-    n = snprintf(p, remaining, "]}");
-    (void)n;
+    if (remaining > 0) {
+        snprintf(p, remaining, "]}");
+    }
     http_send_json(req, buf);
     return ESP_OK;
 }
@@ -371,10 +411,110 @@ static esp_err_t h_skills_get(httpd_req_t *req) {
 static esp_err_t h_logs_get(httpd_req_t *req) {
     qymera_core_t *core = (qymera_core_t *)req->user_ctx;
     char buf[4096];
-    qymera_log_get_recent_json(qymera_core_get_log(core), buf, sizeof(buf), 50);
-    char out[4130];
-    snprintf(out, sizeof(out), "{\"ok\":true,\"data\":%s}", buf);
-    http_send_json(req, out);
+    qymera_log_get_recent_json(qymera_core_get_log(core), buf, sizeof(buf), 40);
+    /* Wrap the spooled JSON array in the {ok,data} envelope using chunks so
+     * the handler only holds a single stack buffer, not an extra copy. */
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send_chunk(req, "{\"ok\":true,\"data\":", 18);
+    httpd_resp_send_chunk(req, buf, strlen(buf));
+    httpd_resp_send_chunk(req, "}", 1);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* Minimal JSON object helper: return the string value for `key` in `body`.
+ * Handles simple \" escapes; used only for the small wifi-connect body so we
+ * do not pull the full HHTP parser into a system-level endpoint. */
+static bool http_extract_json_str(const char *body, const char *key,
+                                  char *out, size_t out_sz) {
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = body;
+    const char *v = NULL;
+    while ((p = strstr(p, pat)) != NULL) {
+        const char *q = p + strlen(pat);
+        while (*q == ' ' || *q == '\t' || *q == '\n' || *q == '\r') q++;
+        if (*q == ':') { v = q + 1; break; }
+        p = q;
+    }
+    if (!v) return false;
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (*v != '"') return false;
+    v++;
+    size_t i = 0;
+    while (*v && *v != '"' && i < out_sz - 1) {
+        if (*v == '\\' && v[1]) v++;
+        out[i++] = *v++;
+    }
+    out[i] = '\0';
+    return true;
+}
+
+/* GET /api/v1/wifi/scan -> list of nearby networks {"ssid","rssi"}. */
+static esp_err_t h_wifi_scan_get(httpd_req_t *req) {
+    char buf[2048];
+    qymera_err_t err = qymera_wifi_scan(buf, sizeof(buf));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send_chunk(req, "{\"ok\":true,\"data\":", 18);
+    httpd_resp_send_chunk(req, buf, strlen(buf));
+    httpd_resp_send_chunk(req, "}", 1);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
+/* POST /api/v1/wifi/connect with {"ssid","password"} -> persist credentials,
+ * then reboot into STA mode (the persisted sta_enabled drives main.cpp). */
+static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+    char body[QYMERA_HTTP_BODY_SZ];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\"}}");
+        return ESP_OK;
+    }
+    body[n] = '\0';
+    char ssid[33] = {0}, password[65] = {0};
+    if (!http_extract_json_str(body, "ssid", ssid, sizeof(ssid)) || ssid[0] == '\0') {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\","
+                             "\"message\":\"ssid is required\"}}");
+        return ESP_OK;
+    }
+    http_extract_json_str(body, "password", password, sizeof(password));
+
+    qymera_storage_t *st = qymera_core_get_storage(core);
+    qymera_network_config_t net;
+    memset(&net, 0, sizeof(net));
+    qymera_err_t lerr = qymera_storage_load_network(st, &net);
+    if (lerr != QYMERA_OK && lerr != QYMERA_ERR_NOT_FOUND) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
+        return ESP_OK;
+    }
+    /* If no config was persisted yet, fill in sane defaults so we never save
+     * uninitialized stack bytes into NVS. */
+    if (lerr == QYMERA_ERR_NOT_FOUND) {
+        net.udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
+        net.udp_control_port = QYMERA_UDP_PORT_CONTROL;
+        net.report_interval_ms = 5000;
+    }
+    strncpy(net.sta_ssid, ssid, sizeof(net.sta_ssid) - 1);
+    strncpy(net.sta_password, password, sizeof(net.sta_password) - 1);
+    /* Optional "enabled" bool (default true) controls sta_enabled on boot. */
+    net.sta_enabled = true;
+    {
+        char enabled[8] = {0};
+        if (http_extract_json_str(body, "enabled", enabled, sizeof(enabled))) {
+            net.sta_enabled = (strcmp(enabled, "true") == 0 ||
+                               strcmp(enabled, "1") == 0);
+        }
+    }
+    qymera_err_t serr = qymera_storage_save_network(st, &net);
+    if (serr != QYMERA_OK) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
+        return ESP_OK;
+    }
+    http_send_json(req, "{\"ok\":true,\"data\":{\"status\":\"rebooting\"}}");
+    vTaskDelay(pdMS_TO_TICKS(300));
+    qymera_system_restart();
     return ESP_OK;
 }
 
@@ -384,40 +524,56 @@ static esp_err_t h_root_get(httpd_req_t *req) {
     return ESP_OK;
 }
 
-/* =========================
- * Route table
+/* Route table.
  *
- * id-anchored templates use the trailing asterisk so the wildcard URI
- * matcher can resolve them. There is exactly one handler per
- * (template, method) pair - a second registration of the same pair would
- * fail with ESP_ERR_HTTPD_HANDLER_EXISTS.
- * ========================= */
+ * NOTE: httpd_method_t values are sequential integers (DELETE=0, GET=1,
+ * POST=3, PUT=4, ...), NOT bit flags. Therefore a single handler for a
+ * wildcard URI must be registered once PER method; OR-ing the methods into
+ * one value does not work as a bitmask in this ESP-IDF/Arduino version.
+ * Each (URI, method) pair is a distinct registration key. */
 
 static const httpd_uri_t routes[] = {
     { .uri = "/", .method = HTTP_GET, .handler = h_root_get },
     { .uri = "/api/v1/status", .method = HTTP_GET, .handler = h_status_get },
     { .uri = "/api/v1/devices", .method = HTTP_GET, .handler = h_devices_get },
-    { .uri = "/api/v1/entities", .method = HTTP_GET, .handler = h_entities_get },
-    { .uri = "/api/v1/entities*", .method = HTTP_GET, .handler = h_entity_state_get },
+    { .uri = "/api/v1/entities*", .method = HTTP_GET, .handler = h_entities_dispatch },
     { .uri = "/api/v1/control/relay", .method = HTTP_POST, .handler = h_relay_post },
     { .uri = "/api/v1/control/dimmer", .method = HTTP_POST, .handler = h_dimmer_post },
-    { .uri = "/api/v1/rules", .method = HTTP_GET, .handler = h_rules_get },
-    { .uri = "/api/v1/rules", .method = HTTP_POST, .handler = h_rules_post },
-    { .uri = "/api/v1/rules*", .method = HTTP_GET | HTTP_POST | HTTP_PUT | HTTP_DELETE, .handler = h_rules_dispatch },
+    { .uri = "/api/v1/rules*", .method = HTTP_GET, .handler = h_rules_dispatch },
+    { .uri = "/api/v1/rules*", .method = HTTP_POST, .handler = h_rules_dispatch },
+    { .uri = "/api/v1/rules*", .method = HTTP_PUT, .handler = h_rules_dispatch },
+    { .uri = "/api/v1/rules*", .method = HTTP_DELETE, .handler = h_rules_dispatch },
     { .uri = "/api/v1/skills", .method = HTTP_GET, .handler = h_skills_get },
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
+    { .uri = "/api/v1/wifi/scan", .method = HTTP_GET, .handler = h_wifi_scan_get },
+    { .uri = "/api/v1/wifi/connect", .method = HTTP_POST, .handler = h_wifi_connect_post },
 };
 
 /* =========================
  * Init
  * ========================= */
 
+static const char* qymera_http_method_str(httpd_method_t method) {
+    switch (method) {
+        case HTTP_GET: return "GET";
+        case HTTP_POST: return "POST";
+        case HTTP_PUT: return "PUT";
+        case HTTP_DELETE: return "DELETE";
+        case HTTP_PATCH: return "PATCH";
+        case HTTP_HEAD: return "HEAD";
+        case HTTP_OPTIONS: return "OPTIONS";
+        default: return "UNKNOWN";
+    }
+}
+
 qymera_err_t qymera_http_api_init(qymera_core_t *core) {
-    printf("[HTTP] Starting server on port 8080...\n");
+    printf("[HTTP] Starting server on port 80...\n");
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 8080;
+    config.server_port = 80;
     config.stack_size = 16384;
+    config.max_open_sockets = 4;
     config.uri_match_fn = httpd_uri_match_wildcard;
+    config.max_uri_handlers = 16;
     httpd_handle_t handle = NULL;
     esp_err_t esp_err = httpd_start(&handle, &config);
     printf("[HTTP] httpd_start returned: %d\n", (int)esp_err);
@@ -429,12 +585,12 @@ qymera_err_t qymera_http_api_init(qymera_core_t *core) {
         httpd_uri_t uri = routes[i];
         uri.user_ctx = core;
         esp_err_t reg_err = httpd_register_uri_handler(handle, &uri);
+        printf("[HTTP] Register route %zu: %s %s -> %d\n", i, uri.uri, qymera_http_method_str(uri.method), (int)reg_err);
         if (reg_err != ESP_OK) {
-            printf("[HTTP] Failed to register route %zu: %s (err=%d)\n", i, uri.uri, (int)reg_err);
+            printf("[HTTP] Failed to register route %zu: %s %s (err=%d)\n", i, uri.uri, qymera_http_method_str(uri.method), (int)reg_err);
             httpd_stop(handle);
             return QYMERA_ERR_INVALID_STATE;
         }
-        printf("[HTTP] Registered route %zu: %s\n", i, uri.uri);
     }
     return QYMERA_OK;
 }

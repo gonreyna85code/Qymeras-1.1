@@ -62,11 +62,13 @@ label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
   <button class="tab" data-tab="skills">Skills</button>
   <button class="tab" data-tab="logs">Logs</button>
   <button class="tab" data-tab="system">System</button>
+  <button class="tab" data-tab="network">Network</button>
 </nav>
 <main id="mainContent"></main>
 <script>
 "use strict";
-var API='/api/v1',cur='dashboard',renderSeq=0,pending=new Set();
+var API='/api/v1',cur='dashboard',renderSeq=0,pending=new Set(),scanCache=[];
+var main=document.getElementById('mainContent');
 
 function esc(s){
   return String(s==null?'':s)
@@ -112,12 +114,10 @@ function setOnline(b){
 function setNetLabel(txt){ document.getElementById('netLabel').textContent=txt; }
 
 function renderError(err){
-  var main=document.getElementById('mainContent');
   main.innerHTML='<div class="card"><div class="empty error-card">Error: '+esc(err&&err.message?err.message:'unknown error')+'</div><div class="empty">The device may be offline. Actions will retry on the next refresh.</div></div>';
 }
 
 function showLoading(){
-  var main=document.getElementById('mainContent');
   main.innerHTML='<div class="card"><div class="empty">Loading...</div></div>';
 }
 
@@ -311,16 +311,95 @@ function renderSystem(tag){
   }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
 }
 
-var RENDERERS={dashboard:renderDashboard,devices:renderDevices,entities:renderEntities,rules:renderRules,skills:renderSkills,logs:renderLogs,system:renderSystem};
+function renderNetwork(tag){
+  showLoading();
+  return apiFetch('/status').then(function(s){
+    if(tag!==renderSeq) return;
+    setOnline(true);
+    setNetLabel(s.network&&s.network==='AP'?('AP · '+esc(s.ssid||'')):'STA');
+    main.innerHTML=
+      '<div class="section-header"><h2>WiFi Network Setup</h2></div>'+
+      '<div class="card"><p class="entity-meta">Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).</p></div>'+
+      '<div class="card"><h2>Scan Networks</h2>'+
+        '<button class="btn btn-primary" id="scanBtn">Scan for networks</button>'+
+        '<div id="scanList" style="margin-top:12px"></div>'+
+      '</div>'+
+      '<div class="card"><h2>Connect to WiFi</h2>'+
+        '<div class="form-row"><div><label>SSID</label><input id="netSsid" list="scanOpts" placeholder="Network name..."></div>'+
+        '<div><label>Password</label><input id="netPassword" type="password" placeholder="Leave empty for open networks"></div></div>'+
+        '<datalist id="scanOpts"></datalist>'+
+        '<label><input type="checkbox" id="netEnable" checked style="width:auto;margin-right:6px">Enable STA (connect on boot)</label>'+
+        '<div style="margin-top:12px"><button class="btn btn-primary" id="connectBtn">Save & Reboot</button> <span id="netMsg" class="empty"></span></div>'+
+      '</div>';
+    var scanBtn=document.getElementById('scanBtn');
+    var connectBtn=document.getElementById('connectBtn');
+    var msg=document.getElementById('netMsg');
+    var renderScanList=function(nets){
+      var sl=document.getElementById('scanList');
+      if(!nets.length){ sl.innerHTML='<div class="empty">No networks found. Try scanning again.</div>'; return; }
+      sl.innerHTML='<div class="empty" style="margin-bottom:6px">Click an SSID to select it:</div>'+
+        nets.map(function(n){ return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>'; }).join('');
+      Array.prototype.forEach.call(sl.querySelectorAll('[data-ssid]'),function(b){
+        b.addEventListener('click',function(){ document.getElementById('netSsid').value=b.dataset.ssid; });
+      });
+    };
+    scanBtn.addEventListener('click',function(){
+      msg.textContent='Scanning...';
+      scanBtn.disabled=true;
+      apiFetch('/wifi/scan').then(function(nets){
+        scanCache=nets||[];
+        renderScanList(scanCache);
+        var d=document.getElementById('scanOpts');
+        d.innerHTML=scanCache.map(function(n){ return '<option value="'+esc(n.ssid)+'">'; }).join('');
+        msg.textContent='Found '+scanCache.length+' network(s).';
+        scanBtn.disabled=false;
+      }).catch(function(e){ msg.textContent='Scan failed.'; scanBtn.disabled=false; });
+    });
+    connectBtn.addEventListener('click',function(){
+      var ssid=document.getElementById('netSsid').value.trim();
+      if(!ssid){ msg.textContent='SSID is required.'; return; }
+      var password=document.getElementById('netPassword').value;
+      var enable=document.getElementById('netEnable').checked;
+      msg.textContent='Saving...';
+      connectBtn.disabled=true;
+      apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable})})
+        .then(function(d){
+          msg.textContent='Saved. Rebooting into STA mode...';
+          setTimeout(function(){ setOnline(false); },500);
+        })
+        .catch(function(e){ msg.textContent='Save failed: '+(e&&e.message?e.message:'error'); connectBtn.disabled=false; });
+    });
+  }).catch(function(e){ if(tag===renderSeq){ setOnline(false); renderError(e); throw e; } });
+}
+
+var RENDERERS={dashboard:renderDashboard,devices:renderDevices,entities:renderEntities,rules:renderRules,skills:renderSkills,logs:renderLogs,system:renderSystem,network:renderNetwork};
+
+/* True while a create/edit form (or the network setup form) owns the main
+ * content area. The auto-refresh must not re-render (and thereby wipe) these
+ * because they hold live form state (e.g. WiFi scan results, unsaved edits). */
+var inFormView=false;
+/* Tabs whose content is a read-only data view and therefore safe to refresh
+ * automatically. "network" is intentionally excluded (live form + scan state). */
+var REFRESHABLE={dashboard:1,devices:1,entities:1,rules:1,skills:1,logs:1,system:1};
 
 function renderTab(name){
   renderSeq++;
   var tag=renderSeq;
+  inFormView=false;
   (RENDERERS[name]||renderDashboard)(tag);
 }
 window.loadTab=renderTab;
 
+/* Selective refresh: only re-render data-only tabs, and never clobber an
+ * active form view. This avoids gratuitous server calls and heap churn. */
+function refreshVisible(){
+  if(inFormView) return;
+  if(!(cur in REFRESHABLE)) return;
+  renderTab(cur);
+}
+
 window.showCreateRule=function(){
+  inFormView=true;
   var main=document.getElementById('mainContent');
   main.innerHTML='<div class="card"><h2>Create Rule</h2><p class="entity-meta">Example: temperature &gt; 30 &rarr; fan ON</p><form id="ruleForm">'+
     '<div class="form-row"><div><label>Name</label><input name="name" required></div>'+
@@ -362,6 +441,7 @@ window.showCreateRule=function(){
 };
 
 window.editRule=function(id){
+  inFormView=true;
   apiFetch('/rules/'+encodeURIComponent(id)).then(function(rule){
     var trig=(rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
     var actions=rule.actions||[];
@@ -415,7 +495,7 @@ document.querySelectorAll('.tab').forEach(function(b){
 window.addEventListener('unhandledrejection',function(e){ setOnline(false); });
 
 renderTab('dashboard');
-setInterval(function(){ renderTab(cur); },10000);
+setInterval(refreshVisible,10000);
 </script>
 </body>
 </html>

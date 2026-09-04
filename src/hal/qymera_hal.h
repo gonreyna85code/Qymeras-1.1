@@ -88,6 +88,12 @@ void qymera_wifi_set_auto_reconnect(bool enable);
 qymera_wifi_mode_t qymera_wifi_get_mode(void);
 qymera_err_t qymera_wifi_get_ap_ssid(char *ssid, size_t len);
 qymera_err_t qymera_wifi_get_ap_ip(char *ip_str, size_t len);
+int8_t qymera_wifi_ap_client_count(void);
+
+/* On-demand scan of nearby WiFi networks. Writes a compact JSON array of
+ * {"ssid","rssi"} objects into out (caller supply len). Empty result "[]" on
+ * no networks found. The scan blocks for a few seconds while it runs. */
+qymera_err_t qymera_wifi_scan(char *out, size_t len);
 
 /* =========================
  * UDP Sockets (raw socket API)
