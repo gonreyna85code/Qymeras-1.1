@@ -71,15 +71,21 @@ label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
 <div id="overlay"></div>
 <script>
 "use strict";
-var API='/api/v1',cur='dashboard',pending=new Set();
+var API='/api/v1';
 var main=document.getElementById('mainContent');
 var toastEl=document.getElementById('toast');
 var overlayEl=document.getElementById('overlay');
 
 /* =====================================================================
- * Application state (separated from the DOM)
+ * UI state is kept apart from the DOM. DOM attributes are only used for
+ * bindings (data-field / data-action / data-*key), never for source data.
  * ===================================================================== */
-var uiState={formActive:false,editingRuleId:null};
+var uiState={
+  activeView:'dashboard',
+  formActive:false,
+  editingRuleId:null,
+  pending:new Set()
+};
 
 /* =====================================================================
  * Tiny DOM update helpers - each skips the DOM write when unchanged.
@@ -102,6 +108,11 @@ function setAttr(node,name,value){
   var next=String(value==null?'':value);
   if(node.getAttribute(name)!==next) node.setAttribute(name,next);
 }
+function setValue(node,value){
+  if(!node) return;
+  var next=String(value==null?'':value);
+  if(node.value!==next) node.value=next;
+}
 
 /* DOM builder: minimal, no framework. */
 function el(tag,attrs,children){
@@ -110,7 +121,6 @@ function el(tag,attrs,children){
     if(!Object.prototype.hasOwnProperty.call(attrs,k)) continue;
     if(k==='class') n.className=attrs[k];
     else if(k==='text') n.textContent=attrs[k];
-    else if(k==='html') n.innerHTML=attrs[k];
     else n.setAttribute(k,attrs[k]);
   }
   if(children){
@@ -127,14 +137,12 @@ function insertAt(container,node,idx){
   else container.insertBefore(node,kids[idx]);
 }
 
-/* =====================================================================
- * Collection diff (reconcile server state onto the DOM in place).
- *   - removes nodes whose stable key is gone
- *   - updates existing nodes via apply()
- *   - creates new nodes via create() and inserts them in the right order
- * Never wipes the container.
- * ===================================================================== */
-function reconcile(container,list,keyFn,attr,create,apply){
+/* reconcileCollection(container, list, keyFn, attr, create, apply)
+ * In-place diff: existing key -> apply() in place; new key -> create one
+ * node; missing key -> remove one node. Order is preserved. Never wipes or
+ * rebuilds the container, so focus/unpersisted DOM state survives refresh.
+ * `attr` is the stable-key attribute (data-*-key) on each child node. */
+function reconcileCollection(container,list,keyFn,attr,create,apply){
   var byKey={};
   list.forEach(function(it){ byKey[keyFn(it)]=it; });
   Array.prototype.slice.call(container.children).forEach(function(node){
@@ -197,11 +205,19 @@ function apiFetch(path,opts){
       throw e;
     });
 }
+var statusDot=document.getElementById('statusDot');
+var sysInfoEl=document.getElementById('sysInfo');
+var netLabelEl=document.getElementById('netLabel');
 function setOnline(b){
-  document.getElementById('statusDot').className=b?'dot ok':'dot';
-  document.getElementById('sysInfo').textContent=b?'':'OFFLINE';
+  statusDot.className=b?'dot ok':'dot';
+  sysInfoEl.textContent=b?'':'OFFLINE';
 }
-function setNetLabel(txt){ document.getElementById('netLabel').textContent=txt; }
+function setNetLabel(txt){ netLabelEl.textContent=txt; }
+/* Human label for the connection the device is currently hosting. */
+function netLabelFor(s){
+  if(!s||!s.network) return '';
+  return s.network==='AP'||s.network==='APSTA'?('AP · '+(s.ssid||'')):'STA';
+}
 var toastTimer;
 function showError(err){
   toastEl.textContent='Error: '+(err&&err.message?err.message:'unknown');
@@ -212,8 +228,10 @@ function showError(err){
 
 /* =====================================================================
  * Polling engine: active view only + request dedup + stale protection.
+ * Each view keeps: gen (stale-response check), inflight (dedup), mount/refresh/update.
  * ===================================================================== */
 var views={};
+var navTabs=document.getElementById('navTabs');
 function makeRefresh(path,viewName){
   return function(gen){
     return apiFetch(path).then(function(data){
@@ -232,14 +250,14 @@ function runViewRefresh(v){
   v.inflight=true;
   var gen=++v.gen;
   v.refresh(gen).then(function(){ v.inflight=false; })
-    .catch(function(err){ v.inflight=false; setOnline(false); showError(err); });
+    .catch(function(){ v.inflight=false; setOnline(false); });
 }
 function showView(name){
-  cur=name;
-  Array.prototype.forEach.call(document.querySelectorAll('#navTabs .tab'),function(b){
+  uiState.activeView=name;
+  var v=views[name];
+  Array.prototype.forEach.call(navTabs.querySelectorAll('.tab'),function(b){
     setClass(b,'active',b.getAttribute('data-tab')===name);
   });
-  var v=views[name];
   var host=document.getElementById('view-'+name);
   if(!host){
     host=document.createElement('div');
@@ -247,7 +265,6 @@ function showView(name){
     main.appendChild(host);
     v.host=host;
     if(v.mount) v.mount(host);
-    v.mounted=true;
   }
   Object.keys(views).forEach(function(n){
     var h=document.getElementById('view-'+n);
@@ -255,8 +272,10 @@ function showView(name){
   });
   if(v.refresh&&v.pollable!==false) runViewRefresh(v);
 }
+/* Single consistent poll interval; only the active view is fetched, and a
+ * view that is a form (uiState.formActive) is skipped so typing survives. */
 function pollTick(){
-  var v=views[cur];
+  var v=views[uiState.activeView];
   if(v&&v.refresh&&v.pollable!==false&&!uiState.formActive) runViewRefresh(v);
 }
 
@@ -284,7 +303,7 @@ views.dashboard={
   refresh:makeRefresh('/status','dashboard'),
   update:function(s){
     var f=this.__f;
-    setNetLabel(s.network&&s.network==='AP'?('AP · '+(s.ssid||'')):'STA');
+    setNetLabel(netLabelFor(s));
     setText(f.ip,s.ip||'—');
     setText(f.heap,s.free_heap+' B');
     setText(f.uptime,Math.floor(s.uptime_ms/1000)+'s');
@@ -327,12 +346,13 @@ views.devices={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Devices (<span data-field="count">0</span>)</h2></div><div id="deviceList" class="grid grid-2"></div>';
     this.__list=host.querySelector('#deviceList');
+    this.__count=host.querySelector('[data-field="count"]');
   },
   refresh:makeRefresh('/devices','devices'),
   update:function(d){
     var list=d||[];
-    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
-    reconcile(this.__list,list,function(x){return x.device_id;},'data-device-key',deviceCardNew,updateDeviceCard);
+    setText(this.__count,list.length);
+    reconcileCollection(this.__list,list,function(x){return x.device_id;},'data-device-key',deviceCardNew,updateDeviceCard);
   }
 };
 
@@ -379,7 +399,7 @@ function updateEntityControl(ent,node){
   var isDimmer=caps.indexOf('actuator.dimmer')>=0;
   var type=isRelay?'relay':(isDimmer?'dimmer':'none');
   var holder=node.querySelector('[data-control]');
-  var busy=pending.has(key);
+  var busy=uiState.pending.has(key);
   if(node.__ctlType!==type){
     holder.innerHTML='';
     if(type==='relay'){
@@ -402,7 +422,8 @@ function updateEntityControl(ent,node){
   } else if(type==='dimmer'){
     setDisabled(ctl,busy);
     var lv=(typeof ent.desired==='number')?ent.desired:(ent.current||0);
-    if(ctl!==document.activeElement&&String(ctl.value)!==String(lv)) ctl.value=lv;
+    /* Suppress echo while the user is dragging so the thumb does not jump. */
+    if(ctl!==document.activeElement) setValue(ctl,lv);
   }
 }
 function handleToggle(t){
@@ -410,24 +431,25 @@ function handleToggle(t){
   var key=t.getAttribute('data-k');
   var kv=key.split('/');
   var want=(t.getAttribute('data-want')==='1');
-  t.disabled=true; pending.add(key);
+  t.disabled=true; uiState.pending.add(key);
   apiFetch('/control/relay',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],value:!want})})
-    .then(function(){ pending.delete(key); runViewRefresh(views.entities); })
-    .catch(function(e){ pending.delete(key); showError(e); });
+    .then(function(){ uiState.pending.delete(key); runViewRefresh(views.entities); })
+    .catch(function(e){ uiState.pending.delete(key); showError(e); });
 }
 function handleDimmer(s){
   if(s.disabled) return;
   var key=s.getAttribute('data-k');
   var kv=key.split('/');
-  s.disabled=true; pending.add(key);
+  s.disabled=true; uiState.pending.add(key);
   apiFetch('/control/dimmer',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],level:parseInt(s.value,10)})})
-    .then(function(){ pending.delete(key); runViewRefresh(views.entities); })
-    .catch(function(e){ pending.delete(key); showError(e); });
+    .then(function(){ uiState.pending.delete(key); runViewRefresh(views.entities); })
+    .catch(function(e){ uiState.pending.delete(key); showError(e); });
 }
 views.entities={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Entities (<span data-field="count">0</span>)</h2></div><div id="entityList" class="grid grid-2"></div>';
     this.__list=host.querySelector('#entityList');
+    this.__count=host.querySelector('[data-field="count"]');
     /* Event delegation: installed once at mount, never re-attached. */
     host.addEventListener('click',function(e){
       var t=e.target.closest?e.target.closest('[data-action="toggle"]'):null;
@@ -441,8 +463,8 @@ views.entities={
   refresh:makeRefresh('/entities','entities'),
   update:function(d){
     var list=d||[];
-    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
-    reconcile(this.__list,list,function(x){return x.device_id+'/'+x.entity_id;},'data-entity-key',entityCardNew,updateEntityCard);
+    setText(this.__count,list.length);
+    reconcileCollection(this.__list,list,function(x){return x.device_id+'/'+x.entity_id;},'data-entity-key',entityCardNew,updateEntityCard);
   }
 };
 
@@ -494,6 +516,7 @@ views.rules={
     host.innerHTML='<div class="section-header"><h2>Rules (<span data-field="count">0</span>)</h2>'+
       '<button class="btn btn-primary" data-action="new-rule">Create Rule</button></div><div id="ruleList"></div>';
     this.__list=host.querySelector('#ruleList');
+    this.__count=host.querySelector('[data-field="count"]');
     host.addEventListener('click',function(e){
       var t=null;
       if(e.target.closest) t=e.target.closest('[data-action]');
@@ -508,8 +531,8 @@ views.rules={
   refresh:makeRefresh('/rules','rules'),
   update:function(r){
     var list=r||[];
-    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
-    reconcile(this.__list,list,function(x){return x.rule_id;},'data-rule-key',ruleCardNew,updateRuleCard);
+    setText(this.__count,list.length);
+    reconcileCollection(this.__list,list,function(x){return x.rule_id;},'data-rule-key',ruleCardNew,updateRuleCard);
   }
 };
 function toggleRule(id){
@@ -585,10 +608,6 @@ function buildRuleForm(rule){
   form.appendChild(btnRow);
   save.addEventListener('click',function(){ saveRuleForm(); });
   cancel.addEventListener('click',function(){ closeRuleEditor(); });
-  if(uiState.editingRuleId){
-    var hc=el('input',{'type':'hidden','name':'origRuleId','value':uiState.editingRuleId});
-    form.appendChild(hc);
-  }
   overlayEl.innerHTML='';
   overlayEl.appendChild(card);
 }
@@ -659,12 +678,13 @@ views.skills={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Skill Catalog (<span data-field="count">0</span>)</h2></div><div id="skillList" class="grid grid-2"></div>';
     this.__list=host.querySelector('#skillList');
+    this.__count=host.querySelector('[data-field="count"]');
   },
   refresh:makeRefresh('/skills','skills'),
   update:function(sk){
     var list=sk||[];
-    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
-    reconcile(this.__list,list,function(x){return x.name;},'data-skill-key',skillCardNew,updateSkillCard);
+    setText(this.__count,list.length);
+    reconcileCollection(this.__list,list,function(x){return x.name;},'data-skill-key',skillCardNew,updateSkillCard);
   }
 };
 
@@ -690,12 +710,13 @@ views.logs={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Recent Logs (<span data-field="count">0</span>)</h2></div><div id="logList"></div>';
     this.__list=host.querySelector('#logList');
+    this.__count=host.querySelector('[data-field="count"]');
   },
   refresh:makeRefresh('/logs','logs'),
   update:function(l){
     var list=(l||[]).slice(0,50);
-    setText(this.__list.parentElement.querySelector('[data-field="count"]'),list.length);
-    reconcile(this.__list,list,logKey,'data-log-key',logCardNew,updateLogCard);
+    setText(this.__count,list.length);
+    reconcileCollection(this.__list,list,logKey,'data-log-key',logCardNew,updateLogCard);
   }
 };
 
@@ -723,7 +744,7 @@ views.system={
   refresh:makeRefresh('/status','system'),
   update:function(s){
     var f=this.__f;
-    setNetLabel(s.network&&s.network==='AP'?('AP · '+(s.ssid||'')):'STA');
+    setNetLabel(netLabelFor(s));
     setText(f.net,s.network===void 0?'?':String(s.network));
     setText(f.ssid,s.ssid||'—');
     setText(f.ip,s.ip||'—');
@@ -733,7 +754,8 @@ views.system={
 };
 
 /* =====================================================================
- * NETWORK view (mount-once, explicit scan, never auto-refreshed)
+ * NETWORK view (mount-once, explicit scan, never auto-refreshed).
+ * pollable:false keeps the Setup form untouched by any polling.
  * ===================================================================== */
 var scanCache=[];
 views.network={
@@ -755,51 +777,59 @@ views.network={
     var scanBtn=document.getElementById('scanBtn');
     var connectBtn=document.getElementById('connectBtn');
     var msg=document.getElementById('netMsg');
+    var scanList=document.getElementById('scanList');
+    var scanOpts=document.getElementById('scanOpts');
+    var ssidEl=document.getElementById('netSsid');
+    var passEl=document.getElementById('netPassword');
+    var enableEl=document.getElementById('netEnable');
     var renderScanList=function(nets){
-      var sl=document.getElementById('scanList');
-      if(!nets.length){ sl.innerHTML='<div class="empty">No networks found. Try scanning again.</div>'; return; }
-      sl.innerHTML='<div class="empty" style="margin-bottom:6px">Click an SSID to select it:</div>'+
-        nets.map(function(n){ return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>'; }).join('');
-      Array.prototype.forEach.call(sl.querySelectorAll('[data-ssid]'),function(b){
-        b.addEventListener('click',function(){ document.getElementById('netSsid').value=b.getAttribute('data-ssid'); });
-      });
+      if(!nets.length){ scanList.innerHTML='<div class="empty">No networks found. Try scanning again.</div>'; return; }
+      scanList.innerHTML='<div class="empty" style="margin-bottom:6px">Click an SSID to select it:</div>'+
+        nets.map(function(n){
+          return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>';
+        }).join('');
+      scanOpts.innerHTML=nets.map(function(n){ return '<option value="'+esc(n.ssid)+'">'; }).join('');
     };
+    /* Delegation: scan buttons are recreated per scan, so listen once here. */
+    scanList.addEventListener('click',function(e){
+      var b=e.target.closest?e.target.closest('[data-ssid]'):null;
+      if(b) setValue(ssidEl,b.getAttribute('data-ssid'));
+    });
     scanBtn.addEventListener('click',function(){
       msg.textContent='Scanning...';
-      scanBtn.disabled=true;
+      setDisabled(scanBtn,true);
       apiFetch('/wifi/scan').then(function(nets){
         scanCache=nets||[];
         renderScanList(scanCache);
-        var d=document.getElementById('scanOpts');
-        d.innerHTML=scanCache.map(function(n){ return '<option value="'+esc(n.ssid)+'">'; }).join('');
         msg.textContent='Found '+scanCache.length+' network(s).';
-        scanBtn.disabled=false;
-      }).catch(function(e){ msg.textContent='Scan failed.'; scanBtn.disabled=false; });
+        setDisabled(scanBtn,false);
+      }).catch(function(){ msg.textContent='Scan failed.'; setDisabled(scanBtn,false); });
     });
     connectBtn.addEventListener('click',function(){
-      var ssid=document.getElementById('netSsid').value.trim();
+      var ssid=ssidEl.value.trim();
       if(!ssid){ msg.textContent='SSID is required.'; return; }
-      var password=document.getElementById('netPassword').value;
-      var enable=document.getElementById('netEnable').checked;
+      var password=passEl.value;
+      var enable=enableEl.checked;
       msg.textContent='Saving...';
-      connectBtn.disabled=true;
+      setDisabled(connectBtn,true);
       apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable})})
         .then(function(){ msg.textContent='Saved. Rebooting into STA mode...'; setTimeout(function(){ setOnline(false); },500); })
-        .catch(function(e){ msg.textContent='Save failed: '+(e&&e.message?e.message:'error'); connectBtn.disabled=false; });
+        .catch(function(){ msg.textContent='Save failed.'; setDisabled(connectBtn,false); });
     });
   }
 };
 
 /* =====================================================================
- * Wiring
+ * Wiring (runs once after all views are defined).
  * ===================================================================== */
-document.getElementById('navTabs').addEventListener('click',function(e){
+navTabs.addEventListener('click',function(e){
   var b=e.target.closest?e.target.closest('.tab'):null;
   if(!b||!b.getAttribute('data-tab')) return;
   e.preventDefault();
   showView(b.getAttribute('data-tab'));
 });
-window.addEventListener('unhandledrejection',function(){ setOnline(false); });
+/* Every apiFetch call site has its own .catch, so any unhandled rejection is
+ * a bug, not a live connectivity change - do not flip the global indicator. */
 
 showView('dashboard');
 setInterval(pollTick,10000);
