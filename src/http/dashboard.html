@@ -279,7 +279,7 @@ views.dashboard={
     ['ip','heap','uptime','device_count','entity_count'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
     });
-    host.__f=f;
+    this.__f=f;
   },
   refresh:makeRefresh('/status','dashboard'),
   update:function(s){
@@ -326,7 +326,7 @@ function updateDeviceCard(dev,node){
 views.devices={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Devices (<span data-field="count">0</span>)</h2></div><div id="deviceList" class="grid grid-2"></div>';
-    host.__list=host.querySelector('#deviceList');
+    this.__list=host.querySelector('#deviceList');
   },
   refresh:makeRefresh('/devices','devices'),
   update:function(d){
@@ -427,7 +427,7 @@ function handleDimmer(s){
 views.entities={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Entities (<span data-field="count">0</span>)</h2></div><div id="entityList" class="grid grid-2"></div>';
-    host.__list=host.querySelector('#entityList');
+    this.__list=host.querySelector('#entityList');
     /* Event delegation: installed once at mount, never re-attached. */
     host.addEventListener('click',function(e){
       var t=e.target.closest?e.target.closest('[data-action="toggle"]'):null;
@@ -493,7 +493,7 @@ views.rules={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Rules (<span data-field="count">0</span>)</h2>'+
       '<button class="btn btn-primary" data-action="new-rule">Create Rule</button></div><div id="ruleList"></div>';
-    host.__list=host.querySelector('#ruleList');
+    this.__list=host.querySelector('#ruleList');
     host.addEventListener('click',function(e){
       var t=null;
       if(e.target.closest) t=e.target.closest('[data-action]');
@@ -658,7 +658,7 @@ function updateSkillCard(sk,node){
 views.skills={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Skill Catalog (<span data-field="count">0</span>)</h2></div><div id="skillList" class="grid grid-2"></div>';
-    host.__list=host.querySelector('#skillList');
+    this.__list=host.querySelector('#skillList');
   },
   refresh:makeRefresh('/skills','skills'),
   update:function(sk){
@@ -689,7 +689,7 @@ function updateLogCard(e,node){
 views.logs={
   mount:function(host){
     host.innerHTML='<div class="section-header"><h2>Recent Logs (<span data-field="count">0</span>)</h2></div><div id="logList"></div>';
-    host.__list=host.querySelector('#logList');
+    this.__list=host.querySelector('#logList');
   },
   refresh:makeRefresh('/logs','logs'),
   update:function(l){
@@ -718,7 +718,7 @@ views.system={
     ['net','ssid','ip','heap','uptime','build'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
     });
-    host.__f=f;
+    this.__f=f;
   },
   refresh:makeRefresh('/status','system'),
   update:function(s){
