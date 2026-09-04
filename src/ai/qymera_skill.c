@@ -675,9 +675,12 @@ static void emit_ref_json(qymera_skill_output_t *o, const qymera_entity_ref_t *r
     out_add(o, "}");
 }
 
+/* Emit a single array element (object) with no leading separator. Each emit
+ * writes only the object; the caller inserts "," between elements so that an
+ * embedded array (mid-object) is always valid JSON regardless of how much
+ * content already precedes it in the output buffer. */
 static void emit_trigger_condition(qymera_skill_output_t *o, const qymera_condition_t *c) {
-    const char *sep = o->data_len > 1 ? "," : "";
-    out_add(o, "%s{\"entity\":", sep);
+    out_add(o, "{\"entity\":");
     emit_ref_json(o, &c->entity);
     out_add(o, ",\"operator\":");
     out_str_json(o, operator_str(c->operator_));
@@ -687,8 +690,7 @@ static void emit_trigger_condition(qymera_skill_output_t *o, const qymera_condit
 }
 
 static void emit_action(qymera_skill_output_t *o, const qymera_action_t *a) {
-    const char *sep = o->data_len > 1 ? "," : "";
-    out_add(o, "%s{\"entity\":", sep);
+    out_add(o, "{\"entity\":");
     emit_ref_json(o, &a->entity);
     out_add(o, ",\"action\":");
     out_str_json(o, action_str(a->action));
@@ -738,9 +740,15 @@ static qymera_err_t skill_get_rule(qymera_skill_context_t *ctx, const qymera_ski
             (unsigned)st->activation_count, (unsigned)st->last_triggered);
     if (r->trigger.operator_ != QYMERA_OP_NONE) emit_trigger_condition(o, &r->trigger);
     out_add(o, "],\"conditions\":[");
-    for (uint8_t i = 0; i < r->condition_count; i++) emit_trigger_condition(o, &r->conditions[i]);
+    for (uint8_t i = 0; i < r->condition_count; i++) {
+        if (i) out_add(o, ",");
+        emit_trigger_condition(o, &r->conditions[i]);
+    }
     out_add(o, "],\"actions\":[");
-    for (uint8_t i = 0; i < r->action_count; i++) emit_action(o, &r->actions[i]);
+    for (uint8_t i = 0; i < r->action_count; i++) {
+        if (i) out_add(o, ",");
+        emit_action(o, &r->actions[i]);
+    }
     out_add(o, "]}");
     out_ok(o);
     return QYMERA_OK;

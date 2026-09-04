@@ -64,6 +64,7 @@ struct qymera_core_s {
     qymera_udp_socket_t control_sock;
     
     uint32_t last_stale_check;
+    uint16_t local_device_idx;
     bool initialized;
 };
 
@@ -179,8 +180,10 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     dashboard_dev.registered_at = qymera_timestamp_now();
     dashboard_dev.last_seen = dashboard_dev.registered_at;
     
-    uint16_t dev_idx;
-    qymera_registry_register_device(core->registry, &dashboard_dev, &dev_idx);
+    uint16_t dev_idx = QYMERA_MAX_DEVICES;
+    if (qymera_registry_register_device(core->registry, &dashboard_dev, &dev_idx) == QYMERA_OK) {
+        core->local_device_idx = dev_idx;
+    }
     
     /* Control context: typed reference to the services it needs */
     qymera_control_context_init(&core->control, core->registry, core->udp, core->event_bus, core->log);
@@ -259,6 +262,11 @@ qymera_err_t qymera_core_tick(qymera_core_t *core) {
     
     if (now_ms - core->last_stale_check >= 10000) {
         core->last_stale_check = now_ms;
+        /* The local dashboard device is inherently online while the firmware
+         * runs; refresh its presence so the stale sweep never marks it down. */
+        if (core->local_device_idx < QYMERA_MAX_DEVICES) {
+            qymera_registry_update_seen(core->registry, core->local_device_idx);
+        }
         qymera_registry_check_stale(core->registry, 30000, NULL, NULL);
     }
     
