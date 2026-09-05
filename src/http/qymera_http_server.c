@@ -175,12 +175,29 @@ static esp_err_t h_status_get(httpd_req_t *req) {
     }
     if (ip[0] == '\0') qymera_wifi_get_ap_ip(ip, sizeof(ip));
 
+    /* Load network config (UDP ports persist across reboots). */
+    qymera_storage_t *st = qymera_core_get_storage(core);
+    qymera_network_config_t ncfg;
+    memset(&ncfg, 0, sizeof(ncfg));
+    qymera_err_t lerr = qymera_storage_load_network(st, &ncfg);
+    uint16_t udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
+    uint16_t udp_control_port = QYMERA_UDP_PORT_CONTROL;
+    if (lerr == QYMERA_OK) {
+        udp_discovery_port = ncfg.udp_discovery_port;
+        udp_control_port = ncfg.udp_control_port;
+    } else if (lerr == QYMERA_ERR_NOT_FOUND) {
+        /* defaults already set above */
+    }
+
     char buf[512];
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"free_heap\":%u,\"uptime_ms\":%u,"
         "\"ip\":\"%s\",\"network\":\"%s\",\"ssid\":\"%s\","
+        "\"udp_discovery_port\":%u,\"udp_control_port\":%u,"
         "\"device_count\":%zu,\"entity_count\":%zu}}",
-        heap, up, ip, network, ssid, dc, ec);
+        heap, up, ip, network, ssid,
+        udp_discovery_port, udp_control_port,
+        dc, ec);
     http_send_json(req, buf);
     return ESP_OK;
 }
@@ -507,6 +524,16 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
                                strcmp(enabled, "1") == 0);
         }
     }
+    /* Optional UDP port overrides (default values used if omitted). */
+    {
+        char port_str[8] = {0};
+        if (http_extract_json_str(body, "udp_discovery_port", port_str, sizeof(port_str))) {
+            net.udp_discovery_port = (uint16_t)atoi(port_str);
+        }
+        if (http_extract_json_str(body, "udp_control_port", port_str, sizeof(port_str))) {
+            net.udp_control_port = (uint16_t)atoi(port_str);
+        }
+    }
     qymera_err_t serr = qymera_storage_save_network(st, &net);
     if (serr != QYMERA_OK) {
         http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
@@ -570,7 +597,7 @@ qymera_err_t qymera_http_api_init(qymera_core_t *core) {
     printf("[HTTP] Starting server on port 80...\n");
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
-    config.stack_size = 16384;
+    config.stack_size = 32768;
     config.max_open_sockets = 4;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.max_uri_handlers = 16;

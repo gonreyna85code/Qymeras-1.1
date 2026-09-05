@@ -382,16 +382,23 @@ static bool entity_list_cb(uint16_t idx, const qymera_entity_t *e, void *context
     return true;
 }
 
+typedef struct {
+    qymera_skill_output_t *out;
+    qymera_registry_t *registry;
+} entity_list_ctx_t;
+
+static bool device_entity_list_cb(uint16_t device_idx, const qymera_device_t *device, void *context) {
+    (void)device;
+    entity_list_ctx_t *ec = (entity_list_ctx_t *)context;
+    qymera_registry_iterate_device_entities(ec->registry, device_idx, entity_list_cb, ec->out);
+    return true;
+}
+
 static qymera_err_t skill_list_entities(qymera_skill_context_t *ctx, qymera_skill_output_t *o) {
     if (dep_required(ctx, o, true, false, false, false)) return QYMERA_OK;
     out_add(o, "[");
-    size_t dc = qymera_registry_device_count(ctx->registry);
-    for (size_t i = 0; i < dc; i++) {
-        qymera_device_t d;
-        if (qymera_registry_get_device(ctx->registry, (uint16_t)i, &d) == QYMERA_OK) {
-            qymera_registry_iterate_device_entities(ctx->registry, (uint16_t)i, entity_list_cb, o);
-        }
-    }
+    entity_list_ctx_t ec = { .out = o, .registry = ctx->registry };
+    qymera_registry_iterate_devices(ctx->registry, device_entity_list_cb, &ec);
     out_add(o, "]");
     out_ok(o);
     return QYMERA_OK;
@@ -695,7 +702,8 @@ static void emit_action(qymera_skill_output_t *o, const qymera_action_t *a) {
     out_add(o, ",\"action\":");
     out_str_json(o, action_str(a->action));
     out_add(o, ",\"value\":%g,\"duration_ms\":%u}",
-            (double)a->value_f, (unsigned)a->duration_ms);
+            (double)(a->action == QYMERA_ACTION_SET_BOOL ? a->value_u32 : a->value_f),
+            (unsigned)a->duration_ms);
 }
 
 static bool list_rules_cb(uint16_t idx, const qymera_compiled_rule_t *cr, void *context) {
@@ -769,10 +777,15 @@ static qymera_err_t persist_rule(qymera_skill_context_t *ctx, qymera_compiled_ru
     meta.created_ts = compiled->rule.created_ts;
     meta.updated_ts = compiled->rule.updated_ts;
     meta.enabled = enabled;
-    meta.compiled_size = sizeof(qymera_compiled_rule_t);
+    compiled->rule.enabled = enabled;
+    /* Only the authoring definition is persisted. Runtime state (timers,
+     * counts, feedback guard) is ephemeral and rebuilt on boot, keeping the
+     * NVS blob small enough to commit without stressing flash or the SPIRAM
+     * watchdog budget. */
+    meta.compiled_size = sizeof(qymera_rule_t);
     meta.checksum = compiled->checksum;
-    return qymera_storage_save_rule(ctx->storage, compiled->rule.rule_id, compiled,
-                                    sizeof(qymera_compiled_rule_t), &meta);
+    return qymera_storage_save_rule(ctx->storage, compiled->rule.rule_id, &compiled->rule,
+                                    sizeof(qymera_rule_t), &meta);
 }
 
 /* Build a rule from structured input for create/update. The caller provides

@@ -34,6 +34,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_task_wdt.h"
 #include "esp_ota_ops.h"
 #include "esp_efuse.h"
 
@@ -586,6 +587,13 @@ uint16_t qymera_time_get_minutes_of_day(void) {
  * NVS Implementation
  * ========================= */
 
+/* Keep the ESP32 task watchdog from tearing down the task while a flash
+ * write/erase is pending. Best-effort: no-ops if the calling task is not
+ * subscribed to the TWDT. */
+static inline void wdt_feed_guard(void) {
+    esp_task_wdt_reset();
+}
+
 qymera_err_t qymera_nvs_init(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -595,15 +603,31 @@ qymera_err_t qymera_nvs_init(void) {
     return (err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_STORAGE;
 }
 
+void qymera_wdt_reconfigure(void) {
+    /* The default 5s TWDT is aggressive for firmware that persists data on
+     * flash (page erases + GC can legally exceed it). Re-arm with a longer
+     * budget and no panic; keep the current task subscribed. */
+    esp_task_wdt_deinit();
+    if (esp_task_wdt_init(30000, false) == ESP_OK) {
+        esp_task_wdt_add(NULL);
+    }
+}
+
 qymera_err_t qymera_nvs_set_blob(const char *namespace_, const char *key, const void *data, size_t len) {
     if (!namespace_ || !key || !data) return QYMERA_ERR_INVALID_ARG;
     
     nvs_handle_t handle;
     esp_err_t err = nvs_open(namespace_, NVS_READWRITE, &handle);
-    if (err != ESP_OK) return QYMERA_ERR_STORAGE;
+    if (err != ESP_OK) {
+        return QYMERA_ERR_STORAGE;
+    }
     
     err = nvs_set_blob(handle, key, data, len);
-    if (err == ESP_OK) err = nvs_commit(handle);
+    if (err == ESP_OK) {
+        wdt_feed_guard();
+        err = nvs_commit(handle);
+        wdt_feed_guard();
+    }
     nvs_close(handle);
     return (err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_STORAGE;
 }
@@ -613,13 +637,20 @@ qymera_err_t qymera_nvs_get_blob(const char *namespace_, const char *key, void *
     
     nvs_handle_t handle;
     esp_err_t err = nvs_open(namespace_, NVS_READONLY, &handle);
-    if (err == ESP_ERR_NVS_NOT_FOUND) return QYMERA_ERR_NOT_FOUND;
-    if (err != ESP_OK) return QYMERA_ERR_STORAGE;
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        return QYMERA_ERR_NOT_FOUND;
+    }
+    if (err != ESP_OK) {
+        return QYMERA_ERR_STORAGE;
+    }
     
     err = nvs_get_blob(handle, key, data, len);
     nvs_close(handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) return QYMERA_ERR_NOT_FOUND;
-    return (err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_STORAGE;
+    if (err != ESP_OK) {
+        return QYMERA_ERR_STORAGE;
+    }
+    return QYMERA_OK;
 }
 
 qymera_err_t qymera_nvs_erase_key(const char *namespace_, const char *key) {
@@ -627,12 +658,18 @@ qymera_err_t qymera_nvs_erase_key(const char *namespace_, const char *key) {
     
     nvs_handle_t handle;
     esp_err_t err = nvs_open(namespace_, NVS_READWRITE, &handle);
-    if (err != ESP_OK) return QYMERA_ERR_STORAGE;
+    if (err != ESP_OK) {
+        return QYMERA_ERR_STORAGE;
+    }
     
     err = nvs_erase_key(handle, key);
-    if (err == ESP_OK) err = nvs_commit(handle);
+    if (err == ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
+        wdt_feed_guard();
+        err = nvs_commit(handle);
+        wdt_feed_guard();
+    }
     nvs_close(handle);
-    return (err == ESP_OK) ? QYMERA_OK : QYMERA_ERR_STORAGE;
+    return (err == ESP_OK || err == ESP_ERR_NVS_NOT_FOUND) ? QYMERA_OK : QYMERA_ERR_STORAGE;
 }
 
 qymera_err_t qymera_nvs_commit(const char *namespace_) {

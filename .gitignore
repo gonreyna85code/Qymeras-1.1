@@ -3,4 +3,5 @@
 /.pio
 /.continue
 /AGENTS.md
-/skill/
+/skill/wifi_creds_local.h
+/src/wifi_creds_local.h

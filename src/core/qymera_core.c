@@ -163,15 +163,24 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
             qymera_compiled_rule_t compiled;
             size_t actual_len;
             if (qymera_storage_load_rule(core->storage, rules_index.rules[i].rule_id,
-                                          &compiled, sizeof(qymera_compiled_rule_t), &actual_len) == QYMERA_OK) {
-                uint16_t slot;
-                qymera_rule_engine_load(core->rule_engine, &compiled, &slot);
+                                          &compiled, sizeof(qymera_compiled_rule_t), &actual_len) != QYMERA_OK) {
+                continue;
             }
+            const qymera_compiled_rule_t *to_load = &compiled;
+            qymera_compiled_rule_t rebuilt;
+            if (actual_len == sizeof(qymera_rule_t)) {
+                /* Definition-only persisted form: rebuild the runtime form.
+                 * Runtime counters are intentionally not persisted. */
+                qymera_rule_engine_compile(core->rule_engine, &compiled.rule, &rebuilt);
+                to_load = &rebuilt;
+            }
+            uint16_t slot;
+            qymera_rule_engine_load(core->rule_engine, to_load, &slot);
         }
     }
     
     qymera_device_t dashboard_dev = {0};
-    snprintf(dashboard_dev.device_id, sizeof(dashboard_dev.device_id), "dashboard-%08X", core->config.general.device_uid);
+    snprintf(dashboard_dev.device_id, sizeof(dashboard_dev.device_id), "dashboard");
     snprintf(dashboard_dev.name, sizeof(dashboard_dev.name), "Qymera Dashboard");
     dashboard_dev.chip_uid = core->config.general.device_uid;
     dashboard_dev.role = 0;

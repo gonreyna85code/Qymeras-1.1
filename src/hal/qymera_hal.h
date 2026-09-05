@@ -147,6 +147,11 @@ qymera_err_t qymera_nvs_get_blob(const char *namespace_, const char *key, void *
 qymera_err_t qymera_nvs_erase_key(const char *namespace_, const char *key);
 qymera_err_t qymera_nvs_commit(const char *namespace_);
 
+/* Reconfigure the ESP32 task watchdog so a single slow flash write (NVS
+ * commit / GC / page erase) cannot reset the device. Must run after the
+ * scheduler is up; safe to call once at boot. */
+void qymera_wdt_reconfigure(void);
+
 /* =========================
  * System
  * ========================= */

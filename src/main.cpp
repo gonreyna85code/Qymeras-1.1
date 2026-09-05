@@ -20,10 +20,23 @@ SET_LOOP_TASK_STACK_SIZE(24576);
 
 /* =========================
  * User Configuration
+ *
+ * WiFi credentials are supplied at compile time. Defaults are placeholders;
+ * create src/wifi_creds_local.h (gitignored) with
+ *   #define QYMERA_WIFI_SSID "your_ssid"
+ *   #define QYMERA_WIFI_PASSWORD "your_password"
+ * to build with working credentials locally.
  * ========================= */
 
-static const char *WIFI_SSID = "YOUR_SSID";
-static const char *WIFI_PASSWORD = "YOUR_PASSWORD";
+#if __has_include("wifi_creds_local.h")
+#include "wifi_creds_local.h"
+#else
+#define QYMERA_WIFI_SSID "YOUR_SSID"
+#define QYMERA_WIFI_PASSWORD "YOUR_PASSWORD"
+#endif
+
+static const char *WIFI_SSID = QYMERA_WIFI_SSID;
+static const char *WIFI_PASSWORD = QYMERA_WIFI_PASSWORD;
 
 /* =========================
  * Demo Rule: temperature > 30 -> fan ON
@@ -36,7 +49,10 @@ static void setup_demo_rule(qymera_core_t *core) {
     qymera_registry_t *registry = qymera_core_get_registry(core);
     
     uint16_t dev_idx;
-    qymera_registry_find_device(registry, "dashboard", &dev_idx);
+    if (qymera_registry_find_device(registry, "dashboard", &dev_idx) != QYMERA_OK) {
+        qymera_log_error(log, "demo", "dashboard device not found; demo rule skipped");
+        return;
+    }
     
     qymera_entity_t temp_entity = {0};
     strncpy(temp_entity.device_id, "dashboard", sizeof(temp_entity.device_id) - 1);
@@ -150,6 +166,7 @@ static void app_boot(void) {
     printf("[BOOT] reset_reason=%s\n", qymera_system_get_reset_reason());
     printf("[MEM] free before hal/core: %u\n", (unsigned)esp_get_free_heap_size());
     qymera_hal_init();
+    qymera_wdt_reconfigure();
     
     qymera_core_config_t config = {0};
     

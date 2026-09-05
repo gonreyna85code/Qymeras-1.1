@@ -69,7 +69,7 @@ typedef struct {
  * Rule Storage (metadata)
  * ========================= */
 
-#define QYMERA_MAX_STORED_RULES 100
+#define QYMERA_MAX_STORED_RULES 16
 
 typedef struct {
     char rule_id[QYMERA_RULE_ID_LEN];

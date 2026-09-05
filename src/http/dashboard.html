@@ -770,6 +770,8 @@ views.network={
       '<div class="card"><h2>Connect to WiFi</h2>'+
         '<div class="form-row"><div><label>SSID</label><input id="netSsid" list="scanOpts" placeholder="Network name..."></div>'+
         '<div><label>Password</label><input id="netPassword" type="password" placeholder="Leave empty for open networks"></div></div>'+
+        '<div class="form-row"><div><label>UDP Discovery Port</label><input id="netUdpDiscovery" type="number" value="13345" min="1" placeholder="13345"></div>'+
+        '<div><label>UDP Control Port</label><input id="netUdpControl" type="number" value="13346" min="1" placeholder="13346"></div></div>'+
         '<datalist id="scanOpts"></datalist>'+
         '<label><input type="checkbox" id="netEnable" checked style="width:auto;margin-right:6px">Enable STA (connect on boot)</label>'+
         '<div style="margin-top:12px"><button class="btn btn-primary" id="connectBtn">Save & Reboot</button> <span id="netMsg" class="empty"></span></div>'+
@@ -810,9 +812,11 @@ views.network={
       if(!ssid){ msg.textContent='SSID is required.'; return; }
       var password=passEl.value;
       var enable=enableEl.checked;
+      var udpDiscovery=document.getElementById('netUdpDiscovery').value||'13345';
+      var udpControl=document.getElementById('netUdpControl').value||'13346';
       msg.textContent='Saving...';
       setDisabled(connectBtn,true);
-      apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable})})
+      apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable,udp_discovery_port:Number(udpDiscovery),udp_control_port:Number(udpControl)})})
         .then(function(){ msg.textContent='Saved. Rebooting into STA mode...'; setTimeout(function(){ setOnline(false); },500); })
         .catch(function(){ msg.textContent='Save failed.'; setDisabled(connectBtn,false); });
     });
