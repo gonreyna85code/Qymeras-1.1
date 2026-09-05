@@ -8,6 +8,11 @@
 > **Source of truth:** `src/http/dashboard.html` (hand-edited).
 > **Generated:** `src/http/qymera_dashboard_html.h` — never edit by hand; run
 > `python tools/gen_dashboard_html.py` after any change and rebuild.
+>
+> Three orthogonal systems have been added on top of the render contract:
+> **modular navigation** (`NAV` array), **I18N** (`t`/`tf`/`applyI18n`) and
+> **themes** (CSS tokens + `data-theme`). New strings must be added to **both**
+> the `es` and `en` dictionaries or the UI falls back to the hard-coded text.
 
 The ground rule for every future GUI change:
 
@@ -33,9 +38,21 @@ views.entities = {
 };
 ```
 
-The view registry lives in `src/http/dashboard.html`. Tabs listed in
-`#navTabs` map 1:1 to view keys (`dashboard`, `devices`, `entities`, `rules`,
-`skills`, `logs`, `system`, `network`).
+The view registry lives in `src/http/dashboard.html`. The topbar tab bar is
+**generated** from the `NAV` array; each entry's `id` maps 1:1 to a `views`
+key (`dashboard`, `devices`, `entities`, `rules`, `skills`, `logs`, `system`,
+`network`) and its `icon` is an inline SVG path:
+
+```js
+var NAV = [
+    { id: 'dashboard', icon: 'M3 12l9-9 9 9 ...' },
+    { id: 'devices',   icon: '...' },
+    // ...
+];
+```
+
+`buildNav()` renders a `.tab` button per entry (`data-tab` = id); `applyI18n`
+fills each `data-i18n="nav.<id>"` label from the active language.
 
 `showView(name)` mounts a view on first access (creating a persistent
 `<div id="view-<name>">` host), shows the active host, hides the others, and
@@ -166,11 +183,50 @@ delegated listener on their container instead of per-button listeners.
   single-quoted JS strings by convention.
 - Verify both files are committed together and the firmware builds.
 
-## 10. Adding a new view (correctly)
+## 10. I18N and themes
 
-1. Add a tab button in `#navTabs` with `data-tab="<name>"`.
+Both systems are DOM-attribute-driven and idempotent, so they can be re-applied
+anywhere, any time, with no state.
+
+### I18N
+
+- `I18N = { es: {...}, en: {...} }` holds **both** languages; the active one is
+  `I18N.lang`.
+- `t(key)` returns the string in the active language; missing keys return the
+  key itself.
+- `tf(key, ...args)` formats `{0}`, `{1}`, ... tokens: `tf('rules.ev_sensor', e)`
+  → a string per the active language.
+- `applyI18n(root)` walks `root` and translates:
+  - `[data-i18n="key"]` → `textContent` (static labels, headings, buttons)
+  - `[data-i18n-ph="key"]` → `placeholder` attribute (inputs)
+- `setLang(l)` / `applyLang(l)` (same path) persist, re-translate, and refresh
+  the **active view only** — never the whole page.
+- **Rule for static HTML:** any hard-coded element added to a view's `mount` or
+  to boot-time wiring must carry `data-i18n="key"` **and** call
+  `applyI18n(host)` right after `innerHTML` is set. Dynamic strings (values,
+  cards) are written with `t()/tf()` directly in `update()`.
+- Default language is `es`; the topbar switch is the only language UI.
+
+### Themes
+
+- CSS variables under `:root[data-theme="..."]` define the palette; four themes:
+  `dark` (default), `light`, `forest`, `sand`.
+- `setTheme(name)` sets `document.documentElement.dataset.theme` and persists
+  the choice. The topbar picker (`THEMES` keys) is its UI.
+
+### Preferences
+
+- `loadPrefs()` (run once at boot) reads `localStorage.qymera_theme` and
+  `localStorage.qymera_lang`, then applies both. Values are validated against
+  the known sets before use.
+
+## 11. Adding a new view (correctly)
+
+1. Add an entry to the `NAV` array (`id` + `icon` SVG path); label translations
+   go in both `I18N.es.nav.<id>` and `I18N.en.nav.<id>`.
 2. Register `views.<name> = { mount, refresh: makeRefresh(path, '<name>'), update }`.
-3. In `mount`, build the host DOM once, capture node refs
+3. In `mount`, build the host DOM once, call `applyI18n(host)` after the
+   `innerHTML` assignment, capture node refs
    (`this.__f`, `this.__list`, `this.__count`), and install any delegated
    listeners.
 4. Use the idempotent helpers (`setText`, `setValue`, `setClass`,
@@ -212,3 +268,6 @@ views.sensors = {
 - A stale response overwriting a newer value (no generation guard).
 - Rebuilding a form during a poll (destroying input values / focus).
 - Declaring the device OFFLINE from an unrelated stray rejection.
+- Hard-coding a user-visible string in only one language, or rewriting a
+  `data-i18n` element's `textContent` without also covering the other language.
+- Embedding themes/strings only in JS so that `setTheme`/`setLang` cannot reach it.

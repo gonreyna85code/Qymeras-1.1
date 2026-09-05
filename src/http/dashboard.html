@@ -1,80 +1,341 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Qymera Dashboard</title>
+<title>Qymeras</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-body{background:#f5f7fa;color:#1a1d21;min-height:100vh}
-header{background:#1a1d21;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-header h1{font-size:1.1rem;display:flex;align-items:center;gap:8px}
-.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:#ef4444}
-.dot.ok{background:#22c55e}
-#sysInfo{font-size:0.75rem;color:#a3a9b4}
-nav{display:flex;gap:4px;padding:8px 12px;background:#fff;border-bottom:1px solid #e2e8f0;overflow-x:auto;white-space:nowrap}
-.tab{padding:8px 16px;border:none;background:transparent;color:#475569;font-size:0.85rem;font-weight:500;cursor:pointer;border-bottom:2px solid transparent}
-.tab:hover{color:#1a1d21}.tab.active{color:#2563eb;border-bottom-color:#2563eb}
-main{padding:16px}
-.card{background:#fff;border-radius:8px;border:1px solid #e2e8f0;padding:16px;margin-bottom:16px}
-h2{font-size:0.9rem;font-weight:600;color:#334155;margin-bottom:12px}
-.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+:root{
+  --bg:#0f1115; --surface:#161a21; --surface-2:#1d222c; --border:#262c36;
+  --text:#e8eaee; --text-dim:#9aa3b2; --text-faint:#6b7280;
+  --accent:#5b8cff; --accent-soft:rgba(91,140,255,.14);
+  --success:#22c55e; --warning:#f59e0b; --danger:#ef4444; --info:#38bdf8;
+  --radius:10px; --shadow:0 6px 24px rgba(0,0,0,.35);
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  color-scheme:dark;
+}
+[data-theme="light"]{
+  --bg:#f5f7fa; --surface:#ffffff; --surface-2:#eef1f6; --border:#e2e8f0;
+  --text:#1a1d21; --text-dim:#475569; --text-faint:#94a3b8;
+  --accent:#2563eb; --accent-soft:rgba(37,99,235,.10);
+  --success:#16a34a; --warning:#d97706; --danger:#dc2626; --info:#0284c7;
+  --shadow:0 6px 20px rgba(15,23,42,.06);
+  color-scheme:light;
+}
+[data-theme="forest"]{
+  --bg:#0e1410; --surface:#161d18; --surface-2:#1e281f; --border:#2b3a2e;
+  --text:#e6efe7; --text-dim:#9db3a1; --text-faint:#6d8572;
+  --accent:#6fc276; --accent-soft:rgba(111,194,118,.14);
+  --success:#4ade80; --warning:#fbbf24; --danger:#f87171; --info:#5eead4;
+  color-scheme:dark;
+}
+[data-theme="sand"]{
+  --bg:#f3eedf; --surface:#fbf7ec; --surface-2:#efe8d6; --border:#dfd5bb;
+  --text:#32291c; --text-dim:#6f6147; --text-faint:#9b8d6f;
+  --accent:#b98a3e; --accent-soft:rgba(185,138,62,.14);
+  --success:#3f8f4a; --warning:#b7791f; --danger:#b5482f; --info:#356f8f;
+  color-scheme:light;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---------- Topbar ---------- */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 16px}
+.brand{font-size:1.15rem;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.brand-sub{font-size:.62rem;font-weight:700;background:var(--accent);color:var(--bg);border-radius:999px;padding:2px 7px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--danger);display:inline-block}
+.dot.ok{background:var(--success)}
+.theme-picker{display:flex;gap:6px;align-items:center}
+.theme-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);cursor:pointer;padding:0;transition:transform .15s}
+.theme-dot.active{transform:scale(1.15);border-color:var(--text)}
+.lang-switch{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.lang-btn{border:none;background:transparent;color:var(--text-dim);font-size:.68rem;font-weight:700;padding:4px 9px;cursor:pointer}
+.lang-btn.active{background:var(--accent);color:var(--bg)}
+@media(prefers-reduced-motion:no-preference){.theme-dot,.lang-btn{transition:background .15s,color .15s}}
+/* ---------- Nav ---------- */
+.nav{display:flex;gap:2px;overflow-x:auto;white-space:nowrap;flex:1;min-width:0;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:none;background:transparent;color:var(--text-dim);font-size:.82rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;border-radius:6px 6px 0 0}
+.tab svg{width:15px;height:15px;flex:none}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
+/* ---------- Layout / cards ---------- */
+main{padding:16px;max-width:1200px;margin:0 auto}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
+h2{font-size:.82rem;font-weight:700;color:var(--text);letter-spacing:.2px;text-transform:uppercase;margin-bottom:12px}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
 .section-header h2{margin-bottom:0}
-.grid{display:grid;gap:12px}.grid-2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}.grid-3{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
-.metric{font-size:1.5rem;font-weight:600}
-.entity{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0}
-.entity-info{display:flex;flex-direction:column;gap:2px;overflow:hidden}
-.entity-name{font-weight:500;font-size:0.85rem;word-break:break-word}
-.entity-meta{font-size:0.7rem;color:#64748b}
-.btn{padding:6px 12px;border:none;border-radius:4px;font-size:0.75rem;font-weight:500;cursor:pointer}
+.grid{display:grid;gap:12px}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.grid-3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.metric{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;word-break:break-word}
+.entity{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)}
+.entity-info{display:flex;flex-direction:column;gap:2px;overflow:hidden;min-width:0}
+.entity-name{font-weight:600;font-size:.85rem;word-break:break-word}
+.entity-meta{font-size:.7rem;color:var(--text-dim);word-break:break-word}
+/* ---------- Buttons / controls ---------- */
+.btn{padding:7px 13px;border:none;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;font-family:inherit;background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
-.btn-primary{background:#2563eb;color:#fff}.btn-danger{background:#ef4444;color:#fff}.btn-ghost{background:#f1f5f9;color:#475569}
-.toggle{position:relative;width:44px;height:24px;background:#cbd5e1;border:none;border-radius:12px;cursor:pointer}
-.toggle.on{background:#22c55e}.toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:0.2s}
+.btn-primary{background:var(--accent);color:var(--bg);border-color:transparent}
+.btn-primary:disabled{background:var(--accent);opacity:.55}
+.btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+.btn-ghost{background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
+@media(prefers-reduced-motion:no-preference){.btn{transition:filter .15s,transform .05s}.btn:hover:not(:disabled){filter:brightness(1.1)}.btn:active:not(:disabled){transform:translateY(1px)}}
+.toggle{position:relative;width:44px;height:24px;background:var(--text-faint);border:none;border-radius:999px;cursor:pointer;flex:none}
+.toggle.on{background:var(--success)}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%}
 .toggle.on::after{left:22px}
-.slider{width:100%;height:6px;-webkit-appearance:none;appearance:none;background:#e2e8f0;border-radius:3px;outline:none}
-.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;background:#2563eb;border-radius:50%;cursor:pointer}
-input,select{width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1a1d21;font-size:0.8rem}
-label{display:block;font-size:0.7rem;color:#475569;margin:8px 0 4px}
-.form-row{display:flex;gap:12px}.form-row>div{flex:1}
-.log-entry{font-family:monospace;font-size:0.7rem;padding:6px 10px;background:#f8fafc;border-radius:4px;margin-bottom:4px;border-left:3px solid #2563eb;word-break:break-word;display:flex;gap:6px;flex-wrap:wrap}
-.log-entry.ERROR{border-left-color:#ef4444}.log-entry.WARNING{border-left-color:#f59e0b}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.65rem;font-weight:600}
-.badge-online{background:#dcfce7;color:#166534}.badge-offline{background:#fee2e2;color:#991b1b}
-.badge-pending{background:#fef3c7;color:#92400e}.badge-confirmed{background:#dbeafe;color:#1e40af}.badge-error{background:#fee2e2;color:#991b1b}
-.badge-enabled{background:#dcfce7;color:#166534}.badge-disabled{background:#fee2e2;color:#991b1b}
-.badge-local{background:#e0e7ff;color:#3730a3}.badge-remote{background:#ede9fe;color:#5b21b6}
-.empty{color:#94a3b8;font-size:0.85rem;padding:8px 0}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#991b1b;color:#fff;padding:10px 14px;border-radius:6px;font-size:0.8rem;z-index:99;max-width:90vw;display:none;box-shadow:0 2px 8px rgba(0,0,0,.2)}
-#overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:50;display:none;overflow-y:auto;padding:24px}
+@media(prefers-reduced-motion:no-preference){.toggle{transition:background .15s}.toggle::after{transition:left .15s}}
+.slider{width:100%;height:6px;-webkit-appearance:none;appearance:none;background:var(--border);border-radius:3px;outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;background:var(--accent);border-radius:50%;cursor:pointer}
+input,select,textarea{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);font-size:.82rem;font-family:inherit;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+label{display:block;font-size:.7rem;font-weight:600;color:var(--text-dim);margin:8px 0 4px}
+.form-row{display:flex;gap:12px}
+.form-row>div{flex:1}
+/* ---------- Status styling ---------- */
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.65rem;font-weight:700;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
+.badge-online,.badge-enabled{background:var(--accent-soft);color:var(--success);border-color:transparent}
+.badge-offline,.badge-disabled,.badge-error{background:rgba(239,68,68,.12);color:var(--danger);border-color:transparent}
+.badge-pending{background:rgba(245,158,11,.14);color:var(--warning);border-color:transparent}
+.badge-confirmed{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.badge-local{background:var(--accent-soft);color:var(--info);border-color:transparent}
+.badge-remote{background:rgba(168,85,247,.14);color:#c084fc;border-color:transparent}
+[data-theme="light"] .badge-remote,[data-theme="sand"] .badge-remote{color:#7c3aed}
+.empty{color:var(--text-faint);font-size:.82rem;padding:8px 0}
+/* ---------- Logs ---------- */
+.log-entry{font-family:var(--mono);font-size:.7rem;padding:6px 10px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;border-left:3px solid var(--accent);word-break:break-word;display:flex;gap:6px;flex-wrap:wrap;border:1px solid var(--border)}
+.log-entry.ERROR{border-left-color:var(--danger)}
+.log-entry.WARNING{border-left-color:var(--warning)}
+/* ---------- Toast / overlay ---------- */
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--danger);color:#fff;padding:10px 14px;border-radius:8px;font-size:.8rem;z-index:99;max-width:90vw;display:none;box-shadow:var(--shadow)}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;overflow-y:auto;padding:24px}
 #overlay .card{max-width:720px;margin:0 auto}
-@media(max-width:640px){header h1{font-size:1rem}main{padding:12px}.form-row{flex-direction:column;gap:0}}
+/* ---------- Responsive ---------- */
+@media(max-width:720px){
+  .topbar{gap:8px;padding:8px 10px}
+  .brand{font-size:1rem}
+  main{padding:12px}
+  .form-row{flex-direction:column;gap:0}
+  .nav{order:99;flex-basis:100%}
+  .nav::-webkit-scrollbar{display:none}
+  .topbar-right{margin-left:auto}
+  .chip{display:none}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1><span class="dot" id="statusDot"></span>Qymera Dashboard <span id="netLabel" style="font-size:0.7rem;color:#a3a9b4"></span></h1>
-  <div id="sysInfo">—</div>
+<header class="topbar">
+  <div class="brand">Qymeras <span class="brand-sub">1.1</span></div>
+  <nav id="navTabs" class="nav" aria-label="Menu principal"></nav>
+  <div class="topbar-right">
+    <span class="chip"><span class="dot" id="statusDot"></span><span id="statusText" data-i18n="common.offline">Offline</span></span>
+    <span id="sysInfo" class="chip">—</span>
+    <div id="themePicker" class="theme-picker" role="group" aria-label="Tema"></div>
+    <div class="lang-switch" role="group" aria-label="Idioma">
+      <button class="lang-btn" data-lang="es" type="button">ES</button>
+      <button class="lang-btn" data-lang="en" type="button">EN</button>
+    </div>
+  </div>
 </header>
-<nav id="navTabs">
-  <button class="tab active" data-tab="dashboard">Dashboard</button>
-  <button class="tab" data-tab="devices">Devices</button>
-  <button class="tab" data-tab="entities">Entities</button>
-  <button class="tab" data-tab="rules">Rules</button>
-  <button class="tab" data-tab="skills">Skills</button>
-  <button class="tab" data-tab="logs">Logs</button>
-  <button class="tab" data-tab="system">System</button>
-  <button class="tab" data-tab="network">Network</button>
-</nav>
 <main id="mainContent"></main>
 <div id="toast"></div>
 <div id="overlay"></div>
 <script>
 "use strict";
 var API='/api/v1';
+var lang='es';
 var main=document.getElementById('mainContent');
 var toastEl=document.getElementById('toast');
 var overlayEl=document.getElementById('overlay');
+var statusDot=document.getElementById('statusDot');
+var statusTextEl=document.getElementById('statusText');
+var sysInfoEl=document.getElementById('sysInfo');
+var navTabs=document.getElementById('navTabs');
+var themePickerEl=document.getElementById('themePicker');
+
+/* =====================================================================
+ * I18N (ES/EN). Element texts marked with data-i18n / data-i18n-ph are
+ * applied locally; dynamic strings go through t()/tf() at render time.
+ * ===================================================================== */
+var I18N={
+es:{
+ 'common.online':'En línea','common.offline':'Sin conexión',
+ 'common.on':'Encendido','common.off':'Apagado',
+ 'common.save':'Guardar','common.saving':'Guardando...','common.cancel':'Cancelar',
+ 'common.edit':'Editar','common.delete':'Eliminar','common.create':'Crear',
+ 'common.enable':'Activar','common.disable':'Desactivar',
+ 'common.enabled':'Activa','common.disabled':'Desactivada',
+ 'common.local':'LOCAL','common.remote':'REMOTO',
+ 'common.confirmed':'Confirmado','common.pending':'Pendiente',
+ 'common.failed':'Fallido','common.timeout':'Tiempo agotado','common.error':'Error',
+ 'common.id':'ID','common.model':'Modelo','common.location':'Ubicación','common.role':'Rol',
+ 'common.state':'Estado','common.type':'Tipo','common.unit':'Unidad',
+ 'common.revision':'Revisión','common.schema':'Esquema','common.perms':'Permisos',
+ 'common.trigger':'Disparador','common.delete_q':'¿Eliminar la regla {0}?',
+ 'nav.dashboard':'Panel','nav.devices':'Dispositivos','nav.entities':'Entidades',
+ 'nav.rules':'Reglas','nav.skills':'Habilidades','nav.logs':'Registros',
+ 'nav.system':'Sistema','nav.network':'Red',
+ 'dash.status':'Estado','dash.ip':'Dirección IP','dash.heap':'Memoria libre',
+ 'dash.uptime':'Tiempo activo','dash.device_count':'Nº dispositivos','dash.entity_count':'Nº entidades',
+ 'devices.online':'En línea','devices.offline':'Sin conexión',
+ 'entities.current':'Actual','entities.desired':'Deseado','entities.caps':'Capacidades',
+ 'rules.create':'Crear regla','rules.edit':'Editar regla','rules.rev':'Revisión: ',
+ 'rules.trig':'Disparador: ','rules.enabled':'Activa','rules.disabled':'Desactivada',
+ 'rules.form.name':'Nombre','rules.form.rule_id':'ID de regla (opcional)',
+ 'rules.form.trg_dev':'Disparador - Dispositivo','rules.form.trg_ent':'Disparador - Entidad',
+ 'rules.form.operator':'Operador','rules.form.threshold':'Umbral',
+ 'rules.form.act_dev':'Acción - Dispositivo','rules.form.act_ent':'Acción - Entidad',
+ 'rules.form.act_type':'Tipo de acción','rules.form.value':'Valor',
+ 'rules.form.cooldown':'Enfriamiento (ms)','rules.form.priority':'Prioridad',
+ 'rules.form.max_act':'Máx. activaciones / hora',
+ 'rules.act.SET_BOOL':'Booleano','rules.act.SET_LEVEL':'Nivel','rules.act.SET_VALUE':'Valor','rules.act.TOGGLE':'Conmutar',
+ 'rules.name_req':'El nombre es obligatorio',
+ 'skills.title':'Catálogo de habilidades',
+ 'logs.title':'Registros recientes',
+ 'system.title':'Información del sistema','system.net':'Modo de red','system.ssid':'SSID',
+ 'system.ip':'Dirección IP','system.heap':'Memoria libre','system.uptime':'Tiempo activo',
+ 'system.build':'Versión',
+ 'network.title':'Configuración de red WiFi',
+ 'network.hint':'Configura este dispositivo para unirse a tu WiFi local. Al guardar, se reinicia en modo STA (sin punto de acceso).',
+ 'network.scan':'Escanear redes','network.scan_btn':'Buscar redes',
+ 'network.connect':'Conectar a WiFi','network.ssid':'SSID','network.ssid_ph':'Nombre de red...',
+ 'network.password':'Contraseña','network.password_ph':'Vacío para redes abiertas',
+ 'network.udp_disc':'Puerto de detección UDP','network.udp_ctrl':'Puerto de control UDP',
+ 'network.sta_enable':'Activar STA (conectar al inicio)',
+ 'network.save_reboot':'Guardar y reiniciar',
+ 'network.scanning':'Buscando...','network.no_nets':'No se encontraron redes. Intenta de nuevo.',
+ 'network.click_ssid':'Haz clic en una red para seleccionarla:',
+ 'network.found':'Se encontraron {0} red(es).','network.scan_failed':'Error al buscar.',
+ 'network.ssid_req':'El SSID es obligatorio.',
+ 'network.saved':'Guardado. Reiniciando en modo STA...','network.save_failed':'Error al guardar.'
+},
+en:{
+ 'common.online':'Online','common.offline':'Offline',
+ 'common.on':'On','common.off':'Off',
+ 'common.save':'Save','common.saving':'Saving...','common.cancel':'Cancel',
+ 'common.edit':'Edit','common.delete':'Delete','common.create':'Create',
+ 'common.enable':'Enable','common.disable':'Disable',
+ 'common.enabled':'Enabled','common.disabled':'Disabled',
+ 'common.local':'LOCAL','common.remote':'REMOTE',
+ 'common.confirmed':'Confirmed','common.pending':'Pending',
+ 'common.failed':'Failed','common.timeout':'Timeout','common.error':'Error',
+ 'common.id':'ID','common.model':'Model','common.location':'Location','common.role':'Role',
+ 'common.state':'State','common.type':'Type','common.unit':'Unit',
+ 'common.revision':'Rev','common.schema':'Schema','common.perms':'Perms',
+ 'common.trigger':'Trigger','common.delete_q':'Delete rule {0}?',
+ 'nav.dashboard':'Dashboard','nav.devices':'Devices','nav.entities':'Entities',
+ 'nav.rules':'Rules','nav.skills':'Skills','nav.logs':'Logs',
+ 'nav.system':'System','nav.network':'Network',
+ 'dash.status':'Status','dash.ip':'IP Address','dash.heap':'Free Heap',
+ 'dash.uptime':'Uptime','dash.device_count':'Device Count','dash.entity_count':'Entity Count',
+ 'devices.online':'Online','devices.offline':'Offline',
+ 'entities.current':'Current','entities.desired':'Desired','entities.caps':'Caps',
+ 'rules.create':'Create Rule','rules.edit':'Edit Rule','rules.rev':'Revision: ',
+ 'rules.trig':'Trigger: ','rules.enabled':'Enabled','rules.disabled':'Disabled',
+ 'rules.form.name':'Name','rules.form.rule_id':'Rule ID (optional)',
+ 'rules.form.trg_dev':'Trigger - Device','rules.form.trg_ent':'Trigger - Entity',
+ 'rules.form.operator':'Operator','rules.form.threshold':'Threshold',
+ 'rules.form.act_dev':'Action - Device','rules.form.act_ent':'Action - Entity',
+ 'rules.form.act_type':'Action Type','rules.form.value':'Value',
+ 'rules.form.cooldown':'Cooldown (ms)','rules.form.priority':'Priority',
+ 'rules.form.max_act':'Max activations / hour',
+ 'rules.act.SET_BOOL':'Set Bool','rules.act.SET_LEVEL':'Set Level','rules.act.SET_VALUE':'Set Value','rules.act.TOGGLE':'Toggle',
+ 'rules.name_req':'Name is required',
+ 'skills.title':'Skill Catalog',
+ 'logs.title':'Recent Logs',
+ 'system.title':'System Information','system.net':'Network Mode','system.ssid':'SSID',
+ 'system.ip':'IP Address','system.heap':'Free Heap','system.uptime':'Uptime',
+ 'system.build':'Build',
+ 'network.title':'WiFi Network Setup',
+ 'network.hint':'Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).',
+ 'network.scan':'Scan Networks','network.scan_btn':'Scan for networks',
+ 'network.connect':'Connect to WiFi','network.ssid':'SSID','network.ssid_ph':'Network name...',
+ 'network.password':'Password','network.password_ph':'Leave empty for open networks',
+ 'network.udp_disc':'UDP Discovery Port','network.udp_ctrl':'UDP Control Port',
+ 'network.sta_enable':'Enable STA (connect on boot)',
+ 'network.save_reboot':'Save & Reboot',
+ 'network.scanning':'Scanning...','network.no_nets':'No networks found. Try scanning again.',
+ 'network.click_ssid':'Click an SSID to select it:',
+ 'network.found':'Found {0} network(s).','network.scan_failed':'Scan failed.',
+ 'network.ssid_req':'SSID is required.',
+ 'network.saved':'Saved. Rebooting into STA mode...','network.save_failed':'Save failed.'
+}};
+function t(key){ var d=I18N[lang]||I18N.en; return (d&&d[key]!==undefined)?d[key]:key; }
+function tf(key,map){ var s=t(key),k; for(k in map){ s=s.split('{'+k+'}').join(map[k]); } return s; }
+function applyI18n(root){
+  if(!root) return;
+  var i,ns=root.querySelectorAll('[data-i18n]');
+  for(i=0;i<ns.length;i++) if(ns[i].getAttribute('data-i18n')) ns[i].textContent=t(ns[i].getAttribute('data-i18n'));
+  var ps=root.querySelectorAll('[data-i18n-ph]');
+  for(i=0;i<ps.length;i++) if(ps[i].getAttribute('data-i18n-ph')) ps[i].setAttribute('placeholder',t(ps[i].getAttribute('data-i18n-ph')));
+}
+function applyLang(l){
+  lang=(l==='en')?'en':'es';
+  document.documentElement.lang=lang;
+  var bs=document.querySelectorAll('.lang-btn');
+  Array.prototype.forEach.call(bs,function(b){ b.classList.toggle('active',b.getAttribute('data-lang')===lang); });
+}
+function setLang(l){
+  applyLang(l);
+  try{ localStorage.setItem('qymera_lang',l); }catch(e){}
+  applyI18n(document.body);
+  var v=views[uiState.activeView];
+  if(v&&v.refresh) runViewRefresh(v);
+}
+
+/* =====================================================================
+ * Theme (CSS tokens on <html data-theme>). Persisted, defaults to dark.
+ * ===================================================================== */
+var THEMES=[['dark','#3a3a3a'],['light','#f7f2ff'],['forest','#4c834e'],['sand','#c1af8d']];
+function setTheme(name){
+  document.documentElement.setAttribute('data-theme',name||'dark');
+  try{ localStorage.setItem('qymera_theme',name||'dark'); }catch(e){}
+  Array.prototype.forEach.call(themePickerEl.children,function(b){
+    b.classList.toggle('active',document.documentElement.getAttribute('data-theme')===b.getAttribute('data-theme'));
+  });
+}
+function buildThemePicker(){
+  themePickerEl.innerHTML='';
+  THEMES.forEach(function(th){
+    themePickerEl.appendChild(el('button',{'type':'button','class':'theme-dot','data-theme':th[0],'title':th[0],'style':'background:'+th[1]}));
+  });
+  themePickerEl.addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('.theme-dot'):null;
+    if(b) setTheme(b.getAttribute('data-theme'));
+  });
+}
+
+/* =====================================================================
+ * Navigation: definition -> render -> view. NAV ids map 1:1 to views{}.
+ * ===================================================================== */
+var NAV=[
+  {id:'dashboard',icon:'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z'},
+  {id:'devices',icon:'M9 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9zM5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7'},
+  {id:'entities',icon:'M12 3 3 8v8l9 5 9-5V8l-9-5zM3 8l9 5 9-5M12 13v8'},
+  {id:'rules',icon:'M13 2 4 14h6l-1 8 9-12h-6l1-8z'},
+  {id:'skills',icon:'M12 3l2.1 5.4L20 10l-5.9 1.6L12 17l-2.1-5.4L4 10l5.9-1.6L12 3zM19 17l1 2.4 2.4 1-2.4 1L19 24l-1-2.6-2.4-1 2.4-1L19 17z'},
+  {id:'logs',icon:'M4 6h16M4 12h16M4 18h10'},
+  {id:'system',icon:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'},
+  {id:'network',icon:'M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M2 9.5a15 15 0 0 1 20 0M12 19l.01 0'}
+];
+function iconSvg(path){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+path+'"/></svg>'; }
+function buildNav(){
+  navTabs.innerHTML='';
+  NAV.forEach(function(n){
+    var b=el('button',{'type':'button','class':'tab','data-tab':n.id});
+    b.innerHTML=iconSvg(n.icon)+'<span data-i18n="nav.'+n.id+'"></span>';
+    navTabs.appendChild(b);
+  });
+  applyI18n(navTabs);
+  var langEl=document.querySelector('.lang-switch');
+  langEl.addEventListener('click',function(e){
+    var b=e.target.closest?e.target.closest('.lang-btn'):null;
+    if(b) setLang(b.getAttribute('data-lang'));
+  });
+}
 
 /* =====================================================================
  * UI state is kept apart from the DOM. DOM attributes are only used for
@@ -174,8 +435,8 @@ function esc(s){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-function fmtBool(v){ return v===true?'ON':(v===false?'OFF':esc(v)); }
-function fmtTs(sec){ if(!sec) return '—'; return new Date(sec*1000).toLocaleTimeString(); }
+function fmtBool(v){ return v===true?t('common.on'):(v===false?t('common.off'):esc(v)); }
+function fmtTs(sec){ if(!sec) return '—'; return new Date(sec*1000).toLocaleTimeString(lang); }
 function badgeForStatus(s){
   if(!s) return '';
   var st=String(s);
@@ -186,12 +447,12 @@ function badgeForStatus(s){
 function apiFetch(path,opts){
   opts=opts||{};
   var ctrl=new AbortController();
-  var t=setTimeout(function(){ctrl.abort();},8000);
+  var timer=setTimeout(function(){ctrl.abort();},8000);
   var init={headers:{'Content-Type':'application/json'},signal:ctrl.signal};
   if(opts.method){ init.method=opts.method; }
   if(opts.body){ init.body=opts.body; }
   return fetch(API+path,init).then(function(r){
-      clearTimeout(t);
+      clearTimeout(timer);
       return r.text().then(function(txt){
         var j=null;
         try{ j=JSON.parse(txt); }catch(e){ j=null; }
@@ -200,19 +461,16 @@ function apiFetch(path,opts){
         return j.data;
       });
     }).catch(function(e){
-      clearTimeout(t);
+      clearTimeout(timer);
       if(e&&e.name==='AbortError') throw new Error('Timeout: '+path+' unreachable');
       throw e;
     });
 }
-var statusDot=document.getElementById('statusDot');
-var sysInfoEl=document.getElementById('sysInfo');
-var netLabelEl=document.getElementById('netLabel');
 function setOnline(b){
   statusDot.className=b?'dot ok':'dot';
-  sysInfoEl.textContent=b?'':'OFFLINE';
+  setText(statusTextEl,t(b?'common.online':'common.offline'));
 }
-function setNetLabel(txt){ netLabelEl.textContent=txt; }
+function setNetLabel(txt){ setText(sysInfoEl,txt); }
 /* Human label for the connection the device is currently hosting. */
 function netLabelFor(s){
   if(!s||!s.network) return '';
@@ -220,7 +478,7 @@ function netLabelFor(s){
 }
 var toastTimer;
 function showError(err){
-  toastEl.textContent='Error: '+(err&&err.message?err.message:'unknown');
+  toastEl.textContent=(t('common.error')+': ')+(err&&err.message?err.message:'unknown');
   toastEl.style.display='block';
   clearTimeout(toastTimer);
   toastTimer=setTimeout(function(){ toastEl.style.display='none'; },4000);
@@ -231,7 +489,6 @@ function showError(err){
  * Each view keeps: gen (stale-response check), inflight (dedup), mount/refresh/update.
  * ===================================================================== */
 var views={};
-var navTabs=document.getElementById('navTabs');
 function makeRefresh(path,viewName){
   return function(gen){
     return apiFetch(path).then(function(data){
@@ -285,15 +542,15 @@ function pollTick(){
 views.dashboard={
   mount:function(host){
     host.innerHTML=
-      '<div class="section-header"><h2>Qymera Dashboard</h2></div>'+
       '<div class="grid grid-3">'+
-      '<div class="card"><h2>Status</h2><div class="metric"><span class="badge badge-online">ONLINE</span></div></div>'+
-      '<div class="card"><h2>IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
-      '<div class="card"><h2>Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
-      '<div class="card"><h2>Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
-      '<div class="card"><h2>Device Count</h2><div class="metric" data-field="device_count">—</div></div>'+
-      '<div class="card"><h2>Entity Count</h2><div class="metric" data-field="entity_count">—</div></div>'+
+      '<div class="card"><h2 data-i18n="dash.status">Status</h2><div class="metric"><span class="badge badge-online" data-i18n="common.online">Online</span></div></div>'+
+      '<div class="card"><h2 data-i18n="dash.ip">IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
+      '<div class="card"><h2 data-i18n="dash.heap">Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
+      '<div class="card"><h2 data-i18n="dash.uptime">Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
+      '<div class="card"><h2 data-i18n="dash.device_count">Device Count</h2><div class="metric" data-field="device_count">—</div></div>'+
+      '<div class="card"><h2 data-i18n="dash.entity_count">Entity Count</h2><div class="metric" data-field="entity_count">—</div></div>'+
       '</div>';
+    applyI18n(host);
     var f={};
     ['ip','heap','uptime','device_count','entity_count'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
@@ -318,8 +575,6 @@ views.dashboard={
 function deviceCardNew(){ return el('div',{'class':'card','data-device-key':''}); }
 function updateDeviceCard(dev,node){
   var local=(dev.role==='dashboard');
-  var mode=local?'LOCAL':'REMOTE';
-  var state=dev.state?String(dev.state):(dev.online?'operational':'offline');
   if(!node.__built){
     node.innerHTML=''+
       '<h2></h2>'+
@@ -333,25 +588,26 @@ function updateDeviceCard(dev,node){
   var h2=node.querySelector('h2');
   h2.textContent='';
   h2.appendChild(el('span',{'text':esc(dev.name)}));
-  h2.appendChild(el('span',{'class':'badge '+(local?'badge-local':'badge-remote'),'text':mode}));
-  setText(node.querySelector('[data-field="id"]'),'ID: '+dev.device_id);
-  setText(node.querySelector('[data-field="meta"]'),'Model: '+(dev.model||'')+' | Location: '+(dev.location||'—')+' | Role: '+(dev.role||'—'));
-  setText(node.querySelector('[data-field="state"]'),'State: '+esc(state));
+  h2.appendChild(el('span',{'class':'badge '+(local?'badge-local':'badge-remote'),'text':local?t('common.local'):t('common.remote')}));
+  setText(node.querySelector('[data-field="id"]'),t('common.id')+': '+dev.device_id);
+  setText(node.querySelector('[data-field="meta"]'),t('common.model')+': '+(dev.model||'')+' | '+t('common.location')+': '+(dev.location||'—')+' | '+t('common.role')+': '+(dev.role||'—'));
+  setText(node.querySelector('[data-field="state"]'),t('common.state')+': '+esc(String(dev.state?dev.state:(dev.online?'operational':'offline'))));
   var ob=node.querySelector('[data-field="online"]');
-  setText(ob,dev.online?'Online':'Offline');
+  setText(ob,dev.online?t('devices.online'):t('devices.offline'));
   setClass(ob,'badge-online',!!dev.online);
   setClass(ob,'badge-offline',!dev.online);
 }
 views.devices={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2>Devices (<span data-field="count">0</span>)</h2></div><div id="deviceList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.devices">Devices</h2><span class="empty"></span></div><div id="deviceList" class="grid grid-2"></div>';
+    applyI18n(host);
     this.__list=host.querySelector('#deviceList');
-    this.__count=host.querySelector('[data-field="count"]');
+    this.__count=host.querySelector('.section-header .empty');
   },
   refresh:makeRefresh('/devices','devices'),
   update:function(d){
     var list=d||[];
-    setText(this.__count,list.length);
+    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.device_id;},'data-device-key',deviceCardNew,updateDeviceCard);
   }
 };
@@ -380,16 +636,16 @@ function updateEntityCard(ent,node){
   h2.textContent='';
   h2.appendChild(el('span',{'text':esc(ent.name)}));
   h2.appendChild(el('span',{'class':'entity-meta','text':' ('+esc(ent.device_id)+')'}));
-  setText(node.querySelector('[data-field="devkey"]'),'ID: '+esc(key));
+  setText(node.querySelector('[data-field="devkey"]'),t('common.id')+': '+esc(key));
   setText(node.querySelector('[data-field="meta"]'),
-    'Type: '+(ent.type||'')+' | Caps: '+((ent.capabilities||[]).join(', '))+' | Unit: '+(ent.unit||''));
+    t('common.type')+': '+(ent.type||'')+' | '+t('entities.caps')+': '+((ent.capabilities||[]).join(', '))+' | '+t('common.unit')+': '+(ent.unit||''));
   var cmds=node.querySelector('[data-field="cmds"]');
-  cmds.textContent='Cmd: ';
+  cmds.textContent=t('common.state')+': ';
   var b=el('span',{'class':'badge '+badgeForStatus(ent.cmd_status)});
   setText(b,ent.cmd_status||'—');
   cmds.appendChild(b);
   setText(node.querySelector('[data-field="reliability"]'),'Reliability: '+(ent.reliability==null?'':ent.reliability));
-  setText(node.querySelector('[data-field="values"]'),'Current: '+fmtBool(ent.current)+'  Desired: '+fmtBool(ent.desired));
+  setText(node.querySelector('[data-field="values"]'),t('entities.current')+': '+fmtBool(ent.current)+'  '+t('entities.desired')+': '+fmtBool(ent.desired));
   updateEntityControl(ent,node);
 }
 function updateEntityControl(ent,node){
@@ -403,7 +659,7 @@ function updateEntityControl(ent,node){
   if(node.__ctlType!==type){
     holder.innerHTML='';
     if(type==='relay'){
-      node.__ctl=el('button',{'class':'toggle','data-action':'toggle','data-k':key,'aria-label':'toggle'});
+      node.__ctl=el('button',{'class':'toggle','data-action':'toggle','data-k':key,'aria-label':t('nav.rules')});
       holder.appendChild(node.__ctl);
     } else if(type==='dimmer'){
       node.__ctl=el('input',{'type':'range','class':'slider','min':'0','max':'100','data-action':'dimmer','data-k':key});
@@ -447,9 +703,10 @@ function handleDimmer(s){
 }
 views.entities={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2>Entities (<span data-field="count">0</span>)</h2></div><div id="entityList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.entities">Entities</h2><span class="empty"></span></div><div id="entityList" class="grid grid-2"></div>';
+    applyI18n(host);
     this.__list=host.querySelector('#entityList');
-    this.__count=host.querySelector('[data-field="count"]');
+    this.__count=host.querySelector('.section-header .empty');
     /* Event delegation: installed once at mount, never re-attached. */
     host.addEventListener('click',function(e){
       var t=e.target.closest?e.target.closest('[data-action="toggle"]'):null;
@@ -463,7 +720,7 @@ views.entities={
   refresh:makeRefresh('/entities','entities'),
   update:function(d){
     var list=d||[];
-    setText(this.__count,list.length);
+    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.device_id+'/'+x.entity_id;},'data-entity-key',entityCardNew,updateEntityCard);
   }
 };
@@ -473,8 +730,8 @@ views.entities={
  * ===================================================================== */
 function ruleBrief(rule){
   if(rule.trigger&&rule.trigger.length){
-    var t=rule.trigger[0];
-    if(t&&t.entity) return esc(t.entity.device_id+'/'+t.entity.entity_id)+' '+(t.operator?esc(t.operator):'')+' '+esc(t.threshold);
+    var t0=rule.trigger[0];
+    if(t0&&t0.entity) return esc(t0.entity.device_id+'/'+t0.entity.entity_id)+' '+(t0.operator?esc(t0.operator):'')+' '+esc(t0.threshold);
   }
   return '—';
 }
@@ -488,35 +745,40 @@ function updateRuleCard(rule,node){
       '<span class="entity-meta" data-field="meta"></span>'+
       '<span class="entity-meta" data-field="trigger"></span></div>'+
       '<span class="badge" data-field="enabled"></span></div>'+
-      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost" data-action="edit-rule">Edit</button>'+
-      '<button class="btn" data-action="toggle-rule">Toggle</button>'+
-      '<button class="btn btn-danger" data-action="del-rule">Delete</button></div>';
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button class="btn btn-ghost" data-action="edit-rule"></button>'+
+      '<button class="btn" data-action="toggle-rule"></button>'+
+      '<button class="btn btn-danger" data-action="del-rule"></button></div>';
     node.__built=true;
   }
   var h2=node.querySelector('h2');
   h2.textContent='';
   h2.appendChild(el('span',{'text':esc(rule.name)}));
-  setText(node.querySelector('[data-field="id"]'),'ID: '+rule.rule_id);
-  setText(node.querySelector('[data-field="meta"]'),'Revision: '+(rule.revision||0));
-  setText(node.querySelector('[data-field="trigger"]'),'Trigger: '+(rule.trigger&&rule.trigger.length?ruleBrief(rule):'—'));
+  setText(node.querySelector('[data-field="id"]'),t('common.id')+': '+rule.rule_id);
+  setText(node.querySelector('[data-field="meta"]'),t('common.revision')+': '+(rule.revision||0));
+  setText(node.querySelector('[data-field="trigger"]'),t('common.trigger')+': '+(rule.trigger&&rule.trigger.length?ruleBrief(rule):'—'));
   var eb=node.querySelector('[data-field="enabled"]');
-  setText(eb,rule.enabled?'Enabled':'Disabled');
+  setText(eb,rule.enabled?t('rules.enabled'):t('rules.disabled'));
   setClass(eb,'badge-enabled',!!rule.enabled);
   setClass(eb,'badge-disabled',!rule.enabled);
   node.querySelector('[data-action="edit-rule"]').setAttribute('data-rule',rule.rule_id);
+  setText(node.querySelector('[data-action="edit-rule"]'),t('common.edit'));
   var tb=node.querySelector('[data-action="toggle-rule"]');
   tb.setAttribute('data-rule',rule.rule_id);
-  setText(tb,rule.enabled?'Disable':'Enable');
+  setText(tb,rule.enabled?t('common.disable'):t('common.enable'));
   setClass(tb,'btn-danger',!!rule.enabled);
   setClass(tb,'btn-primary',!rule.enabled);
   node.querySelector('[data-action="del-rule"]').setAttribute('data-rule',rule.rule_id);
+  setText(node.querySelector('[data-action="del-rule"]'),t('common.delete'));
 }
 views.rules={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2>Rules (<span data-field="count">0</span>)</h2>'+
-      '<button class="btn btn-primary" data-action="new-rule">Create Rule</button></div><div id="ruleList"></div>';
+    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.rules">Rules</h2>'+
+      '<span class="empty"></span>'+
+      '<button class="btn btn-primary" data-action="new-rule" data-i18n="rules.create">Create Rule</button></div><div id="ruleList"></div>';
+    applyI18n(host);
     this.__list=host.querySelector('#ruleList');
-    this.__count=host.querySelector('[data-field="count"]');
+    this.__count=host.querySelector('.section-header .empty');
     host.addEventListener('click',function(e){
       var t=null;
       if(e.target.closest) t=e.target.closest('[data-action]');
@@ -531,19 +793,20 @@ views.rules={
   refresh:makeRefresh('/rules','rules'),
   update:function(r){
     var list=r||[];
-    setText(this.__count,list.length);
+    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.rule_id;},'data-rule-key',ruleCardNew,updateRuleCard);
   }
 };
 function toggleRule(id){
   var card=document.querySelector('[data-rule-key="'+id+'"]');
-  var en=card?card.querySelector('[data-field="enabled"]').textContent==='Enabled':false;
+  var enDiag=card?card.querySelector('[data-field="enabled"]').textContent:'';
+  var en=(enDiag===t('rules.enabled'));
   apiFetch('/rules/'+encodeURIComponent(id)+(en?'/disable':'/enable'),{method:'POST'})
     .then(function(){ runViewRefresh(views.rules); })
     .catch(showError);
 }
 function deleteRule(id){
-  if(!window.confirm('Delete rule '+id+'?')) return;
+  if(!window.confirm(tf('common.delete_q',{0:id}))) return;
   apiFetch('/rules/'+encodeURIComponent(id),{method:'DELETE'})
     .then(function(){ runViewRefresh(views.rules); })
     .catch(showError);
@@ -582,28 +845,28 @@ function openRuleEditor(id){
 }
 function buildRuleForm(rule){
   var card=el('div',{'class':'card'},[
-    el('h2',{'text':rule?'Edit Rule':'Create Rule'}),
+    el('h2',{'text':rule?t('rules.edit'):t('rules.create')}),
     el('form',{'id':'ruleForm'})
   ]);
   var form=card.querySelector('form');
   var trig=(rule&&rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
   var actions=(rule&&rule.actions&&rule.actions.length)?rule.actions:[];
   var act=actions[0]||null;
-  addRow(form,'Name',input('name',rule?rule.name:''),true);
-  addRow(form,'Rule ID (optional)',input('rule_id',(rule?rule.rule_id:'')));
-  addRow(form,'Trigger - Device ID',input('trg_dev',trig?(trig.entity?trig.entity.device_id:''):'dashboard'));
-  addRow(form,'Trigger - Entity ID',input('trg_ent',trig?(trig.entity?trig.entity.entity_id:''):'temperature'));
-  addRow(form,'Operator',sel('trg_op',[['GT','>'],['LT','<'],['GE','≥'],['LE','≤'],['EQ','='],['NE','≠']],trig?trig.operator:'GT'));
-  addRow(form,'Threshold',input('trg_threshold','number',trig?trig.threshold:30));
-  addRow(form,'Action - Device ID',input('act_dev',act?(act.entity?act.entity.device_id:''):'dashboard'));
-  addRow(form,'Action - Entity ID',input('act_ent',act?(act.entity?act.entity.entity_id:''):'fan'));
-  addRow(form,'Action Type',sel('act_type',[['SET_BOOL','Set Bool'],['SET_LEVEL','Set Level'],['SET_VALUE','Set Value'],['TOGGLE','Toggle']],act?act.action:'SET_BOOL'));
-  addRow(form,'Value',input('act_value','number',act?(act.value==null?1:act.value):1));
-  addRow(form,'Cooldown (ms)',input('cooldown_ms','number',rule?rule.cooldown_ms:60000));
-  addRow(form,'Priority',input('priority','number',rule?rule.priority:10));
-  addRow(form,'Max activations / hour',input('max_act','number',rule?rule.max_activations_per_hour:10));
-  var save=el('button',{'type':'button','class':'btn btn-primary','style':'margin-top:12px;width:100%'},{'text':'Save'});
-  var cancel=el('button',{'type':'button','class':'btn btn-ghost','style':'margin-top:8px;width:100%'},{'text':'Cancel'});
+  addRow(form,t('rules.form.name'),input('name',rule?rule.name:''),true);
+  addRow(form,t('rules.form.rule_id'),input('rule_id',(rule?rule.rule_id:'')));
+  addRow(form,t('rules.form.trg_dev'),input('trg_dev',trig?(trig.entity?trig.entity.device_id:''):'dashboard'));
+  addRow(form,t('rules.form.trg_ent'),input('trg_ent',trig?(trig.entity?trig.entity.entity_id:''):'temperature'));
+  addRow(form,t('rules.form.operator'),sel('trg_op',[['GT','>'],['LT','<'],['GE','≥'],['LE','≤'],['EQ','='],['NE','≠']],trig?trig.operator:'GT'));
+  addRow(form,t('rules.form.threshold'),input('trg_threshold','number',trig?trig.threshold:30));
+  addRow(form,t('rules.form.act_dev'),input('act_dev',act?(act.entity?act.entity.device_id:''):'dashboard'));
+  addRow(form,t('rules.form.act_ent'),input('act_ent',act?(act.entity?act.entity.entity_id:''):'fan'));
+  addRow(form,t('rules.form.act_type'),sel('act_type',[['SET_BOOL',t('rules.act.SET_BOOL')],['SET_LEVEL',t('rules.act.SET_LEVEL')],['SET_VALUE',t('rules.act.SET_VALUE')],['TOGGLE',t('rules.act.TOGGLE')]],act?act.action:'SET_BOOL'));
+  addRow(form,t('rules.form.value'),input('act_value','number',act?(act.value==null?1:act.value):1));
+  addRow(form,t('rules.form.cooldown'),input('cooldown_ms','number',rule?rule.cooldown_ms:60000));
+  addRow(form,t('rules.form.priority'),input('priority','number',rule?rule.priority:10));
+  addRow(form,t('rules.form.max_act'),input('max_act','number',rule?rule.max_activations_per_hour:10));
+  var save=el('button',{'type':'button','class':'btn btn-primary','style':'margin-top:12px;width:100%'},{'text':t('common.save')});
+  var cancel=el('button',{'type':'button','class':'btn btn-ghost','style':'margin-top:8px;width:100%'},{'text':t('common.cancel')});
   var btnRow=el('div',{'style':'margin-top:12px'},[save,cancel]);
   form.appendChild(btnRow);
   save.addEventListener('click',function(){ saveRuleForm(); });
@@ -636,7 +899,7 @@ function saveRuleForm(){
   if(!f) return;
   var fels=f.elements;
   var elt=fels.name;
-  if(!elt||!elt.value.trim()){ showError(new Error('Name is required')); return; }
+  if(!elt||!elt.value.trim()){ showError(new Error(t('rules.name_req'))); return; }
   var body=collectRuleBody(fels);
   var id=uiState.editingRuleId;
   var isNew=!id;
@@ -666,24 +929,25 @@ function updateSkillCard(sk,node){
   h2.appendChild(el('span',{'text':esc(sk.name)}));
   setText(node.querySelector('[data-field="ver"]'),'v'+sk.version);
   setText(node.querySelector('[data-field="desc"]'),sk.description||'');
-  setText(node.querySelector('[data-field="schema"]'),'Schema: '+(sk.schema_id||''));
+  setText(node.querySelector('[data-field="schema"]'),t('common.schema')+': '+(sk.schema_id||''));
   var perms='';
   if(sk.permissions&1) perms+='READ ';
   if(sk.permissions&2) perms+='CONTROL ';
   if(sk.permissions&4) perms+='RULE_READ ';
   if(sk.permissions&8) perms+='RULE_WRITE ';
-  setText(node.querySelector('[data-field="perms"]'),'Perms: '+perms);
+  setText(node.querySelector('[data-field="perms"]'),t('common.perms')+': '+perms);
 }
 views.skills={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2>Skill Catalog (<span data-field="count">0</span>)</h2></div><div id="skillList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="section-header"><h2 data-i18n="skills.title">Skills</h2><span class="empty"></span></div><div id="skillList" class="grid grid-2"></div>';
+    applyI18n(host);
     this.__list=host.querySelector('#skillList');
-    this.__count=host.querySelector('[data-field="count"]');
+    this.__count=host.querySelector('.section-header .empty');
   },
   refresh:makeRefresh('/skills','skills'),
   update:function(sk){
     var list=sk||[];
-    setText(this.__count,list.length);
+    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.name;},'data-skill-key',skillCardNew,updateSkillCard);
   }
 };
@@ -702,20 +966,21 @@ function updateLogCard(e,node){
   setClass(node,'WARNING',lvl==='WARNING');
   var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
   node.textContent='';
-  node.appendChild(el('span',{'style':'color:#94a3b8','text':'['+fmtTs(ts)+']'}));
+  node.appendChild(el('span',{'style':'color:var(--text-faint)','text':'['+fmtTs(ts)+']'}));
   node.appendChild(el('span',{'style':'font-weight:500','text':(e.source||'')+': '}));
   node.appendChild(el('span',{'text':e.msg||''}));
 }
 views.logs={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2>Recent Logs (<span data-field="count">0</span>)</h2></div><div id="logList"></div>';
+    host.innerHTML='<div class="section-header"><h2 data-i18n="logs.title">Logs</h2><span class="empty"></span></div><div id="logList"></div>';
+    applyI18n(host);
     this.__list=host.querySelector('#logList');
-    this.__count=host.querySelector('[data-field="count"]');
+    this.__count=host.querySelector('.section-header .empty');
   },
   refresh:makeRefresh('/logs','logs'),
   update:function(l){
     var list=(l||[]).slice(0,50);
-    setText(this.__count,list.length);
+    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,logKey,'data-log-key',logCardNew,updateLogCard);
   }
 };
@@ -726,15 +991,15 @@ views.logs={
 views.system={
   mount:function(host){
     host.innerHTML=
-      '<div class="section-header"><h2>System Information</h2></div>'+
       '<div class="grid grid-3">'+
-      '<div class="card"><h2>Network Mode</h2><div class="metric" data-field="net">—</div></div>'+
-      '<div class="card"><h2>SSID</h2><div class="metric" data-field="ssid">—</div></div>'+
-      '<div class="card"><h2>IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
-      '<div class="card"><h2>Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
-      '<div class="card"><h2>Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
-      '<div class="card"><h2>Build</h2><div class="metric" data-field="build">ESP32 Dashboard</div></div>'+
+      '<div class="card"><h2 data-i18n="system.net">Network</h2><div class="metric" data-field="net">—</div></div>'+
+      '<div class="card"><h2 data-i18n="system.ssid">SSID</h2><div class="metric" data-field="ssid">—</div></div>'+
+      '<div class="card"><h2 data-i18n="system.ip">IP</h2><div class="metric" data-field="ip">—</div></div>'+
+      '<div class="card"><h2 data-i18n="system.heap">Heap</h2><div class="metric" data-field="heap">—</div></div>'+
+      '<div class="card"><h2 data-i18n="system.uptime">Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
+      '<div class="card"><h2 data-i18n="system.build">Build</h2><div class="metric" data-field="build">ESP32 Dashboard</div></div>'+
       '</div>';
+    applyI18n(host);
     var f={};
     ['net','ssid','ip','heap','uptime','build'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
@@ -762,20 +1027,20 @@ views.network={
   pollable:false,
   mount:function(host){
     host.innerHTML=
-      '<div class="section-header"><h2>WiFi Network Setup</h2></div>'+
-      '<div class="card"><p class="entity-meta">Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).</p></div>'+
-      '<div class="card"><h2>Scan Networks</h2>'+
-        '<button class="btn btn-primary" id="scanBtn">Scan for networks</button>'+
+      '<div class="card"><p class="entity-meta" data-i18n="network.hint">Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).</p></div>'+
+      '<div class="card"><h2 data-i18n="network.scan">Scan Networks</h2>'+
+        '<button class="btn btn-primary" id="scanBtn" data-i18n="network.scan_btn">Scan for networks</button>'+
         '<div id="scanList" style="margin-top:12px"></div></div>'+
-      '<div class="card"><h2>Connect to WiFi</h2>'+
-        '<div class="form-row"><div><label>SSID</label><input id="netSsid" list="scanOpts" placeholder="Network name..."></div>'+
-        '<div><label>Password</label><input id="netPassword" type="password" placeholder="Leave empty for open networks"></div></div>'+
-        '<div class="form-row"><div><label>UDP Discovery Port</label><input id="netUdpDiscovery" type="number" value="13345" min="1" placeholder="13345"></div>'+
-        '<div><label>UDP Control Port</label><input id="netUdpControl" type="number" value="13346" min="1" placeholder="13346"></div></div>'+
+      '<div class="card"><h2 data-i18n="network.connect">Connect to WiFi</h2>'+
+        '<div class="form-row"><div><label data-i18n="network.ssid">SSID</label><input id="netSsid" list="scanOpts" data-i18n-ph="network.ssid_ph" placeholder="Network name..."></div>'+
+        '<div><label data-i18n="network.password">Password</label><input id="netPassword" type="password" data-i18n-ph="network.password_ph" placeholder="Leave empty for open networks"></div></div>'+
+        '<div class="form-row"><div><label data-i18n="network.udp_disc">UDP Discovery Port</label><input id="netUdpDiscovery" type="number" value="13345" min="1" placeholder="13345"></div>'+
+        '<div><label data-i18n="network.udp_ctrl">UDP Control Port</label><input id="netUdpControl" type="number" value="13346" min="1" placeholder="13346"></div></div>'+
         '<datalist id="scanOpts"></datalist>'+
-        '<label><input type="checkbox" id="netEnable" checked style="width:auto;margin-right:6px">Enable STA (connect on boot)</label>'+
-        '<div style="margin-top:12px"><button class="btn btn-primary" id="connectBtn">Save & Reboot</button> <span id="netMsg" class="empty"></span></div>'+
+        '<label><input type="checkbox" id="netEnable" checked style="width:auto;margin-right:6px"><span data-i18n="network.sta_enable">Enable STA (connect on boot)</span></label>'+
+        '<div style="margin-top:12px"><button class="btn btn-primary" id="connectBtn" data-i18n="network.save_reboot">Save & Reboot</button> <span id="netMsg" class="empty"></span></div>'+
       '</div>';
+    applyI18n(host);
     var scanBtn=document.getElementById('scanBtn');
     var connectBtn=document.getElementById('connectBtn');
     var msg=document.getElementById('netMsg');
@@ -785,11 +1050,12 @@ views.network={
     var passEl=document.getElementById('netPassword');
     var enableEl=document.getElementById('netEnable');
     var renderScanList=function(nets){
-      if(!nets.length){ scanList.innerHTML='<div class="empty">No networks found. Try scanning again.</div>'; return; }
-      scanList.innerHTML='<div class="empty" style="margin-bottom:6px">Click an SSID to select it:</div>'+
+      if(!nets.length){ scanList.innerHTML='<div class="empty" data-i18n="network.no_nets">No networks found. Try scanning again.</div>'; applyI18n(scanList); return; }
+      scanList.innerHTML='<div class="empty" style="margin-bottom:6px" data-i18n="network.click_ssid">Click an SSID to select it:</div>'+
         nets.map(function(n){
           return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>';
         }).join('');
+      applyI18n(scanList);
       scanOpts.innerHTML=nets.map(function(n){ return '<option value="'+esc(n.ssid)+'">'; }).join('');
     };
     /* Delegation: scan buttons are recreated per scan, so listen once here. */
@@ -798,27 +1064,27 @@ views.network={
       if(b) setValue(ssidEl,b.getAttribute('data-ssid'));
     });
     scanBtn.addEventListener('click',function(){
-      msg.textContent='Scanning...';
+      msg.textContent=t('network.scanning');
       setDisabled(scanBtn,true);
       apiFetch('/wifi/scan').then(function(nets){
         scanCache=nets||[];
         renderScanList(scanCache);
-        msg.textContent='Found '+scanCache.length+' network(s).';
+        msg.textContent=tf('network.found',{0:scanCache.length});
         setDisabled(scanBtn,false);
-      }).catch(function(){ msg.textContent='Scan failed.'; setDisabled(scanBtn,false); });
+      }).catch(function(){ msg.textContent=t('network.scan_failed'); setDisabled(scanBtn,false); });
     });
     connectBtn.addEventListener('click',function(){
       var ssid=ssidEl.value.trim();
-      if(!ssid){ msg.textContent='SSID is required.'; return; }
+      if(!ssid){ msg.textContent=t('network.ssid_req'); return; }
       var password=passEl.value;
       var enable=enableEl.checked;
       var udpDiscovery=document.getElementById('netUdpDiscovery').value||'13345';
       var udpControl=document.getElementById('netUdpControl').value||'13346';
-      msg.textContent='Saving...';
+      msg.textContent=t('common.saving');
       setDisabled(connectBtn,true);
       apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable,udp_discovery_port:Number(udpDiscovery),udp_control_port:Number(udpControl)})})
-        .then(function(){ msg.textContent='Saved. Rebooting into STA mode...'; setTimeout(function(){ setOnline(false); },500); })
-        .catch(function(){ msg.textContent='Save failed.'; setDisabled(connectBtn,false); });
+        .then(function(){ msg.textContent=t('network.saved'); setTimeout(function(){ setOnline(false); },500); })
+        .catch(function(){ msg.textContent=t('network.save_failed'); setDisabled(connectBtn,false); });
     });
   }
 };
@@ -835,8 +1101,21 @@ navTabs.addEventListener('click',function(e){
 /* Every apiFetch call site has its own .catch, so any unhandled rejection is
  * a bug, not a live connectivity change - do not flip the global indicator. */
 
-showView('dashboard');
+buildThemePicker();
+buildNav();
+loadPrefs();
+setOnline(false);
 setInterval(pollTick,10000);
+showView('dashboard');
+
+function loadPrefs(){
+  var t0='dark',l='es';
+  try{ t0=localStorage.getItem('qymera_theme')||'dark'; l=localStorage.getItem('qymera_lang')||'es'; }catch(e){}
+  if(l!=='es'&&l!=='en') l='es';
+  applyLang(l);
+  applyI18n(document.body);
+  setTheme(t0);
+}
 </script>
 </body>
 </html>
