@@ -38,21 +38,25 @@ views.entities = {
 };
 ```
 
-The view registry lives in `src/http/dashboard.html`. The topbar tab bar is
-**generated** from the `NAV` array; each entry's `id` maps 1:1 to a `views`
-key (`dashboard`, `devices`, `entities`, `rules`, `skills`, `logs`, `system`,
-`network`) and its `icon` is an inline SVG path:
+The view registry lives in `src/http/dashboard.html`. The navigation (sidebar
+on desktop, bottom bar on mobile, matching `main`'s `.app` / `.nav` /
+`.navitem` model) is **generated** from the `NAV` array; each entry's `id`
+maps 1:1 to a `views` key (`dashboard`, `devices`, `entities`, `rules`,
+`skills`, `logs`, `system`, `network`) and its `icon` is an inline SVG path:
 
 ```js
 var NAV = [
     { id: 'dashboard', icon: 'M3 12l9-9 9 9 ...' },
     { id: 'devices',   icon: '...' },
+    { sep: true },                  // renders a .nav-sep divider
     // ...
 ];
 ```
 
-`buildNav()` renders a `.tab` button per entry (`data-tab` = id); `applyI18n`
-fills each `data-i18n="nav.<id>"` label from the active language.
+`buildNav()` renders a `.navitem` button per entry (`data-tab` = id);
+`applyI18n` fills each `data-i18n="nav.<id>"` label from the active language.
+`data-bg` on `#themePicker` dots and `data-lang` on `#langSwitch` buttons are
+static in the markup (the Qymera 1.1 theme model).
 
 `showView(name)` mounts a view on first access (creating a persistent
 `<div id="view-<name>">` host), shows the active host, hides the others, and
@@ -191,34 +195,44 @@ anywhere, any time, with no state.
 ### I18N
 
 - `I18N = { es: {...}, en: {...} }` holds **both** languages; the active one is
-  `I18N.lang`.
+  `LANG`.
 - `t(key)` returns the string in the active language; missing keys return the
   key itself.
-- `tf(key, ...args)` formats `{0}`, `{1}`, ... tokens: `tf('rules.ev_sensor', e)`
-  → a string per the active language.
+- `tf(key, map)` formats `{0}`, `{1}`, ... tokens:
+  `tf('log.updated', {0: fmtTs(t), 1: n})` → a string per the active language.
 - `applyI18n(root)` walks `root` and translates:
   - `[data-i18n="key"]` → `textContent` (static labels, headings, buttons)
-  - `[data-i18n-ph="key"]` → `placeholder` attribute (inputs)
-- `setLang(l)` / `applyLang(l)` (same path) persist, re-translate, and refresh
-  the **active view only** — never the whole page.
+  - `[data-i18n-ph="key"]` → `placeholder` attribute with `'...'` appended
+    (Qymera 1.1 behavior)
+- `setLang(l)` (same path for both languages) persists `localStorage.lang`,
+  re-translates, and refreshes the **active view only** — never the whole page.
 - **Rule for static HTML:** any hard-coded element added to a view's `mount` or
   to boot-time wiring must carry `data-i18n="key"` **and** call
   `applyI18n(host)` right after `innerHTML` is set. Dynamic strings (values,
   cards) are written with `t()/tf()` directly in `update()`.
-- Default language is `es`; the topbar switch is the only language UI.
+- Default language is `es`; `#langSwitch` is the only language UI.
 
 ### Themes
 
-- CSS variables under `:root[data-theme="..."]` define the palette; four themes:
-  `dark` (default), `light`, `forest`, `sand`.
-- `setTheme(name)` sets `document.documentElement.dataset.theme` and persists
-  the choice. The topbar picker (`THEMES` keys) is its UI.
+- Qymera 1.1 theme model (identical to `main`): `#themePicker` contains
+  `.themeDot` buttons that carry a `data-bg` color; `THEME_MAP` maps the color
+  to a `[data-theme]` value on `<html>`: `#414141→dark` (default),
+  `#f7f2ff→light`, `#4c834e→forest`, `#c1af8d→sand`. Four themes.
+- `setBackground(color)` sets `document.documentElement`'s `data-theme` and
+  persists `localStorage.bgColor` and `localStorage.theme`.
+- The CSS palette is `main`'s exact design tokens (`--bg`, `--surface`,
+  `--accent`, `--text`, `--radius-*`, `--shadow-*`, `--font`, `--mono`, ...)
+  with no AI-specific divergence; views reuse `main`'s component classes
+  (`btn`, `chip`, `switch`/`knob`, `stat-card`, `device-card`, `rule-card`,
+  `settings-card`, `log-panel`, `modal`, `toast`).
 
 ### Preferences
 
-- `loadPrefs()` (run once at boot) reads `localStorage.qymera_theme` and
-  `localStorage.qymera_lang`, then applies both. Values are validated against
-  the known sets before use.
+- All prefs use Qymera 1.1 keys: `localStorage.bgColor`, `localStorage.theme`
+  (theme), `localStorage.lang` (language), `localStorage.tab` (last visited
+  view). `loadPrefs()` equivalent runs at boot: restore `bgColor` (if any),
+  then `lang`, then the saved `tab` (validated against the view registry), then
+  start polling.
 
 ## 11. Adding a new view (correctly)
 
@@ -270,4 +284,4 @@ views.sensors = {
 - Declaring the device OFFLINE from an unrelated stray rejection.
 - Hard-coding a user-visible string in only one language, or rewriting a
   `data-i18n` element's `textContent` without also covering the other language.
-- Embedding themes/strings only in JS so that `setTheme`/`setLang` cannot reach it.
+- Embedding themes/strings only in JS so that `setBackground`/`setLang` cannot reach it.

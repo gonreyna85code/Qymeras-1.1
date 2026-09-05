@@ -1,340 +1,450 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang='es'>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Qymeras</title>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<meta name='color-scheme' content='dark light'>
+<title>Qymeras 1.1</title>
 <style>
 :root{
-  --bg:#0f1115; --surface:#161a21; --surface-2:#1d222c; --border:#262c36;
-  --text:#e8eaee; --text-dim:#9aa3b2; --text-faint:#6b7280;
-  --accent:#5b8cff; --accent-soft:rgba(91,140,255,.14);
-  --success:#22c55e; --warning:#f59e0b; --danger:#ef4444; --info:#38bdf8;
-  --radius:10px; --shadow:0 6px 24px rgba(0,0,0,.35);
-  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
-  color-scheme:dark;
+--bg:#0d1117;--bg-2:#131922;--surface:#161d29;--surface-2:#1c2533;--surface-hover:#232f41;
+--border:#2a3444;--text:#e7edf5;--text-muted:#94a3b8;
+--accent:#3b82f6;--accent-hover:#60a5fa;--on-accent:#ffffff;
+--success:#22c55e;--warning:#f59e0b;--danger:#ef4444;--info:#38bdf8;
+--radius-sm:8px;--radius-md:12px;--radius-lg:18px;
+--shadow-mild:0 1px 2px rgba(0,0,0,.22);--shadow-lg:0 16px 40px rgba(0,0,0,.40);
+--font:system-ui,-apple-system,"Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,sans-serif;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+--card:var(--surface);--panel:var(--surface-2);
 }
 [data-theme="light"]{
-  --bg:#f5f7fa; --surface:#ffffff; --surface-2:#eef1f6; --border:#e2e8f0;
-  --text:#1a1d21; --text-dim:#475569; --text-faint:#94a3b8;
-  --accent:#2563eb; --accent-soft:rgba(37,99,235,.10);
-  --success:#16a34a; --warning:#d97706; --danger:#dc2626; --info:#0284c7;
-  --shadow:0 6px 20px rgba(15,23,42,.06);
-  color-scheme:light;
+--bg:#f3f5f9;--bg-2:#eef1f6;--surface:#ffffff;--surface-2:#f4f6fa;--surface-hover:#e9edf4;
+--border:#d8dfe9;--text:#1a2433;--text-muted:#5c6a7d;
+--accent:#2456c8;--accent-hover:#3b6ae0;--on-accent:#ffffff;
+--success:#16a34a;--warning:#b45309;--danger:#dc2626;--info:#0ea5e9;
+--shadow-lg:0 16px 40px rgba(15,23,42,.18);color-scheme:light;
 }
 [data-theme="forest"]{
-  --bg:#0e1410; --surface:#161d18; --surface-2:#1e281f; --border:#2b3a2e;
-  --text:#e6efe7; --text-dim:#9db3a1; --text-faint:#6d8572;
-  --accent:#6fc276; --accent-soft:rgba(111,194,118,.14);
-  --success:#4ade80; --warning:#fbbf24; --danger:#f87171; --info:#5eead4;
-  color-scheme:dark;
+--bg:#0d1610;--bg-2:#121f16;--surface:#16241b;--surface-2:#1c2d21;--surface-hover:#243829;
+--border:#2a4431;--text:#e3efe6;--text-muted:#8fa895;
+--accent:#2fbf71;--accent-hover:#4cd78c;--on-accent:#06230f;
+--success:#4ade80;--warning:#fbbf24;--danger:#f87171;--info:#38bdf8;
 }
 [data-theme="sand"]{
-  --bg:#f3eedf; --surface:#fbf7ec; --surface-2:#efe8d6; --border:#dfd5bb;
-  --text:#32291c; --text-dim:#6f6147; --text-faint:#9b8d6f;
-  --accent:#b98a3e; --accent-soft:rgba(185,138,62,.14);
-  --success:#3f8f4a; --warning:#b7791f; --danger:#b5482f; --info:#356f8f;
-  color-scheme:light;
+--bg:#191410;--bg-2:#201a13;--surface:#262015;--surface-2:#2f291c;--surface-hover:#3a3324;
+--border:#4a402b;--text:#f1ead9;--text-muted:#b4a887;
+--accent:#dc9b4f;--accent-hover:#eab273;--on-accent:#241607;
+--success:#7ee081;--warning:#f0bd5d;--danger:#ec6a5e;--info:#66b6e8;
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
-@media(prefers-reduced-motion:reduce){*{transition:none!important}}
-/* ---------- Topbar ---------- */
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 16px}
-.brand{font-size:1.15rem;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;white-space:nowrap}
-.brand-sub{font-size:.62rem;font-weight:700;background:var(--accent);color:var(--bg);border-radius:999px;padding:2px 7px}
-.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.chip{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;white-space:nowrap}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--danger);display:inline-block}
-.dot.ok{background:var(--success)}
-.theme-picker{display:flex;gap:6px;align-items:center}
-.theme-dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);cursor:pointer;padding:0;transition:transform .15s}
-.theme-dot.active{transform:scale(1.15);border-color:var(--text)}
-.lang-switch{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden}
-.lang-btn{border:none;background:transparent;color:var(--text-dim);font-size:.68rem;font-weight:700;padding:4px 9px;cursor:pointer}
-.lang-btn.active{background:var(--accent);color:var(--bg)}
-@media(prefers-reduced-motion:no-preference){.theme-dot,.lang-btn{transition:background .15s,color .15s}}
-/* ---------- Nav ---------- */
-.nav{display:flex;gap:2px;overflow-x:auto;white-space:nowrap;flex:1;min-width:0;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
-.tab{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:none;background:transparent;color:var(--text-dim);font-size:.82rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;border-radius:6px 6px 0 0}
-.tab svg{width:15px;height:15px;flex:none}
-.tab:hover{color:var(--text)}
-.tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-soft)}
-/* ---------- Layout / cards ---------- */
-main{padding:16px;max-width:1200px;margin:0 auto}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
-h2{font-size:.82rem;font-weight:700;color:var(--text);letter-spacing:.2px;text-transform:uppercase;margin-bottom:12px}
-.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
-.section-header h2{margin-bottom:0}
-.grid{display:grid;gap:12px}
-.grid-2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
-.grid-3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
-.metric{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;word-break:break-word}
-.entity{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border)}
-.entity-info{display:flex;flex-direction:column;gap:2px;overflow:hidden;min-width:0}
-.entity-name{font-weight:600;font-size:.85rem;word-break:break-word}
-.entity-meta{font-size:.7rem;color:var(--text-dim);word-break:break-word}
-/* ---------- Buttons / controls ---------- */
-.btn{padding:7px 13px;border:none;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;font-family:inherit;background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.btn-primary{background:var(--accent);color:var(--bg);border-color:transparent}
-.btn-primary:disabled{background:var(--accent);opacity:.55}
-.btn-danger{background:var(--danger);color:#fff;border-color:transparent}
-.btn-ghost{background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
-@media(prefers-reduced-motion:no-preference){.btn{transition:filter .15s,transform .05s}.btn:hover:not(:disabled){filter:brightness(1.1)}.btn:active:not(:disabled){transform:translateY(1px)}}
-.toggle{position:relative;width:44px;height:24px;background:var(--text-faint);border:none;border-radius:999px;cursor:pointer;flex:none}
-.toggle.on{background:var(--success)}
-.toggle::after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%}
-.toggle.on::after{left:22px}
-@media(prefers-reduced-motion:no-preference){.toggle{transition:background .15s}.toggle::after{transition:left .15s}}
-.slider{width:100%;height:6px;-webkit-appearance:none;appearance:none;background:var(--border);border-radius:3px;outline:none}
-.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;background:var(--accent);border-radius:50%;cursor:pointer}
-input,select,textarea{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);font-size:.82rem;font-family:inherit;outline:none}
-input:focus,select:focus{border-color:var(--accent)}
-label{display:block;font-size:.7rem;font-weight:600;color:var(--text-dim);margin:8px 0 4px}
-.form-row{display:flex;gap:12px}
-.form-row>div{flex:1}
-/* ---------- Status styling ---------- */
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.65rem;font-weight:700;background:var(--surface-2);color:var(--text-dim);border:1px solid var(--border)}
-.badge-online,.badge-enabled{background:var(--accent-soft);color:var(--success);border-color:transparent}
-.badge-offline,.badge-disabled,.badge-error{background:rgba(239,68,68,.12);color:var(--danger);border-color:transparent}
-.badge-pending{background:rgba(245,158,11,.14);color:var(--warning);border-color:transparent}
-.badge-confirmed{background:var(--accent-soft);color:var(--accent);border-color:transparent}
-.badge-local{background:var(--accent-soft);color:var(--info);border-color:transparent}
-.badge-remote{background:rgba(168,85,247,.14);color:#c084fc;border-color:transparent}
-[data-theme="light"] .badge-remote,[data-theme="sand"] .badge-remote{color:#7c3aed}
-.empty{color:var(--text-faint);font-size:.82rem;padding:8px 0}
-/* ---------- Logs ---------- */
-.log-entry{font-family:var(--mono);font-size:.7rem;padding:6px 10px;background:var(--surface-2);border-radius:6px;margin-bottom:4px;border-left:3px solid var(--accent);word-break:break-word;display:flex;gap:6px;flex-wrap:wrap;border:1px solid var(--border)}
-.log-entry.ERROR{border-left-color:var(--danger)}
-.log-entry.WARNING{border-left-color:var(--warning)}
-/* ---------- Toast / overlay ---------- */
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--danger);color:#fff;padding:10px 14px;border-radius:8px;font-size:.8rem;z-index:99;max-width:90vw;display:none;box-shadow:var(--shadow)}
-#overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;overflow-y:auto;padding:24px}
-#overlay .card{max-width:720px;margin:0 auto}
-/* ---------- Responsive ---------- */
-@media(max-width:720px){
-  .topbar{gap:8px;padding:8px 10px}
-  .brand{font-size:1rem}
-  main{padding:12px}
-  .form-row{flex-direction:column;gap:0}
-  .nav{order:99;flex-basis:100%}
-  .nav::-webkit-scrollbar{display:none}
-  .topbar-right{margin-left:auto}
-  .chip{display:none}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;font-weight:700;line-height:1.25}
+a{color:var(--accent)}
+button{font-family:var(--font)}
+.app{display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;min-height:100vh}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 18px;height:58px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50}
+.brand{display:flex;align-items:center;gap:9px;font-size:17px;font-weight:800;letter-spacing:.2px}
+.brand-sub{font-size:10px;font-weight:700;color:var(--accent);background:var(--surface-2);border:1px solid var(--border);padding:2px 7px;border-radius:999px}
+.top-actions{display:flex;align-items:center;gap:14px}
+.status-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-muted)}
+.lang-switch{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:var(--surface-2)}
+.langbtn{border:none;background:transparent;color:var(--text-muted);padding:4px 12px;font-size:12px;font-weight:800;letter-spacing:.4px;cursor:pointer;transition:background .15s,color .15s}
+.langbtn:hover{background:var(--surface-hover);color:var(--text)}
+.langbtn.active{background:var(--accent);color:var(--on-accent)}
+#themePicker{display:flex;gap:7px}
+.themeDot{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid var(--border);padding:0;transition:transform .15s,box-shadow .15s;background:var(--surface-2)}
+.themeDot:hover{transform:scale(1.15)}
+.themeDot:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.themeDot[data-bg="#414141"]{background:#414141}.themeDot[data-bg="#4c834e"]{background:#4c834e}.themeDot[data-bg="#c1af8d"]{background:#c1af8d}.themeDot[data-bg="#f7f2ff"]{background:#f7f2ff}
+.nav{background:var(--surface);border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+.navitem{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;border-radius:var(--radius-sm);background:transparent;color:var(--text-muted);font-weight:600;font-size:13px;cursor:pointer;text-align:left;transition:background .15s,color .15s}
+.navitem:hover{background:var(--surface-hover);color:var(--text)}
+.navitem.active{background:var(--accent);color:var(--on-accent)}
+.navitem svg{flex:0 0 auto}
+.nav-sep{height:1px;background:var(--border);margin:6px 4px}
+.main{padding:22px;width:100%;max-width:1280px}
+.content{display:none}
+.content.active{display:block}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.page-head h1{font-size:20px}
+.page-sub{color:var(--text-muted);font-size:13px;margin:2px 0 0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;border-radius:var(--radius-sm);border:1px solid transparent;background:var(--surface-2);color:var(--text);font-weight:600;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--surface-hover)}
+.btn.primary{background:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn.ghost{background:transparent;border-color:var(--border)}
+.btn.ghost:hover{background:var(--surface-hover)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.sm{padding:6px 10px;font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
+.chip.ok{background:rgba(34,197,94,.14);color:var(--success);border-color:rgba(34,197,94,.35)}
+.chip.danger{background:rgba(239,68,68,.14);color:var(--danger);border-color:rgba(239,68,68,.35)}
+button.chip{cursor:pointer}
+button.chip:hover{background:var(--surface-hover);color:var(--text)}
+button.chip.ok:hover{background:rgba(34,197,94,.22);color:var(--success)}
+button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--text-muted);flex:0 0 auto}
+.dot.ok{background:var(--success)}.dot.bad{background:var(--danger)}.dot.info{background:var(--info)}
+.status{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.4px;text-transform:uppercase}
+.metric{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;text-align:center}
+.metric.sm{font-size:18px}
+.metric .unit{font-size:15px;font-weight:700;color:var(--text-muted);margin-left:2px}
+.eyebrow{font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--accent);text-transform:uppercase}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.field label{font-size:12px;font-weight:600;color:var(--text)}
+.input,select,input[type=date],input[type=number],input[type=password]{width:100%;padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-2);color:var(--text);font:inherit;font-size:13px}
+.input:focus,select:focus,input[type=date]:focus,input[type=number]:focus,input[type=password]:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+select option{background:var(--surface)}
+.input.sm{width:auto;min-width:90px;padding:7px 9px}
+.input-sm{min-width:0;padding:8px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-2);color:var(--text);font:inherit;font-size:13px}
+.input-sm:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer;padding:4px 0}
+.check input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.field-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 0}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:3px 0}
+.kv span{color:var(--text-muted)}
+.switch{position:relative;display:inline-flex;align-items:center;width:46px;height:26px;flex:0 0 auto;cursor:pointer;border-radius:999px;background:var(--border);border:1px solid var(--border);padding:0;transition:background .2s}
+.switch .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--text-muted);transition:transform .2s,background .2s;pointer-events:none}
+.switch.on{background:var(--accent);border-color:var(--accent)}
+.switch.on .knob{transform:translateX(20px);background:var(--on-accent)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:999px;background:var(--border);outline:none;margin:12px 0;cursor:pointer;border:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer}
+input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);border:none;cursor:pointer}
+.dash-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow-mild)}
+.stat-label{font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-muted)}
+.stat-value{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat-value.time{font-size:18px;align-self:center}
+.section-title{font-size:12px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px}
+.devices-desktop-layout{display:grid;gap:18px;align-items:start;grid-template-columns:1fr}
+.devices-column{min-height:0;border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;background:var(--surface-2);display:flex;flex-direction:column;gap:12px}
+.devices-mobile-list{display:none}
+.devices-actuator-grid,.devices-sensor-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+@media (min-width:1100px){.devices-desktop-layout{grid-template-columns:minmax(280px,38%) minmax(440px,1fr)}}
+@media (max-width:899px){.devices-mobile-list{display:grid;gap:12px}.devices-desktop-layout{display:none}}
+.device-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px;display:grid;grid-template-rows:auto 1fr auto;gap:8px}
+.device-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.device-control{display:flex;align-items:center;justify-content:center;gap:10px}
+.device-footer{display:flex;align-items:center;justify-content:flex-start;padding-top:4px}
+.device-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dimmer-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:2px}
+.state-text{font-weight:800;font-size:13px;letter-spacing:.5px}
+.state-text.on{color:var(--success)}.state-text.off{color:var(--text-muted)}
+.value-lg{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--accent)}
+.settings-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.settings-general{grid-column:1/-1}
+.settings-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.settings-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:16px;display:flex;flex-direction:column;gap:12px}
+.settings-card h3{margin:2px 0 0;font-size:15px}
+.settings-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.settings-section{margin-bottom:12px}
+.accordion-header{display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);cursor:pointer;font-weight:600;font-size:14px;color:var(--text);transition:background .15s}
+.accordion-header:hover{background:var(--surface-hover)}
+.accordion-header:focus{outline:2px solid var(--accent);outline-offset:2px}
+.accordion-chevron{font-size:10px;transition:transform .2s;color:var(--text-muted);margin-right:8px;flex-shrink:0}
+.accordion-header[aria-expanded="true"] .accordion-chevron{transform:rotate(180deg)}
+.accordion-title{font-weight:600;color:var(--text)}
+.accordion-count{font-size:12px;color:var(--text-muted);background:var(--bg-2);padding:2px 8px;border-radius:999px;font-weight:500}
+.accordion-content{padding:8px 4px;overflow:hidden}
+.settings-section .settings-grid{gap:10px;margin-top:4px}
+.remote-device-group{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;margin-bottom:8px}
+.remote-device-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.remote-device-name{font-weight:600;font-size:14px;color:var(--text);font-family:var(--mono)}
+.remote-gui-link{flex-shrink:0;white-space:nowrap}
+.remote-gui-disabled{font-size:12px;color:var(--text-muted);opacity:.6}
+.remote-device-content{padding-top:4px}
+.rule-list{display:flex;flex-direction:column;gap:12px}
+.rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:14px;display:flex;flex-direction:column;gap:8px}
+.rule-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.rule-info{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.rule-info span{color:var(--text-muted)}
+.rule-actions{display:flex;gap:8px}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px;margin:8px 0;color:var(--text-muted);text-align:center;font-size:13px;border:1px dashed var(--border);border-radius:var(--radius-md);background:var(--surface-2)}
+.empty.sm{padding:12px;font-size:12px}
+.d-none{display:none!important}
+@keyframes modalIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+.modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.55);z-index:1000}
+.modal.open{display:flex}
+.modal-content{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;padding:18px;box-shadow:var(--shadow-lg);animation:modalIn .15s ease}
+.log-status{font-size:12px;color:var(--text-muted);margin-bottom:12px;min-height:16px}
+.log-status.ok{color:var(--success)}
+.log-status.error{color:var(--danger)}
+.log-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
+.log-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);box-shadow:var(--shadow-mild);padding:12px;font-family:var(--mono);font-size:11px;max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.log-panel h3{font-family:var(--font);font-size:12px;font-weight:700;color:var(--text-muted);letter-spacing:.6px;text-transform:uppercase;margin:0 0 6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.log-entry{display:flex;gap:6px;padding:2px 4px;border-radius:4px;line-height:1.4}
+.log-entry .t{color:var(--text-muted);flex:0 0 auto}
+.log-entry .l{font-weight:800;flex:0 0 auto;width:34px}
+.log-entry .l.inf{color:var(--info)}
+.log-entry .l.wrn{color:var(--warning)}
+.log-entry .l.err{color:var(--danger)}
+.log-entry .m{word-break:break-word}
+.log-empty{color:var(--text-muted);font-family:var(--font);font-size:12px;padding:6px 4px}
+#toast-container{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:4px}
+.toast{padding:8px 12px;border-radius:var(--radius-sm);min-width:200px;box-shadow:var(--shadow-mild);animation:fadeIn .3s ease}
+.toast.success{background:var(--success);color:var(--on-accent)}
+.toast.error{background:var(--danger);color:var(--on-accent)}
+.toast.warning{background:var(--warning);color:var(--on-accent)}
+.toast.info{background:var(--info);color:var(--on-accent)}
+.toast.fade-out{animation:fadeOut .3s ease forwards}
+.modal-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.modal-head h2{margin:0;font-size:17px}
+.icon-btn{border:none;background:var(--surface-2);color:var(--text-muted);width:30px;height:30px;border-radius:var(--radius-sm);cursor:pointer;font-size:16px;line-height:1}
+.icon-btn:hover{background:var(--surface-hover);color:var(--text)}
+.modal-foot{display:flex;justify-content:flex-end;padding-top:12px;margin-top:12px;border-top:1px solid var(--border)}
+.wizard-step{display:flex;flex-direction:column;gap:12px}
+.wizard-option{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border:2px solid var(--border);border-radius:var(--radius-md);cursor:pointer;background:var(--surface-2)}
+.wizard-option:has(input:checked){border-color:var(--accent);background:var(--surface)}
+.wizard-option input{margin-top:4px;accent-color:var(--accent)}
+.wizard-option strong{display:block;font-size:13px}
+.wizard-option small{display:block;color:var(--text-muted);font-size:12px;margin-top:2px}
+.wizard-nav{display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--border);padding-top:12px;margin-top:4px}
+.wizard-hint{font-size:12px;color:var(--text-muted)}
+.cond-box,.action-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.small-note{font-size:11px;color:var(--text-muted)}
+@media (min-width:900px){
+.app{grid-template-columns:220px 1fr;grid-template-rows:auto 1fr}
+.topbar{grid-column:1/-1}
+.nav{grid-row:2;grid-column:1;min-height:calc(100vh - 58px);position:sticky;top:58px;align-self:start;height:calc(100vh - 58px)}
+.main{grid-column:2;grid-row:2;padding:24px}
 }
+@media (max-width:899px){
+.nav{position:fixed;left:0;right:0;bottom:0;top:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-top:1px solid var(--border);border-right:none;z-index:110;background:var(--surface);box-shadow:0 -4px 16px rgba(0,0,0,.25)}
+.navitem{flex:1;flex-direction:column;gap:3px;padding:6px;font-size:10px;justify-content:center;text-align:center}
+.navitem svg{width:20px;height:20px}
+.nav-sep{display:none}
+.main{padding:16px 14px 80px}
+.topbar{height:54px;padding:0 14px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* ===== AI dashboard additions (reuse the Qymera design-token system) ===== */
+@media (max-width:899px){
+.navitem span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block}
+}
+.device-card .kv{width:100%}
+.scan-row{display:flex;gap:6px;flex-wrap:wrap}
 </style>
 </head>
 <body>
+<div class="app">
 <header class="topbar">
-  <div class="brand">Qymeras <span class="brand-sub">1.1</span></div>
-  <nav id="navTabs" class="nav" aria-label="Menu principal"></nav>
-  <div class="topbar-right">
-    <span class="chip"><span class="dot" id="statusDot"></span><span id="statusText" data-i18n="common.offline">Offline</span></span>
-    <span id="sysInfo" class="chip">—</span>
-    <div id="themePicker" class="theme-picker" role="group" aria-label="Tema"></div>
-    <div class="lang-switch" role="group" aria-label="Idioma">
-      <button class="lang-btn" data-lang="es" type="button">ES</button>
-      <button class="lang-btn" data-lang="en" type="button">EN</button>
+  <div class="brand"><span>Qymeras</span><span class="brand-sub">1.1</span></div>
+  <div class="top-actions">
+    <span class="status-chip" id="linkStatus"><span class="dot ok" id="statusDot"></span><span data-i18n="chip.online" id="statusText">Online</span></span>
+    <span class="status-chip" id="sysInfo">—</span>
+    <div id="themePicker" role="group" aria-label="Tema de color">
+      <button type="button" class="themeDot" data-bg="#414141" aria-label="Tema oscuro"></button>
+      <button type="button" class="themeDot" data-bg="#f7f2ff" aria-label="Tema claro"></button>
+      <button type="button" class="themeDot" data-bg="#4c834e" aria-label="Tema forest"></button>
+      <button type="button" class="themeDot" data-bg="#c1af8d" aria-label="Tema sand"></button>
+    </div>
+    <div class="lang-switch" role="group" aria-label="Idioma / Language">
+      <button type="button" class="langbtn" data-lang="es" aria-label="Español">ES</button>
+      <button type="button" class="langbtn" data-lang="en" aria-label="English">EN</button>
     </div>
   </div>
 </header>
-<main id="mainContent"></main>
-<div id="toast"></div>
-<div id="overlay"></div>
+<nav class="nav" id="navTabs" aria-label="Navegación principal"></nav>
+<main class="main" id="mainContent"></main>
+</div>
+<div id="toast-container"></div>
+<div id="overlay" class="modal" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
+  <div class="modal-content">
+    <div class="modal-head">
+      <h2 id="ruleModalTitle" data-i18n="rules.titleNew">Nueva regla de automatización</h2>
+      <button type="button" class="icon-btn" id="overlayClose" aria-label="Cerrar">×</button>
+    </div>
+    <div id="ruleFormHost"></div>
+    <div class="modal-foot">
+      <button class="btn ghost sm" type="button" id="overlayCancel" data-i18n="rules.cancel">Cancelar</button>
+      <button class="btn primary sm" type="button" id="overlaySave" data-i18n="rules.save">Guardar</button>
+    </div>
+  </div>
+</div>
 <script>
 "use strict";
 var API='/api/v1';
-var lang='es';
 var main=document.getElementById('mainContent');
-var toastEl=document.getElementById('toast');
+var navTabs=document.getElementById('navTabs');
 var overlayEl=document.getElementById('overlay');
 var statusDot=document.getElementById('statusDot');
 var statusTextEl=document.getElementById('statusText');
 var sysInfoEl=document.getElementById('sysInfo');
-var navTabs=document.getElementById('navTabs');
-var themePickerEl=document.getElementById('themePicker');
 
 /* =====================================================================
- * I18N (ES/EN). Element texts marked with data-i18n / data-i18n-ph are
- * applied locally; dynamic strings go through t()/tf() at render time.
+ * I18N (ES/EN), Qymera 1.1 dictionary. Element texts marked with
+ * data-i18n are applied locally; dynamic strings go through t() at
+ * render time. Placeholder texts (data-i18n-ph) get '...' appended by
+ * applyI18n, matching the Qymera GUI behavior.
  * ===================================================================== */
 var I18N={
 es:{
- 'common.online':'En línea','common.offline':'Sin conexión',
- 'common.on':'Encendido','common.off':'Apagado',
- 'common.save':'Guardar','common.saving':'Guardando...','common.cancel':'Cancelar',
- 'common.edit':'Editar','common.delete':'Eliminar','common.create':'Crear',
- 'common.enable':'Activar','common.disable':'Desactivar',
- 'common.enabled':'Activa','common.disabled':'Desactivada',
- 'common.local':'LOCAL','common.remote':'REMOTO',
- 'common.confirmed':'Confirmado','common.pending':'Pendiente',
- 'common.failed':'Fallido','common.timeout':'Tiempo agotado','common.error':'Error',
- 'common.id':'ID','common.model':'Modelo','common.location':'Ubicación','common.role':'Rol',
- 'common.state':'Estado','common.type':'Tipo','common.unit':'Unidad',
- 'common.revision':'Revisión','common.schema':'Esquema','common.perms':'Permisos',
- 'common.trigger':'Disparador','common.delete_q':'¿Eliminar la regla {0}?',
  'nav.dashboard':'Panel','nav.devices':'Dispositivos','nav.entities':'Entidades',
- 'nav.rules':'Reglas','nav.skills':'Habilidades','nav.logs':'Registros',
- 'nav.system':'Sistema','nav.network':'Red',
- 'dash.status':'Estado','dash.ip':'Dirección IP','dash.heap':'Memoria libre',
- 'dash.uptime':'Tiempo activo','dash.device_count':'Nº dispositivos','dash.entity_count':'Nº entidades',
- 'devices.online':'En línea','devices.offline':'Sin conexión',
- 'entities.current':'Actual','entities.desired':'Deseado','entities.caps':'Capacidades',
- 'rules.create':'Crear regla','rules.edit':'Editar regla','rules.rev':'Revisión: ',
- 'rules.trig':'Disparador: ','rules.enabled':'Activa','rules.disabled':'Desactivada',
- 'rules.form.name':'Nombre','rules.form.rule_id':'ID de regla (opcional)',
- 'rules.form.trg_dev':'Disparador - Dispositivo','rules.form.trg_ent':'Disparador - Entidad',
- 'rules.form.operator':'Operador','rules.form.threshold':'Umbral',
- 'rules.form.act_dev':'Acción - Dispositivo','rules.form.act_ent':'Acción - Entidad',
- 'rules.form.act_type':'Tipo de acción','rules.form.value':'Valor',
- 'rules.form.cooldown':'Enfriamiento (ms)','rules.form.priority':'Prioridad',
- 'rules.form.max_act':'Máx. activaciones / hora',
+ 'nav.rules':'Reglas','nav.skills':'Habilidades','nav.system':'Sistema','nav.network':'Red','nav.logs':'Registros',
+ 'page.dashboard':'Panel','page.dashboard.sub':'Vista general del nodo',
+ 'page.devices':'Dispositivos','page.devices.sub':'Vistas de actuadores y sensores en tiempo real',
+ 'page.entities':'Entidades','page.entities.sub':'Modelo de datos de entidades del nodo',
+ 'page.rules':'Reglas','page.rules.sub':'Reglas de automatización',
+ 'page.skills':'Habilidades','page.skills.sub':'Catálogo de habilidades del agente',
+ 'page.system':'Sistema','page.system.sub':'Información del nodo',
+ 'page.network':'Red','page.network.sub':'Conexión WiFi del nodo',
+ 'page.logs':'Registros','page.logs.sub':'Registros recientes del sistema',
+ 'btn.newRule':'Nueva regla','btn.save':'Guardar','btn.cancel':'Cancelar','btn.edit':'Editar','btn.delete':'Eliminar',
+ 'btn.enable':'Activar','btn.disable':'Desactivar',
+ 'chip.online':'En línea','chip.offline':'Sin conexión','chip.enabled':'Activa','chip.disabled':'Desactivada',
+ 'status.local':'LOCAL','status.remote':'REMOTO','status.offline':'DESCONECTADO',
+ 'fields.id':'ID','fields.model':'Modelo','fields.location':'Ubicación','fields.role':'Rol',
+ 'fields.state':'Estado','fields.type':'Tipo','fields.unit':'Unidad','fields.revision':'Revisión',
+ 'fields.trigger':'Disparador','fields.caps':'Capacidades','fields.current':'Actual','fields.desired':'Deseado',
+ 'fields.reliability':'Fiabilidad','fields.schema':'Esquema','fields.perms':'Permisos',
+ 'stat.status':'Estado','stat.ip':'Dirección IP','stat.heap':'Memoria libre','stat.uptime':'Tiempo activo',
+ 'stat.devices':'Dispositivos','stat.entities':'Entidades',
+ 'log.updated':'Actualizado: {0} · {1} registros','log.empty':'Sin registros',
+ 'log.error':'No se pudieron cargar los registros',
+ 'rules.titleNew':'Nueva regla de automatización','rules.titleEdit':'Editar regla de automatización',
+ 'rules.cancel':'Cancelar','rules.save':'Guardar','rules.deleteQ':'¿Eliminar la regla {0}?',
+ 'rules.name':'Nombre','rules.rule_id':'ID de regla (opcional)',
+ 'rules.trg_dev':'Disparador - Dispositivo','rules.trg_ent':'Disparador - Entidad','rules.operator':'Operador',
+ 'rules.threshold':'Umbral','rules.act_dev':'Acción - Dispositivo','rules.act_ent':'Acción - Entidad',
+ 'rules.act_type':'Tipo de acción','rules.value':'Valor','rules.cooldown':'Enfriamiento (ms)',
+ 'rules.priority':'Prioridad','rules.max_act':'Máx. activaciones / hora','rules.name_req':'El nombre es obligatorio',
  'rules.act.SET_BOOL':'Booleano','rules.act.SET_LEVEL':'Nivel','rules.act.SET_VALUE':'Valor','rules.act.TOGGLE':'Conmutar',
- 'rules.name_req':'El nombre es obligatorio',
- 'skills.title':'Catálogo de habilidades',
- 'logs.title':'Registros recientes',
- 'system.title':'Información del sistema','system.net':'Modo de red','system.ssid':'SSID',
- 'system.ip':'Dirección IP','system.heap':'Memoria libre','system.uptime':'Tiempo activo',
- 'system.build':'Versión',
- 'network.title':'Configuración de red WiFi',
- 'network.hint':'Configura este dispositivo para unirse a tu WiFi local. Al guardar, se reinicia en modo STA (sin punto de acceso).',
- 'network.scan':'Escanear redes','network.scan_btn':'Buscar redes',
- 'network.connect':'Conectar a WiFi','network.ssid':'SSID','network.ssid_ph':'Nombre de red...',
- 'network.password':'Contraseña','network.password_ph':'Vacío para redes abiertas',
- 'network.udp_disc':'Puerto de detección UDP','network.udp_ctrl':'Puerto de control UDP',
- 'network.sta_enable':'Activar STA (conectar al inicio)',
- 'network.save_reboot':'Guardar y reiniciar',
- 'network.scanning':'Buscando...','network.no_nets':'No se encontraron redes. Intenta de nuevo.',
- 'network.click_ssid':'Haz clic en una red para seleccionarla:',
- 'network.found':'Se encontraron {0} red(es).','network.scan_failed':'Error al buscar.',
- 'network.ssid_req':'El SSID es obligatorio.',
- 'network.saved':'Guardado. Reiniciando en modo STA...','network.save_failed':'Error al guardar.'
+ 'rules.rev':'Revisión','rules.trig':'Disparador','rules.enabled':'Activa','rules.disabled':'Desactivada',
+ 'net.title':'Configuración de red WiFi',
+ 'net.hint':'Configura este dispositivo para unirse a tu red WiFi local. Tras guardar, se reinicia en modo STA (sin punto de acceso).',
+'net.scan':'Escanear redes','net.scan_btn':'Buscar redes',
+  'net.connect':'Conectar',
+  'net.ssid':'SSID','net.ssid_ph':'Nombre de la red','net.pass':'Contraseña','net.pass_ph':'Contraseña WiFi',
+ 'net.udp_disc':'Puerto de detección UDP','net.udp_ctrl':'Puerto de control UDP',
+ 'net.sta_enable':'Activar STA (conectar al inicio)','net.save':'Guardar y reiniciar',
+ 'net.scanning':'Buscando...','net.no_nets':'No se encontraron redes. Intenta de nuevo.',
+ 'net.click_ssid':'Haz clic en una red para seleccionarla:','net.found':'Se encontraron {0} red(es).',
+ 'net.scan_failed':'Error al buscar.','net.ssid_req':'El SSID es obligatorio.',
+ 'net.saved':'Guardado. Reiniciando en modo STA...','net.save_failed':'Error al guardar.',
+ 'common.RELAY':'RELAY','common.DIMMER':'DIMMER','common.SENSOR':'SENSOR',
+ 'common.open':'Abierto','common.closed':'Cerrado',
+ 'err.toast':'Error: {0}','err.timeout':'Tiempo agotado: {0} no responde','err.invalid':'Respuesta no válida de {0}',
+ 'common.on':'ON','common.off':'OFF'
 },
 en:{
- 'common.online':'Online','common.offline':'Offline',
- 'common.on':'On','common.off':'Off',
- 'common.save':'Save','common.saving':'Saving...','common.cancel':'Cancel',
- 'common.edit':'Edit','common.delete':'Delete','common.create':'Create',
- 'common.enable':'Enable','common.disable':'Disable',
- 'common.enabled':'Enabled','common.disabled':'Disabled',
- 'common.local':'LOCAL','common.remote':'REMOTE',
- 'common.confirmed':'Confirmed','common.pending':'Pending',
- 'common.failed':'Failed','common.timeout':'Timeout','common.error':'Error',
- 'common.id':'ID','common.model':'Model','common.location':'Location','common.role':'Role',
- 'common.state':'State','common.type':'Type','common.unit':'Unit',
- 'common.revision':'Rev','common.schema':'Schema','common.perms':'Perms',
- 'common.trigger':'Trigger','common.delete_q':'Delete rule {0}?',
- 'nav.dashboard':'Dashboard','nav.devices':'Devices','nav.entities':'Entities',
- 'nav.rules':'Rules','nav.skills':'Skills','nav.logs':'Logs',
- 'nav.system':'System','nav.network':'Network',
- 'dash.status':'Status','dash.ip':'IP Address','dash.heap':'Free Heap',
- 'dash.uptime':'Uptime','dash.device_count':'Device Count','dash.entity_count':'Entity Count',
- 'devices.online':'Online','devices.offline':'Offline',
- 'entities.current':'Current','entities.desired':'Desired','entities.caps':'Caps',
- 'rules.create':'Create Rule','rules.edit':'Edit Rule','rules.rev':'Revision: ',
- 'rules.trig':'Trigger: ','rules.enabled':'Enabled','rules.disabled':'Disabled',
- 'rules.form.name':'Name','rules.form.rule_id':'Rule ID (optional)',
- 'rules.form.trg_dev':'Trigger - Device','rules.form.trg_ent':'Trigger - Entity',
- 'rules.form.operator':'Operator','rules.form.threshold':'Threshold',
- 'rules.form.act_dev':'Action - Device','rules.form.act_ent':'Action - Entity',
- 'rules.form.act_type':'Action Type','rules.form.value':'Value',
- 'rules.form.cooldown':'Cooldown (ms)','rules.form.priority':'Priority',
- 'rules.form.max_act':'Max activations / hour',
+ 'nav.dashboard':'Panel','nav.devices':'Devices','nav.entities':'Entities',
+ 'nav.rules':'Rules','nav.skills':'Skills','nav.system':'System','nav.network':'Network','nav.logs':'Logs',
+ 'page.dashboard':'Panel','page.dashboard.sub':'Node overview',
+ 'page.devices':'Devices','page.devices.sub':'Real-time views of actuators and sensors',
+ 'page.entities':'Entities','page.entities.sub':'Node entity data model',
+ 'page.rules':'Rules','page.rules.sub':'Automation rules',
+ 'page.skills':'Skills','page.skills.sub':'Agent skill catalog',
+ 'page.system':'System','page.system.sub':'Node information',
+ 'page.network':'Network','page.network.sub':'Node WiFi connection',
+ 'page.logs':'Logs','page.logs.sub':'Recent system logs',
+ 'btn.newRule':'New rule','btn.save':'Save','btn.cancel':'Cancel','btn.edit':'Edit','btn.delete':'Delete',
+ 'btn.enable':'Enable','btn.disable':'Disable',
+ 'chip.online':'Online','chip.offline':'Offline','chip.enabled':'Enabled','chip.disabled':'Disabled',
+ 'status.local':'LOCAL','status.remote':'REMOTE','status.offline':'OFFLINE',
+ 'fields.id':'ID','fields.model':'Model','fields.location':'Location','fields.role':'Role',
+ 'fields.state':'State','fields.type':'Type','fields.unit':'Unit','fields.revision':'Revision',
+ 'fields.trigger':'Trigger','fields.caps':'Capabilities','fields.current':'Current','fields.desired':'Desired',
+ 'fields.reliability':'Reliability','fields.schema':'Schema','fields.perms':'Perms',
+ 'stat.status':'Status','stat.ip':'IP Address','stat.heap':'Free Heap','stat.uptime':'Uptime',
+ 'stat.devices':'Devices','stat.entities':'Entities',
+ 'log.updated':'Updated: {0} · {1} entries','log.empty':'No entries',
+ 'log.error':'Could not load the logs',
+ 'rules.titleNew':'New automation rule','rules.titleEdit':'Edit automation rule',
+ 'rules.cancel':'Cancel','rules.save':'Save','rules.deleteQ':'Delete rule {0}?',
+ 'rules.name':'Name','rules.rule_id':'Rule ID (optional)',
+ 'rules.trg_dev':'Trigger - Device','rules.trg_ent':'Trigger - Entity','rules.operator':'Operator',
+ 'rules.threshold':'Threshold','rules.act_dev':'Action - Device','rules.act_ent':'Action - Entity',
+ 'rules.act_type':'Action Type','rules.value':'Value','rules.cooldown':'Cooldown (ms)',
+ 'rules.priority':'Priority','rules.max_act':'Max activations / hour','rules.name_req':'Name is required',
  'rules.act.SET_BOOL':'Set Bool','rules.act.SET_LEVEL':'Set Level','rules.act.SET_VALUE':'Set Value','rules.act.TOGGLE':'Toggle',
- 'rules.name_req':'Name is required',
- 'skills.title':'Skill Catalog',
- 'logs.title':'Recent Logs',
- 'system.title':'System Information','system.net':'Network Mode','system.ssid':'SSID',
- 'system.ip':'IP Address','system.heap':'Free Heap','system.uptime':'Uptime',
- 'system.build':'Build',
- 'network.title':'WiFi Network Setup',
- 'network.hint':'Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).',
- 'network.scan':'Scan Networks','network.scan_btn':'Scan for networks',
- 'network.connect':'Connect to WiFi','network.ssid':'SSID','network.ssid_ph':'Network name...',
- 'network.password':'Password','network.password_ph':'Leave empty for open networks',
- 'network.udp_disc':'UDP Discovery Port','network.udp_ctrl':'UDP Control Port',
- 'network.sta_enable':'Enable STA (connect on boot)',
- 'network.save_reboot':'Save & Reboot',
- 'network.scanning':'Scanning...','network.no_nets':'No networks found. Try scanning again.',
- 'network.click_ssid':'Click an SSID to select it:',
- 'network.found':'Found {0} network(s).','network.scan_failed':'Scan failed.',
- 'network.ssid_req':'SSID is required.',
- 'network.saved':'Saved. Rebooting into STA mode...','network.save_failed':'Save failed.'
+ 'rules.rev':'Revision','rules.trig':'Trigger','rules.enabled':'Enabled','rules.disabled':'Disabled',
+ 'net.title':'WiFi Network Setup',
+ 'net.hint':'Configure this device to join your local WiFi network. After saving it reboots in STA mode (no more AP).',
+'net.scan':'Scan Networks','net.scan_btn':'Scan for networks',
+  'net.connect':'Connect',
+  'net.ssid':'SSID','net.ssid_ph':'Network name','net.pass':'Password','net.pass_ph':'WiFi password',
+ 'net.udp_disc':'UDP Discovery Port','net.udp_ctrl':'UDP Control Port',
+ 'net.sta_enable':'Enable STA (connect on boot)','net.save':'Save & Reboot',
+ 'net.scanning':'Scanning...','net.no_nets':'No networks found. Try scanning again.',
+ 'net.click_ssid':'Click an SSID to select it:','net.found':'Found {0} network(s).',
+ 'net.scan_failed':'Scan failed.','net.ssid_req':'SSID is required.',
+ 'net.saved':'Saved. Rebooting into STA mode...','net.save_failed':'Save failed.',
+ 'common.RELAY':'RELAY','common.DIMMER':'DIMMER','common.SENSOR':'SENSOR',
+ 'common.open':'Open','common.closed':'Closed',
+ 'err.toast':'Error: {0}','err.timeout':'Timeout: {0} unreachable','err.invalid':'Invalid response from {0}',
+ 'common.on':'ON','common.off':'OFF'
 }};
-function t(key){ var d=I18N[lang]||I18N.en; return (d&&d[key]!==undefined)?d[key]:key; }
-function tf(key,map){ var s=t(key),k; for(k in map){ s=s.split('{'+k+'}').join(map[k]); } return s; }
+var LANG='es';
+try{ LANG=localStorage.getItem('lang')||'es'; }catch(e){}
+LANG=(LANG==='en')?'en':'es';
+
+function t(k){ var d=I18N[LANG]||I18N.en; return (d&&d[k]!==undefined)?d[k]:k; }
+function tf(k,map){ var s=t(k),kk; if(map) for(kk in map){ s=s.split('{'+kk+'}').join(map[kk]); } return s; }
 function applyI18n(root){
   if(!root) return;
   var i,ns=root.querySelectorAll('[data-i18n]');
   for(i=0;i<ns.length;i++) if(ns[i].getAttribute('data-i18n')) ns[i].textContent=t(ns[i].getAttribute('data-i18n'));
   var ps=root.querySelectorAll('[data-i18n-ph]');
-  for(i=0;i<ps.length;i++) if(ps[i].getAttribute('data-i18n-ph')) ps[i].setAttribute('placeholder',t(ps[i].getAttribute('data-i18n-ph')));
-}
-function applyLang(l){
-  lang=(l==='en')?'en':'es';
-  document.documentElement.lang=lang;
-  var bs=document.querySelectorAll('.lang-btn');
-  Array.prototype.forEach.call(bs,function(b){ b.classList.toggle('active',b.getAttribute('data-lang')===lang); });
+  for(i=0;i<ps.length;i++) if(ps[i].getAttribute('data-i18n-ph')) ps[i].setAttribute('placeholder',t(ps[i].getAttribute('data-i18n-ph'))+'...');
 }
 function setLang(l){
-  applyLang(l);
-  try{ localStorage.setItem('qymera_lang',l); }catch(e){}
+  LANG=(l==='en')?'en':'es';
+  try{ localStorage.setItem('lang',LANG); }catch(e){}
+  document.documentElement.lang=LANG;
   applyI18n(document.body);
+  var bs=document.querySelectorAll('.langbtn');
+  Array.prototype.forEach.call(bs,function(b){ b.classList.toggle('active',b.getAttribute('data-lang')===LANG); });
   var v=views[uiState.activeView];
   if(v&&v.refresh) runViewRefresh(v);
 }
+document.querySelectorAll('.langbtn').forEach(function(btn){
+  btn.addEventListener('click',function(){ setLang(btn.getAttribute('data-lang')||'es'); });
+});
 
 /* =====================================================================
- * Theme (CSS tokens on <html data-theme>). Persisted, defaults to dark.
+ * Themes, Qymera 1.1 model: themeDot buttons carry data-bg; the bg maps
+ * to a [data-theme] value on <html>. Persisted keys: bgColor + theme.
  * ===================================================================== */
-var THEMES=[['dark','#3a3a3a'],['light','#f7f2ff'],['forest','#4c834e'],['sand','#c1af8d']];
-function setTheme(name){
-  document.documentElement.setAttribute('data-theme',name||'dark');
-  try{ localStorage.setItem('qymera_theme',name||'dark'); }catch(e){}
-  Array.prototype.forEach.call(themePickerEl.children,function(b){
-    b.classList.toggle('active',document.documentElement.getAttribute('data-theme')===b.getAttribute('data-theme'));
-  });
+var THEME_MAP={'#414141':'dark','#f7f2ff':'light','#4c834e':'forest','#c1af8d':'sand'};
+function setBackground(color){
+  var theme=THEME_MAP[color]||'dark';
+  document.documentElement.setAttribute('data-theme',theme);
+  try{ localStorage.setItem('bgColor',color); localStorage.setItem('theme',theme); }catch(e){}
 }
-function buildThemePicker(){
-  themePickerEl.innerHTML='';
-  THEMES.forEach(function(th){
-    themePickerEl.appendChild(el('button',{'type':'button','class':'theme-dot','data-theme':th[0],'title':th[0],'style':'background:'+th[1]}));
-  });
-  themePickerEl.addEventListener('click',function(e){
-    var b=e.target.closest?e.target.closest('.theme-dot'):null;
-    if(b) setTheme(b.getAttribute('data-theme'));
-  });
-}
+document.querySelectorAll('.themeDot').forEach(function(dot){
+  dot.addEventListener('click',function(){ setBackground(dot.getAttribute('data-bg')); });
+});
 
 /* =====================================================================
  * Navigation: definition -> render -> view. NAV ids map 1:1 to views{}.
+ * Built as Qymera .navitem buttons (sidebar on desktop, bottom bar on
+ * mobile); {sep:true} entries render a .nav-sep divider.
  * ===================================================================== */
 var NAV=[
-  {id:'dashboard',icon:'M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z'},
-  {id:'devices',icon:'M9 3a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H9zM5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7'},
-  {id:'entities',icon:'M12 3 3 8v8l9 5 9-5V8l-9-5zM3 8l9 5 9-5M12 13v8'},
-  {id:'rules',icon:'M13 2 4 14h6l-1 8 9-12h-6l1-8z'},
-  {id:'skills',icon:'M12 3l2.1 5.4L20 10l-5.9 1.6L12 17l-2.1-5.4L4 10l5.9-1.6L12 3zM19 17l1 2.4 2.4 1-2.4 1L19 24l-1-2.6-2.4-1 2.4-1L19 17z'},
-  {id:'logs',icon:'M4 6h16M4 12h16M4 18h10'},
-  {id:'system',icon:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'},
-  {id:'network',icon:'M5 13a10 10 0 0 1 14 0M8.5 16.5a5 5 0 0 1 7 0M2 9.5a15 15 0 0 1 20 0M12 19l.01 0'}
+  {id:'dashboard',icon:'<path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/>'},
+  {id:'devices',icon:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>'},
+  {id:'entities',icon:'<path d="M12 3 3 8v8l9 5 9-5V8l-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>'},
+  {id:'rules',icon:'<path d="M13 2 3 14h7l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/>'},
+  {id:'skills',icon:'<path d="M12 3l1.6 4 4 1.6-4 1.6L12 14l-1.6-3.8L6.4 8.6l4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>'},
+  {sep:true},
+  {id:'system',icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.33-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.33H9a1.7 1.7 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.51 1.7 1.7 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.33 1.82V9a1.7 1.7 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" stroke-linejoin="round"/>'},
+  {id:'network',icon:'<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/>'},
+  {id:'logs',icon:'<path d="M8 6h13M8 12h13M8 18h13" stroke-linecap="round"/><circle cx="4" cy="6" r="1.2" fill="currentColor"/><circle cx="4" cy="12" r="1.2" fill="currentColor"/><circle cx="4" cy="18" r="1.2" fill="currentColor"/>'}
 ];
-function iconSvg(path){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+path+'"/></svg>'; }
+function iconSvg(inner){ return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">'+inner+'</svg>'; }
 function buildNav(){
   navTabs.innerHTML='';
   NAV.forEach(function(n){
-    var b=el('button',{'type':'button','class':'tab','data-tab':n.id});
+    if(n.sep){ navTabs.appendChild(el('span',{'class':'nav-sep'})); return; }
+    var b=el('button',{'type':'button','class':'navitem','data-tab':n.id});
     b.innerHTML=iconSvg(n.icon)+'<span data-i18n="nav.'+n.id+'"></span>';
     navTabs.appendChild(b);
   });
   applyI18n(navTabs);
-  var langEl=document.querySelector('.lang-switch');
-  langEl.addEventListener('click',function(e){
-    var b=e.target.closest?e.target.closest('.lang-btn'):null;
-    if(b) setLang(b.getAttribute('data-lang'));
-  });
 }
 
 /* =====================================================================
@@ -374,8 +484,6 @@ function setValue(node,value){
   var next=String(value==null?'':value);
   if(node.value!==next) node.value=next;
 }
-
-/* DOM builder: minimal, no framework. */
 function el(tag,attrs,children){
   var n=document.createElement(tag);
   if(attrs) for(var k in attrs){
@@ -400,9 +508,8 @@ function insertAt(container,node,idx){
 
 /* reconcileCollection(container, list, keyFn, attr, create, apply)
  * In-place diff: existing key -> apply() in place; new key -> create one
- * node; missing key -> remove one node. Order is preserved. Never wipes or
- * rebuilds the container, so focus/unpersisted DOM state survives refresh.
- * `attr` is the stable-key attribute (data-*-key) on each child node. */
+ * node; missing key -> remove one node. Order is preserved. Never wipes
+ * or rebuilds the container, so focus/unpersisted DOM state survives. */
 function reconcileCollection(container,list,keyFn,attr,create,apply){
   var byKey={};
   list.forEach(function(it){ byKey[keyFn(it)]=it; });
@@ -428,7 +535,7 @@ function reconcileCollection(container,list,keyFn,attr,create,apply){
 }
 
 /* =====================================================================
- * API + online status
+ * API + online status + toasts
  * ===================================================================== */
 function esc(s){
   return String(s==null?'':s)
@@ -436,14 +543,7 @@ function esc(s){
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function fmtBool(v){ return v===true?t('common.on'):(v===false?t('common.off'):esc(v)); }
-function fmtTs(sec){ if(!sec) return '—'; return new Date(sec*1000).toLocaleTimeString(lang); }
-function badgeForStatus(s){
-  if(!s) return '';
-  var st=String(s);
-  if(st==='STATE_CONFIRMED'||st==='CONFIRMED') return 'badge-confirmed';
-  if(st==='FAILED'||st==='TIMEOUT') return 'badge-error';
-  return 'badge-pending';
-}
+function fmtTs(sec){ if(!sec) return '—'; return new Date(sec*1000).toLocaleTimeString(LANG); }
 function apiFetch(path,opts){
   opts=opts||{};
   var ctrl=new AbortController();
@@ -456,32 +556,34 @@ function apiFetch(path,opts){
       return r.text().then(function(txt){
         var j=null;
         try{ j=JSON.parse(txt); }catch(e){ j=null; }
-        if(!j){ throw new Error('Invalid JSON response from '+path); }
+        if(!j){ throw new Error(tf('err.invalid',{0:path})); }
         if(!j.ok){ throw new Error((j.error&&j.error.code?j.error.code+': ':'')+(j.error&&j.error.message?j.error.message:'request failed')); }
         return j.data;
       });
     }).catch(function(e){
       clearTimeout(timer);
-      if(e&&e.name==='AbortError') throw new Error('Timeout: '+path+' unreachable');
+      if(e&&e.name==='AbortError') throw new Error(tf('err.timeout',{0:path}));
       throw e;
     });
 }
 function setOnline(b){
   statusDot.className=b?'dot ok':'dot';
-  setText(statusTextEl,t(b?'common.online':'common.offline'));
+  setText(statusTextEl,t(b?'chip.online':'chip.offline'));
 }
 function setNetLabel(txt){ setText(sysInfoEl,txt); }
-/* Human label for the connection the device is currently hosting. */
 function netLabelFor(s){
   if(!s||!s.network) return '';
   return s.network==='AP'||s.network==='APSTA'?('AP · '+(s.ssid||'')):'STA';
 }
-var toastTimer;
+function showToast(type,message,duration){
+  var container=document.getElementById('toast-container');
+  var t0=el('div',{'class':'toast '+type,'text':message});
+  container.appendChild(t0);
+  setTimeout(function(){ t0.classList.add('fade-out'); },duration||3000);
+  setTimeout(function(){ if(t0.parentNode) container.removeChild(t0); },(duration||3000)+300);
+}
 function showError(err){
-  toastEl.textContent=(t('common.error')+': ')+(err&&err.message?err.message:'unknown');
-  toastEl.style.display='block';
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(function(){ toastEl.style.display='none'; },4000);
+  showToast('error',tf('err.toast',{0:(err&&err.message?err.message:'unknown')}));
 }
 
 /* =====================================================================
@@ -511,22 +613,25 @@ function runViewRefresh(v){
 }
 function showView(name){
   uiState.activeView=name;
+  try{ localStorage.setItem('tab',name); }catch(e){}
   var v=views[name];
-  Array.prototype.forEach.call(navTabs.querySelectorAll('.tab'),function(b){
+  Array.prototype.forEach.call(navTabs.querySelectorAll('.navitem'),function(b){
     setClass(b,'active',b.getAttribute('data-tab')===name);
   });
   var host=document.getElementById('view-'+name);
   if(!host){
     host=document.createElement('div');
     host.id='view-'+name;
+    host.className='content';
     main.appendChild(host);
     v.host=host;
     if(v.mount) v.mount(host);
   }
-  Object.keys(views).forEach(function(n){
-    var h=document.getElementById('view-'+n);
-    if(h) h.style.display=(n===name)?'':'none';
+  var all=main.querySelectorAll('.content');
+  Array.prototype.forEach.call(all,function(h){
+    setClass(h,'active',h.id==='view-'+name);
   });
+  setClass(host,'active',true);
   if(v.refresh&&v.pollable!==false) runViewRefresh(v);
 }
 /* Single consistent poll interval; only the active view is fetched, and a
@@ -537,22 +642,23 @@ function pollTick(){
 }
 
 /* =====================================================================
- * DASHBOARD view
+ * DASHBOARD view (stat cards, as the Qymera .dash-stats pattern)
  * ===================================================================== */
 views.dashboard={
   mount:function(host){
     host.innerHTML=
-      '<div class="grid grid-3">'+
-      '<div class="card"><h2 data-i18n="dash.status">Status</h2><div class="metric"><span class="badge badge-online" data-i18n="common.online">Online</span></div></div>'+
-      '<div class="card"><h2 data-i18n="dash.ip">IP Address</h2><div class="metric" data-field="ip">—</div></div>'+
-      '<div class="card"><h2 data-i18n="dash.heap">Free Heap</h2><div class="metric" data-field="heap">—</div></div>'+
-      '<div class="card"><h2 data-i18n="dash.uptime">Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
-      '<div class="card"><h2 data-i18n="dash.device_count">Device Count</h2><div class="metric" data-field="device_count">—</div></div>'+
-      '<div class="card"><h2 data-i18n="dash.entity_count">Entity Count</h2><div class="metric" data-field="entity_count">—</div></div>'+
+      '<div class="page-head"><div><h1 data-i18n="page.dashboard">Panel</h1><p class="page-sub" data-i18n="page.dashboard.sub">Node overview</p></div></div>'+
+      '<div class="dash-stats">'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.status">Status</span><span class="stat-value" data-field="status"><span class="chip ok" data-i18n="chip.online">Online</span></span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.ip">IP</span><span class="stat-value" data-field="ip">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.heap">Heap</span><span class="stat-value" data-field="heap">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.uptime">Uptime</span><span class="stat-value time" data-field="uptime">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.devices">Devices</span><span class="stat-value" data-field="device_count">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.entities">Entities</span><span class="stat-value" data-field="entity_count">—</span></div>'+
       '</div>';
     applyI18n(host);
     var f={};
-    ['ip','heap','uptime','device_count','entity_count'].forEach(function(n){
+    ['status','ip','heap','uptime','device_count','entity_count'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
     });
     this.__f=f;
@@ -566,86 +672,83 @@ views.dashboard={
     setText(f.uptime,Math.floor(s.uptime_ms/1000)+'s');
     setText(f.device_count,s.device_count);
     setText(f.entity_count,s.entity_count);
+    var chip=f.status.querySelector('.chip')||f.status;
+    setText(chip, t(s.online===false?'chip.offline':'chip.online'));
+    setClass(chip,'ok',s.online!==false);
   }
 };
 
 /* =====================================================================
- * DEVICES view
+ * DEVICES view (Qymera .device-card pattern + status dot footer)
  * ===================================================================== */
-function deviceCardNew(){ return el('div',{'class':'card','data-device-key':''}); }
+function deviceCardNew(){ return el('div',{'class':'device-card','data-device-key':''}); }
 function updateDeviceCard(dev,node){
   var local=(dev.role==='dashboard');
   if(!node.__built){
     node.innerHTML=''+
-      '<h2></h2>'+
-      '<div class="entity"><div class="entity-info">'+
-      '<span class="entity-name" data-field="id"></span>'+
-      '<span class="entity-meta" data-field="meta"></span></div>'+
-      '<span class="badge" data-field="online"></span></div>'+
-      '<div style="margin-top:8px"><span class="entity-meta" data-field="state"></span></div>';
+      '<div class="device-head">'+
+      '<span class="chip" data-field="kind">DEVICE</span>'+
+      '<span class="device-name" data-field="name"></span></div>'+
+      '<div class="device-row"><span data-field="id"></span></div>'+
+      '<div class="device-row"><span class="small-note" data-field="meta"></span></div>'+
+      '<div class="device-row"><span data-field="state"></span></div>'+
+      '<div class="device-footer"><span class="status" data-field="online"><span class="dot bad"></span><span data-field="online_txt"></span></span></div>';
     node.__built=true;
   }
-  var h2=node.querySelector('h2');
-  h2.textContent='';
-  h2.appendChild(el('span',{'text':esc(dev.name)}));
-  h2.appendChild(el('span',{'class':'badge '+(local?'badge-local':'badge-remote'),'text':local?t('common.local'):t('common.remote')}));
-  setText(node.querySelector('[data-field="id"]'),t('common.id')+': '+dev.device_id);
-  setText(node.querySelector('[data-field="meta"]'),t('common.model')+': '+(dev.model||'')+' | '+t('common.location')+': '+(dev.location||'—')+' | '+t('common.role')+': '+(dev.role||'—'));
-  setText(node.querySelector('[data-field="state"]'),t('common.state')+': '+esc(String(dev.state?dev.state:(dev.online?'operational':'offline'))));
-  var ob=node.querySelector('[data-field="online"]');
-  setText(ob,dev.online?t('devices.online'):t('devices.offline'));
-  setClass(ob,'badge-online',!!dev.online);
-  setClass(ob,'badge-offline',!dev.online);
+  setText(node.querySelector('[data-field="kind"]'),local?t('status.local'):t('status.remote'));
+  setClass(node.querySelector('[data-field="kind"]'),'ok',!!dev.online);
+  setText(node.querySelector('[data-field="name"]'),esc(dev.name)||dev.device_id);
+  setText(node.querySelector('[data-field="id"]'),esc(dev.device_id));
+  setText(node.querySelector('[data-field="meta"]'),(dev.model||'')+(dev.location?(' · '+dev.location):''));
+  setText(node.querySelector('[data-field="state"]'),(dev.state?esc(dev.state):(dev.online?'operational':'offline')));
+  var o=node.querySelector('[data-field="online"]');
+  var dot=o.querySelector('.dot');
+  setClass(dot,'ok',!!dev.online);
+  setClass(dot,'bad',!dev.online);
+  setText(node.querySelector('[data-field="online_txt"]'),t(dev.online?(local?'status.local':'status.remote'):'status.offline'));
 }
 views.devices={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.devices">Devices</h2><span class="empty"></span></div><div id="deviceList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="page-head"><div><h1 data-i18n="page.devices">Devices</h1><p class="page-sub" data-i18n="page.devices.sub"></p></div></div><div id="deviceList" class="devices-actuator-grid"></div>';
     applyI18n(host);
     this.__list=host.querySelector('#deviceList');
-    this.__count=host.querySelector('.section-header .empty');
   },
   refresh:makeRefresh('/devices','devices'),
   update:function(d){
     var list=d||[];
-    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.device_id;},'data-device-key',deviceCardNew,updateDeviceCard);
   }
 };
 
 /* =====================================================================
- * ENTITIES view (architectural reference: incremental + event delegation)
+ * ENTITIES view (device-card grammar; control via switch/slider)
  * ===================================================================== */
-function entityCardNew(){ return el('div',{'class':'card','data-entity-key':''}); }
+function entityKind(ent){
+  var caps=ent.capabilities||[];
+  if(caps.indexOf('actuator.relay')>=0) return 'common.RELAY';
+  if(caps.indexOf('actuator.dimmer')>=0) return 'common.DIMMER';
+  return 'common.SENSOR';
+}
+function entityCardNew(){ return el('div',{'class':'device-card','data-entity-key':''}); }
 function updateEntityCard(ent,node){
-  var key=ent.device_id+'/'+ent.entity_id;
   if(!node.__built){
     node.innerHTML=''+
-      '<h2></h2>'+
-      '<div class="entity"><div class="entity-info">'+
-      '<span class="entity-name" data-field="devkey"></span>'+
-      '<span class="entity-meta" data-field="meta"></span></div>'+
-      '<div style="display:flex;flex-direction:column;gap:4px;min-width:120px;align-items:flex-end">'+
-      '<span class="entity-meta" data-field="cmds"></span>'+
-      '<span class="entity-meta" data-field="reliability"></span></div></div>'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">'+
-      '<span class="entity-meta" data-field="values"></span>'+
-      '<span data-control></span></div>';
+      '<div class="device-head">'+
+      '<span class="chip" data-field="kind"></span>'+
+      '<span class="device-name" data-field="name"></span></div>'+
+      '<div class="device-row"><span class="small-note" data-field="key"></span></div>'+
+      '<div class="device-row"><span class="small-note" data-field="meta"></span></div>'+
+      '<div class="device-row"><span data-field="values"></span></div>'+
+      '<div class="device-control"><span data-control></span><span class="state-text off" data-field="ctl"></span></div>';
     node.__built=true;
   }
-  var h2=node.querySelector('h2');
-  h2.textContent='';
-  h2.appendChild(el('span',{'text':esc(ent.name)}));
-  h2.appendChild(el('span',{'class':'entity-meta','text':' ('+esc(ent.device_id)+')'}));
-  setText(node.querySelector('[data-field="devkey"]'),t('common.id')+': '+esc(key));
-  setText(node.querySelector('[data-field="meta"]'),
-    t('common.type')+': '+(ent.type||'')+' | '+t('entities.caps')+': '+((ent.capabilities||[]).join(', '))+' | '+t('common.unit')+': '+(ent.unit||''));
-  var cmds=node.querySelector('[data-field="cmds"]');
-  cmds.textContent=t('common.state')+': ';
-  var b=el('span',{'class':'badge '+badgeForStatus(ent.cmd_status)});
-  setText(b,ent.cmd_status||'—');
-  cmds.appendChild(b);
-  setText(node.querySelector('[data-field="reliability"]'),'Reliability: '+(ent.reliability==null?'':ent.reliability));
-  setText(node.querySelector('[data-field="values"]'),t('entities.current')+': '+fmtBool(ent.current)+'  '+t('entities.desired')+': '+fmtBool(ent.desired));
+  setText(node.querySelector('[data-field="kind"]'),t(entityKind(ent)));
+  setText(node.querySelector('[data-field="name"]'),esc(ent.name)||esc(ent.entity_id));
+  setText(node.querySelector('[data-field="key"]'),esc(ent.device_id+'/'+ent.entity_id));
+  var caps=(ent.capabilities||[]).join(', ');
+  setText(node.querySelector('[data-field="meta"]'),(ent.type?esc(ent.type)+(ent.unit?' · '+esc(ent.unit):''):caps));
+  var v=node.querySelector('[data-field="values"]');
+  setText(v,t('fields.current')+': '+fmtBool(ent.current)+'  ·  '+t('fields.desired')+': '+fmtBool(ent.desired));
   updateEntityControl(ent,node);
 }
 function updateEntityControl(ent,node){
@@ -659,34 +762,41 @@ function updateEntityControl(ent,node){
   if(node.__ctlType!==type){
     holder.innerHTML='';
     if(type==='relay'){
-      node.__ctl=el('button',{'class':'toggle','data-action':'toggle','data-k':key,'aria-label':t('nav.rules')});
+      node.__ctl=el('button',{'type':'button','class':'switch off','role':'switch','aria-checked':'false','data-action':'toggle','data-k':key});
+      node.__ctl.appendChild(el('span',{'class':'knob'}));
       holder.appendChild(node.__ctl);
     } else if(type==='dimmer'){
-      node.__ctl=el('input',{'type':'range','class':'slider','min':'0','max':'100','data-action':'dimmer','data-k':key});
+      node.__ctl=el('input',{'type':'range','min':'0','max':'100','aria-label':key,'data-action':'dimmer','data-k':key});
       holder.appendChild(node.__ctl);
     } else {
       node.__ctl=null;
-      holder.appendChild(document.createTextNode(fmtBool(ent.desired)));
+      holder.appendChild(el('span',{'class':'value-lg','text':fmtBool(ent.desired)}));
     }
     node.__ctlType=type;
   }
   var ctl=node.__ctl;
+  var st=node.querySelector('[data-field="ctl"]');
   if(type==='relay'){
     setClass(ctl,'on',ent.desired===true);
-    setAttr(ctl,'data-want',ent.desired===true?'1':'0');
+    setAttr(ctl,'aria-checked',ent.desired===true?'true':'false');
     setDisabled(ctl,busy);
+    setClass(st,'on',ent.desired===true);
+    setClass(st,'off',!(ent.desired===true));
+    setText(st,fmtBool(ent.desired));
   } else if(type==='dimmer'){
     setDisabled(ctl,busy);
     var lv=(typeof ent.desired==='number')?ent.desired:(ent.current||0);
-    /* Suppress echo while the user is dragging so the thumb does not jump. */
     if(ctl!==document.activeElement) setValue(ctl,lv);
+    setText(st,(typeof ent.current==='number')?(Math.round(ent.current)+'%'):'—');
+  } else {
+    setText(st,ent.cmd_status||'');
   }
 }
 function handleToggle(t){
   if(t.disabled) return;
   var key=t.getAttribute('data-k');
   var kv=key.split('/');
-  var want=(t.getAttribute('data-want')==='1');
+  var want=(t.getAttribute('aria-checked')==='true');
   t.disabled=true; uiState.pending.add(key);
   apiFetch('/control/relay',{method:'POST',body:JSON.stringify({device_id:kv[0],entity_id:kv[1],value:!want})})
     .then(function(){ uiState.pending.delete(key); runViewRefresh(views.entities); })
@@ -703,11 +813,9 @@ function handleDimmer(s){
 }
 views.entities={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.entities">Entities</h2><span class="empty"></span></div><div id="entityList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="page-head"><div><h1 data-i18n="page.entities">Entities</h1><p class="page-sub" data-i18n="page.entities.sub"></p></div></div><div id="entityList" class="settings-grid"></div>';
     applyI18n(host);
     this.__list=host.querySelector('#entityList');
-    this.__count=host.querySelector('.section-header .empty');
-    /* Event delegation: installed once at mount, never re-attached. */
     host.addEventListener('click',function(e){
       var t=e.target.closest?e.target.closest('[data-action="toggle"]'):null;
       if(t){ e.preventDefault(); handleToggle(t); }
@@ -720,65 +828,60 @@ views.entities={
   refresh:makeRefresh('/entities','entities'),
   update:function(d){
     var list=d||[];
-    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.device_id+'/'+x.entity_id;},'data-entity-key',entityCardNew,updateEntityCard);
   }
 };
 
 /* =====================================================================
- * RULES view (collection refreshed incrementally; editor is an overlay)
+ * RULES view (Qymera .rule-card pattern; editor is the modal overlay)
  * ===================================================================== */
 function ruleBrief(rule){
   if(rule.trigger&&rule.trigger.length){
     var t0=rule.trigger[0];
-    if(t0&&t0.entity) return esc(t0.entity.device_id+'/'+t0.entity.entity_id)+' '+(t0.operator?esc(t0.operator):'')+' '+esc(t0.threshold);
+    if(t0&&t0.entity) return t0.entity.device_id+'/'+t0.entity.entity_id+' '+(t0.operator||'')+' '+t0.threshold;
   }
   return '—';
 }
-function ruleCardNew(){ return el('div',{'class':'card','data-rule-key':''}); }
+function ruleCardNew(){ return el('div',{'class':'rule-card','data-rule-key':''}); }
 function updateRuleCard(rule,node){
   if(!node.__built){
     node.innerHTML=''+
-      '<h2></h2>'+
-      '<div class="entity"><div class="entity-info">'+
-      '<span class="entity-name" data-field="id"></span>'+
-      '<span class="entity-meta" data-field="meta"></span>'+
-      '<span class="entity-meta" data-field="trigger"></span></div>'+
-      '<span class="badge" data-field="enabled"></span></div>'+
-      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
-      '<button class="btn btn-ghost" data-action="edit-rule"></button>'+
-      '<button class="btn" data-action="toggle-rule"></button>'+
-      '<button class="btn btn-danger" data-action="del-rule"></button></div>';
+      '<div class="rule-head">'+
+      '<span class="chip" data-field="statechip">RULE</span>'+
+      '<div class="rule-actions">'+
+      '<button class="btn ghost sm" type="button" data-action="edit-rule"></button>'+
+      '<button class="btn ghost sm" type="button" data-action="toggle-rule"></button>'+
+      '<button class="btn danger sm" type="button" data-action="del-rule"></button>'+
+      '</div></div>'+
+      '<div class="rule-info"><span data-i18n="rules.name">Name</span><b data-field="name"></b></div>'+
+      '<div class="rule-info"><span data-i18n="fields.id">ID</span><b data-field="id"></b></div>'+
+      '<div class="rule-info"><span data-i18n="rules.trig">Trigger</span><b data-field="trigger"></b></div>'+
+      '<div class="rule-info"><span data-i18n="rules.rev">Revision</span><b data-field="rev"></b></div>';
+    applyI18n(node);
     node.__built=true;
   }
-  var h2=node.querySelector('h2');
-  h2.textContent='';
-  h2.appendChild(el('span',{'text':esc(rule.name)}));
-  setText(node.querySelector('[data-field="id"]'),t('common.id')+': '+rule.rule_id);
-  setText(node.querySelector('[data-field="meta"]'),t('common.revision')+': '+(rule.revision||0));
-  setText(node.querySelector('[data-field="trigger"]'),t('common.trigger')+': '+(rule.trigger&&rule.trigger.length?ruleBrief(rule):'—'));
-  var eb=node.querySelector('[data-field="enabled"]');
-  setText(eb,rule.enabled?t('rules.enabled'):t('rules.disabled'));
-  setClass(eb,'badge-enabled',!!rule.enabled);
-  setClass(eb,'badge-disabled',!rule.enabled);
+  setText(node.querySelector('[data-field="statechip"]'),rule.enabled?t('rules.enabled'):t('rules.disabled'));
+  setClass(node.querySelector('[data-field="statechip"]'),'ok',!!rule.enabled);
+  setText(node.querySelector('[data-field="name"]'),esc(rule.name));
+  setText(node.querySelector('[data-field="id"]'),esc(rule.rule_id));
+  setText(node.querySelector('[data-field="trigger"]'),ruleBrief(rule));
+  setText(node.querySelector('[data-field="rev"]'),String(rule.revision||0));
   node.querySelector('[data-action="edit-rule"]').setAttribute('data-rule',rule.rule_id);
-  setText(node.querySelector('[data-action="edit-rule"]'),t('common.edit'));
+  setText(node.querySelector('[data-action="edit-rule"]'),t('btn.edit'));
   var tb=node.querySelector('[data-action="toggle-rule"]');
   tb.setAttribute('data-rule',rule.rule_id);
-  setText(tb,rule.enabled?t('common.disable'):t('common.enable'));
-  setClass(tb,'btn-danger',!!rule.enabled);
-  setClass(tb,'btn-primary',!rule.enabled);
+  setText(tb,rule.enabled?t('btn.disable'):t('btn.enable'));
   node.querySelector('[data-action="del-rule"]').setAttribute('data-rule',rule.rule_id);
-  setText(node.querySelector('[data-action="del-rule"]'),t('common.delete'));
+  setText(node.querySelector('[data-action="del-rule"]'),t('btn.delete'));
 }
 views.rules={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2 data-i18n="nav.rules">Rules</h2>'+
-      '<span class="empty"></span>'+
-      '<button class="btn btn-primary" data-action="new-rule" data-i18n="rules.create">Create Rule</button></div><div id="ruleList"></div>';
+    host.innerHTML='<div class="page-head">'+
+      '<div><h1 data-i18n="page.rules">Rules</h1><p class="page-sub" data-i18n="page.rules.sub"></p></div>'+
+      '<button class="btn primary" type="button" data-action="new-rule"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg><span data-i18n="btn.newRule">New rule</span></button>'+
+      '</div><div id="ruleList" class="rule-list"></div>';
     applyI18n(host);
     this.__list=host.querySelector('#ruleList');
-    this.__count=host.querySelector('.section-header .empty');
     host.addEventListener('click',function(e){
       var t=null;
       if(e.target.closest) t=e.target.closest('[data-action]');
@@ -793,40 +896,28 @@ views.rules={
   refresh:makeRefresh('/rules','rules'),
   update:function(r){
     var list=r||[];
-    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.rule_id;},'data-rule-key',ruleCardNew,updateRuleCard);
   }
 };
 function toggleRule(id){
   var card=document.querySelector('[data-rule-key="'+id+'"]');
-  var enDiag=card?card.querySelector('[data-field="enabled"]').textContent:'';
-  var en=(enDiag===t('rules.enabled'));
+  var chip=card?card.querySelector('[data-field="statechip"]').textContent:'';
+  var en=(chip===t('rules.enabled'));
   apiFetch('/rules/'+encodeURIComponent(id)+(en?'/disable':'/enable'),{method:'POST'})
     .then(function(){ runViewRefresh(views.rules); })
     .catch(showError);
 }
 function deleteRule(id){
-  if(!window.confirm(tf('common.delete_q',{0:id}))) return;
+  if(!window.confirm(tf('rules.deleteQ',{0:id}))) return;
   apiFetch('/rules/'+encodeURIComponent(id),{method:'DELETE'})
     .then(function(){ runViewRefresh(views.rules); })
     .catch(showError);
 }
 
-/* ---- Rule editor (overlay, not part of the collection DOM) ---- */
-function collectRuleBody(f){
-  var body={name:f.name.value};
-  if(f.rule_id&&f.rule_id.value) body.rule_id=f.rule_id.value;
-  body.trigger={entity:{device_id:f.trg_dev.value,entity_id:f.trg_ent.value},operator:f.trg_op.value,threshold:parseFloat(f.trg_threshold.value)};
-  body.actions=[{entity:{device_id:f.act_dev.value,entity_id:f.act_ent.value},action:f.act_type.value,value:parseFloat(f.act_value.value)}];
-  if(f.cooldown_ms.value) body.cooldown_ms=parseInt(f.cooldown_ms.value,10);
-  if(f.priority.value) body.priority=parseInt(f.priority.value,10);
-  if(f.max_act.value) body.max_activations_per_hour=parseInt(f.max_act.value,10);
-  body.enabled=true;
-  return body;
-}
+/* ---- Rule editor (Qymera modal overlay, separate from the collection DOM) ---- */
 function closeRuleEditor(){
-  overlayEl.style.display='none';
-  overlayEl.innerHTML='';
+  overlayEl.classList.remove('open');
+  document.getElementById('ruleFormHost').innerHTML='';
   uiState.formActive=false;
   uiState.editingRuleId=null;
   runViewRefresh(views.rules);
@@ -834,126 +925,131 @@ function closeRuleEditor(){
 function openRuleEditor(id){
   uiState.formActive=true;
   uiState.editingRuleId=id;
-  overlayEl.style.display='block';
+  setText(document.getElementById('ruleModalTitle'),id?t('rules.titleEdit'):t('rules.titleNew'));
+  overlayEl.classList.add('open');
   if(id){
     apiFetch('/rules/'+encodeURIComponent(id)).then(function(rule){
       buildRuleForm(rule);
-    }).catch(showError);
+    }).catch(function(e){ closeRuleEditor(); showError(e); });
   } else {
     buildRuleForm(null);
   }
 }
 function buildRuleForm(rule){
-  var card=el('div',{'class':'card'},[
-    el('h2',{'text':rule?t('rules.edit'):t('rules.create')}),
-    el('form',{'id':'ruleForm'})
-  ]);
-  var form=card.querySelector('form');
+  var host=document.getElementById('ruleFormHost');
   var trig=(rule&&rule.trigger&&rule.trigger.length)?rule.trigger[0]:null;
   var actions=(rule&&rule.actions&&rule.actions.length)?rule.actions:[];
   var act=actions[0]||null;
-  addRow(form,t('rules.form.name'),input('name',rule?rule.name:''),true);
-  addRow(form,t('rules.form.rule_id'),input('rule_id',(rule?rule.rule_id:'')));
-  addRow(form,t('rules.form.trg_dev'),input('trg_dev',trig?(trig.entity?trig.entity.device_id:''):'dashboard'));
-  addRow(form,t('rules.form.trg_ent'),input('trg_ent',trig?(trig.entity?trig.entity.entity_id:''):'temperature'));
-  addRow(form,t('rules.form.operator'),sel('trg_op',[['GT','>'],['LT','<'],['GE','≥'],['LE','≤'],['EQ','='],['NE','≠']],trig?trig.operator:'GT'));
-  addRow(form,t('rules.form.threshold'),input('trg_threshold','number',trig?trig.threshold:30));
-  addRow(form,t('rules.form.act_dev'),input('act_dev',act?(act.entity?act.entity.device_id:''):'dashboard'));
-  addRow(form,t('rules.form.act_ent'),input('act_ent',act?(act.entity?act.entity.entity_id:''):'fan'));
-  addRow(form,t('rules.form.act_type'),sel('act_type',[['SET_BOOL',t('rules.act.SET_BOOL')],['SET_LEVEL',t('rules.act.SET_LEVEL')],['SET_VALUE',t('rules.act.SET_VALUE')],['TOGGLE',t('rules.act.TOGGLE')]],act?act.action:'SET_BOOL'));
-  addRow(form,t('rules.form.value'),input('act_value','number',act?(act.value==null?1:act.value):1));
-  addRow(form,t('rules.form.cooldown'),input('cooldown_ms','number',rule?rule.cooldown_ms:60000));
-  addRow(form,t('rules.form.priority'),input('priority','number',rule?rule.priority:10));
-  addRow(form,t('rules.form.max_act'),input('max_act','number',rule?rule.max_activations_per_hour:10));
-  var save=el('button',{'type':'button','class':'btn btn-primary','style':'margin-top:12px;width:100%'},{'text':t('common.save')});
-  var cancel=el('button',{'type':'button','class':'btn btn-ghost','style':'margin-top:8px;width:100%'},{'text':t('common.cancel')});
-  var btnRow=el('div',{'style':'margin-top:12px'},[save,cancel]);
-  form.appendChild(btnRow);
-  save.addEventListener('click',function(){ saveRuleForm(); });
-  cancel.addEventListener('click',function(){ closeRuleEditor(); });
-  overlayEl.innerHTML='';
-  overlayEl.appendChild(card);
-}
-function addRow(form,labelText,inputEl){
-  var d=el('div');
-  d.appendChild(el('label',{'text':labelText}));
-  d.appendChild(inputEl);
-  form.appendChild(d);
-}
-function input(name,value,type){
-  var i=el('input',{'name':name,'type':type||'text','value':value==null?'':value});
-  return i;
-}
-function sel(name,opts,selVal){
-  var s=el('select',{'name':name});
-  opts.forEach(function(o){
-    var v=o[0],lab=o[1];
-    var opt=el('option',{'value':v,'text':lab});
-    if(String(v)===String(selVal)) setAttr(opt,'selected','selected');
-    s.appendChild(opt);
+  host.innerHTML=''+
+    '<div class="field"><label data-i18n="rules.name">Name</label><input id="rf_name" class="input" type="text"></div>'+
+    '<div class="field"><label data-i18n="rules.rule_id">Rule ID</label><input id="rf_rule_id" class="input" type="text"></div>'+
+    '<div class="settings-row" style="margin-bottom:12px">'+
+    '<div class="field"><label data-i18n="rules.trg_dev">Trigger device</label><input id="rf_trg_dev" class="input" type="text"></div>'+
+    '<div class="field"><label data-i18n="rules.trg_ent">Trigger entity</label><input id="rf_trg_ent" class="input" type="text"></div></div>'+
+    '<div class="settings-row" style="margin-bottom:12px">'+
+    '<div class="field"><label data-i18n="rules.operator">Operator</label><select id="rf_trg_op" class="input"></select></div>'+
+    '<div class="field"><label data-i18n="rules.threshold">Threshold</label><input id="rf_trg_threshold" class="input" type="number"></div></div>'+
+    '<div class="settings-row" style="margin-bottom:12px">'+
+    '<div class="field"><label data-i18n="rules.act_dev">Action device</label><input id="rf_act_dev" class="input" type="text"></div>'+
+    '<div class="field"><label data-i18n="rules.act_ent">Action entity</label><input id="rf_act_ent" class="input" type="text"></div></div>'+
+    '<div class="settings-row" style="margin-bottom:12px">'+
+    '<div class="field"><label data-i18n="rules.act_type">Action type</label><select id="rf_act_type" class="input"></select></div>'+
+    '<div class="field"><label data-i18n="rules.value">Value</label><input id="rf_act_value" class="input" type="number"></div></div>'+
+    '<div class="settings-row" style="margin-bottom:12px">'+
+    '<div class="field"><label data-i18n="rules.cooldown">Cooldown</label><input id="rf_cooldown_ms" class="input" type="number"></div>'+
+    '<div class="field"><label data-i18n="rules.priority">Priority</label><input id="rf_priority" class="input" type="number"></div></div>'+
+    '<div class="field"><label data-i18n="rules.max_act">Max activations</label><input id="rf_max_act" class="input" type="number"></div>';
+  var ops=[['GT','>'],['LT','<'],['GE','≥'],['LE','≤'],['EQ','='],['NE','≠']];
+  var opsSel=document.getElementById('rf_trg_op');
+  ops.forEach(function(o){
+    var opt=el('option',{'value':o[0],'text':o[1]});
+    if(o[0]===(trig?trig.operator:null)||(!trig&&o[0]==='GT')) setAttr(opt,'selected','selected');
+    opsSel.appendChild(opt);
   });
-  return s;
+  var acts=[['SET_BOOL',t('rules.act.SET_BOOL')],['SET_LEVEL',t('rules.act.SET_LEVEL')],['SET_VALUE',t('rules.act.SET_VALUE')],['TOGGLE',t('rules.act.TOGGLE')]];
+  var actsSel=document.getElementById('rf_act_type');
+  acts.forEach(function(o){
+    var opt=el('option',{'value':o[0],'text':o[1]});
+    if(o[0]===(act?act.action:'SET_BOOL')) setAttr(opt,'selected','selected');
+    actsSel.appendChild(opt);
+  });
+  setValue(document.getElementById('rf_name'),rule?rule.name:'');
+  setValue(document.getElementById('rf_rule_id'),rule?rule.rule_id:'');
+  setValue(document.getElementById('rf_trg_dev'),trig&&trig.entity?trig.entity.device_id:'dashboard');
+  setValue(document.getElementById('rf_trg_ent'),trig&&trig.entity?trig.entity.entity_id:'temperature');
+  setValue(document.getElementById('rf_trg_threshold'),trig?trig.threshold:30);
+  setValue(document.getElementById('rf_act_dev'),act&&act.entity?act.entity.device_id:'dashboard');
+  setValue(document.getElementById('rf_act_ent'),act&&act.entity?act.entity.entity_id:'fan');
+  setValue(document.getElementById('rf_act_value'),act?(act.value==null?1:act.value):1);
+  setValue(document.getElementById('rf_cooldown_ms'),rule?rule.cooldown_ms:60000);
+  setValue(document.getElementById('rf_priority'),rule?rule.priority:10);
+  setValue(document.getElementById('rf_max_act'),rule?rule.max_activations_per_hour:10);
+  applyI18n(host);
+}
+function collectRuleBody(){
+  var g=function(id){ return document.getElementById(id); };
+  var body={name:g('rf_name').value};
+  if(g('rf_rule_id').value) body.rule_id=g('rf_rule_id').value;
+  body.trigger={entity:{device_id:g('rf_trg_dev').value,entity_id:g('rf_trg_ent').value},operator:g('rf_trg_op').value,threshold:parseFloat(g('rf_trg_threshold').value)};
+  body.actions=[{entity:{device_id:g('rf_act_dev').value,entity_id:g('rf_act_ent').value},action:g('rf_act_type').value,value:parseFloat(g('rf_act_value').value)}];
+  if(g('rf_cooldown_ms').value) body.cooldown_ms=parseInt(g('rf_cooldown_ms').value,10);
+  if(g('rf_priority').value) body.priority=parseInt(g('rf_priority').value,10);
+  if(g('rf_max_act').value) body.max_activations_per_hour=parseInt(g('rf_max_act').value,10);
+  body.enabled=true;
+  return body;
 }
 function saveRuleForm(){
-  var f=document.getElementById('ruleForm');
-  if(!f) return;
-  var fels=f.elements;
-  var elt=fels.name;
-  if(!elt||!elt.value.trim()){ showError(new Error(t('rules.name_req'))); return; }
-  var body=collectRuleBody(fels);
+  var nameEl=document.getElementById('rf_name');
+  if(!nameEl||!nameEl.value.trim()){ showError(new Error(t('rules.name_req'))); return; }
+  var body=collectRuleBody();
   var id=uiState.editingRuleId;
   var isNew=!id;
   apiFetch(isNew?'/rules':'/rules/'+encodeURIComponent(id),{method:isNew?'POST':'PUT',body:JSON.stringify(body)})
-    .then(function(){
-      closeRuleEditor();
-    }).catch(showError);
+    .then(function(){ closeRuleEditor(); }).catch(showError);
 }
 
 /* =====================================================================
- * SKILLS view (rarely changes; reconciled incrementally anyway)
+ * SKILLS view (settings-card grammar)
  * ===================================================================== */
-function skillCardNew(){ return el('div',{'class':'card','data-skill-key':''}); }
+function skillCardNew(){ return el('div',{'class':'settings-card','data-skill-key':''}); }
 function updateSkillCard(sk,node){
   if(!node.__built){
     node.innerHTML=''+
-      '<h2></h2>'+
-      '<div class="entity"><div class="entity-info">'+
-      '<span class="entity-name" data-field="ver"></span>'+
-      '<span class="entity-meta" data-field="desc"></span>'+
-      '<span class="entity-meta" data-field="schema"></span>'+
-      '<span class="entity-meta" data-field="perms"></span></div></div>';
+      '<div class="settings-card-head">'+
+      '<div><span class="eyebrow" data-field="ver"></span><h3 data-field="name"></h3></div>'+
+      '<span class="chip" data-i18n="common.SENSOR">SKILL</span></div>'+
+      '<div class="kv"><span data-i18n="fields.state">State</span><b data-field="desc"></b></div>'+
+      '<div class="kv"><span data-i18n="fields.schema">Schema</span><b data-field="schema"></b></div>'+
+      '<div class="kv"><span data-i18n="fields.perms">Perms</span><b data-field="perms"></b></div>';
+    applyI18n(node);
     node.__built=true;
   }
-  var h2=node.querySelector('h2');
-  h2.textContent='';
-  h2.appendChild(el('span',{'text':esc(sk.name)}));
   setText(node.querySelector('[data-field="ver"]'),'v'+sk.version);
+  setText(node.querySelector('[data-field="name"]'),esc(sk.name));
   setText(node.querySelector('[data-field="desc"]'),sk.description||'');
-  setText(node.querySelector('[data-field="schema"]'),t('common.schema')+': '+(sk.schema_id||''));
+  setText(node.querySelector('[data-field="schema"]'),sk.schema_id||'');
   var perms='';
   if(sk.permissions&1) perms+='READ ';
   if(sk.permissions&2) perms+='CONTROL ';
   if(sk.permissions&4) perms+='RULE_READ ';
   if(sk.permissions&8) perms+='RULE_WRITE ';
-  setText(node.querySelector('[data-field="perms"]'),t('common.perms')+': '+perms);
+  setText(node.querySelector('[data-field="perms"]'),perms||'—');
 }
 views.skills={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2 data-i18n="skills.title">Skills</h2><span class="empty"></span></div><div id="skillList" class="grid grid-2"></div>';
+    host.innerHTML='<div class="page-head"><div><h1 data-i18n="page.skills">Skills</h1><p class="page-sub" data-i18n="page.skills.sub"></p></div></div><div id="skillList" class="settings-grid"></div>';
     applyI18n(host);
     this.__list=host.querySelector('#skillList');
-    this.__count=host.querySelector('.section-header .empty');
   },
   refresh:makeRefresh('/skills','skills'),
   update:function(sk){
     var list=sk||[];
-    setText(this.__count,list.length+'');
     reconcileCollection(this.__list,list,function(x){return x.name;},'data-skill-key',skillCardNew,updateSkillCard);
   }
 };
 
 /* =====================================================================
- * LOGS view (append new, remove overflow, keep DOM stable)
+ * LOGS view (log-panel grammar)
  * ===================================================================== */
 function logKey(e){
   var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
@@ -961,47 +1057,58 @@ function logKey(e){
 }
 function logCardNew(){ return el('div',{'class':'log-entry','data-log-key':''}); }
 function updateLogCard(e,node){
-  var lvl=String(e.level||e.layer||'');
-  setClass(node,'ERROR',lvl==='ERROR');
-  setClass(node,'WARNING',lvl==='WARNING');
+  var lvl=String(e.level||e.layer||'').toLowerCase();
+  var lcls='inf';
+  if(lvl==='warn'||lvl==='warning') lcls='wrn';
+  if(lvl==='err'||lvl==='error') lcls='err';
   var ts=(typeof e.ts==='number')?e.ts:(e.timestamp?e.timestamp.seconds:0);
-  node.textContent='';
-  node.appendChild(el('span',{'style':'color:var(--text-faint)','text':'['+fmtTs(ts)+']'}));
-  node.appendChild(el('span',{'style':'font-weight:500','text':(e.source||'')+': '}));
-  node.appendChild(el('span',{'text':e.msg||''}));
+  if(!node.firstChild){
+    node.appendChild(el('span',{'class':'t','text':'['+fmtTs(ts)+']'}));
+    node.appendChild(el('span',{'class':'l '+lcls,'text':(e.source||'').slice(0,6)+' '}));
+    node.appendChild(el('span',{'class':'m','text':e.msg||''}));
+  } else {
+    var t0=node.querySelector('.t'); setText(t0,'['+fmtTs(ts)+']');
+    var l=node.querySelector('.l'); setText(l,(e.source||'').slice(0,6)+' ');
+    setClass(l,'inf',lcls==='inf'); setClass(l,'wrn',lcls==='wrn'); setClass(l,'err',lcls==='err');
+    setText(node.querySelector('.m'),e.msg||'');
+  }
 }
 views.logs={
   mount:function(host){
-    host.innerHTML='<div class="section-header"><h2 data-i18n="logs.title">Logs</h2><span class="empty"></span></div><div id="logList"></div>';
+    host.innerHTML='<div class="page-head"><div><h1 data-i18n="page.logs">Logs</h1><p class="page-sub" data-i18n="page.logs.sub"></p></div></div>'+
+      '<div class="log-status" id="logStatus" data-field="lstatus"></div><div class="log-grid"><div class="log-panel"><h3 data-i18n="page.logs">Logs</h3><div id="logList"></div></div></div>';
     applyI18n(host);
     this.__list=host.querySelector('#logList');
-    this.__count=host.querySelector('.section-header .empty');
+    this.__status=host.querySelector('[data-field="lstatus"]');
   },
   refresh:makeRefresh('/logs','logs'),
   update:function(l){
     var list=(l||[]).slice(0,50);
-    setText(this.__count,list.length+'');
+    var st=this.__status;
+    if(!list.length){ setText(st,t('log.empty')); setClass(st,'error',false); setClass(st,'ok',false); }
+    else { setText(st,tf('log.updated',{0:fmtTs(Math.floor(Date.now()/1000)),1:list.length})); setClass(st,'ok',true); setClass(st,'error',false); }
     reconcileCollection(this.__list,list,logKey,'data-log-key',logCardNew,updateLogCard);
   }
 };
 
 /* =====================================================================
- * SYSTEM view
+ * SYSTEM view (stat cards)
  * ===================================================================== */
 views.system={
   mount:function(host){
     host.innerHTML=
-      '<div class="grid grid-3">'+
-      '<div class="card"><h2 data-i18n="system.net">Network</h2><div class="metric" data-field="net">—</div></div>'+
-      '<div class="card"><h2 data-i18n="system.ssid">SSID</h2><div class="metric" data-field="ssid">—</div></div>'+
-      '<div class="card"><h2 data-i18n="system.ip">IP</h2><div class="metric" data-field="ip">—</div></div>'+
-      '<div class="card"><h2 data-i18n="system.heap">Heap</h2><div class="metric" data-field="heap">—</div></div>'+
-      '<div class="card"><h2 data-i18n="system.uptime">Uptime</h2><div class="metric" data-field="uptime">—</div></div>'+
-      '<div class="card"><h2 data-i18n="system.build">Build</h2><div class="metric" data-field="build">ESP32 Dashboard</div></div>'+
+      '<div class="page-head"><div><h1 data-i18n="page.system">System</h1><p class="page-sub" data-i18n="page.system.sub"></p></div></div>'+
+      '<div class="dash-stats">'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.ip">IP</span><span class="stat-value" data-field="ip">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.heap">Heap</span><span class="stat-value" data-field="heap">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="stat.uptime">Uptime</span><span class="stat-value time" data-field="uptime">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="net.ssid">SSID</span><span class="stat-value" data-field="ssid">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="fields.state">Mode</span><span class="stat-value" data-field="net">—</span></div>'+
+      '<div class="stat-card"><span class="stat-label" data-i18n="fields.model">Build</span><span class="stat-value" data-field="build">ESP32 Dashboard</span></div>'+
       '</div>';
     applyI18n(host);
     var f={};
-    ['net','ssid','ip','heap','uptime','build'].forEach(function(n){
+    ['ip','heap','uptime','ssid','net','build'].forEach(function(n){
       f[n]=host.querySelector('[data-field="'+n+'"]');
     });
     this.__f=f;
@@ -1010,36 +1117,38 @@ views.system={
   update:function(s){
     var f=this.__f;
     setNetLabel(netLabelFor(s));
-    setText(f.net,s.network===void 0?'?':String(s.network));
-    setText(f.ssid,s.ssid||'—');
     setText(f.ip,s.ip||'—');
     setText(f.heap,s.free_heap+' B');
     setText(f.uptime,Math.floor(s.uptime_ms/1000)+'s');
+    setText(f.ssid,s.ssid||'—');
+    setText(f.net,String(s.network||'—'));
   }
 };
 
 /* =====================================================================
- * NETWORK view (mount-once, explicit scan, never auto-refreshed).
- * pollable:false keeps the Setup form untouched by any polling.
+ * NETWORK view (settings-card grammar; explicit scan, never auto-
+ * refreshed, so the setup form keeps focus untouched by polling)
  * ===================================================================== */
 var scanCache=[];
 views.network={
   pollable:false,
   mount:function(host){
-    host.innerHTML=
-      '<div class="card"><p class="entity-meta" data-i18n="network.hint">Configure this device to join your local WiFi. After saving it reboots in STA mode (no more AP).</p></div>'+
-      '<div class="card"><h2 data-i18n="network.scan">Scan Networks</h2>'+
-        '<button class="btn btn-primary" id="scanBtn" data-i18n="network.scan_btn">Scan for networks</button>'+
-        '<div id="scanList" style="margin-top:12px"></div></div>'+
-      '<div class="card"><h2 data-i18n="network.connect">Connect to WiFi</h2>'+
-        '<div class="form-row"><div><label data-i18n="network.ssid">SSID</label><input id="netSsid" list="scanOpts" data-i18n-ph="network.ssid_ph" placeholder="Network name..."></div>'+
-        '<div><label data-i18n="network.password">Password</label><input id="netPassword" type="password" data-i18n-ph="network.password_ph" placeholder="Leave empty for open networks"></div></div>'+
-        '<div class="form-row"><div><label data-i18n="network.udp_disc">UDP Discovery Port</label><input id="netUdpDiscovery" type="number" value="13345" min="1" placeholder="13345"></div>'+
-        '<div><label data-i18n="network.udp_ctrl">UDP Control Port</label><input id="netUdpControl" type="number" value="13346" min="1" placeholder="13346"></div></div>'+
-        '<datalist id="scanOpts"></datalist>'+
-        '<label><input type="checkbox" id="netEnable" checked style="width:auto;margin-right:6px"><span data-i18n="network.sta_enable">Enable STA (connect on boot)</span></label>'+
-        '<div style="margin-top:12px"><button class="btn btn-primary" id="connectBtn" data-i18n="network.save_reboot">Save & Reboot</button> <span id="netMsg" class="empty"></span></div>'+
-      '</div>';
+    host.innerHTML='<div class="page-head"><div><h1 data-i18n="page.network">Network</h1><p class="page-sub" data-i18n="page.network.sub"></p></div></div>'+
+      '<div class="settings-grid">'+
+      '<div class="settings-card settings-general"><p class="small-note" data-i18n="net.hint">Hint</p></div>'+
+      '<div class="settings-card"><h3 data-i18n="net.scan">Scan</h3>'+
+      '<div class="btn-row"><button class="btn ghost sm" type="button" id="scanBtn"><span data-i18n="net.scan_btn">Scan for networks</span></button></div>'+
+      '<div id="scanList" style="margin-top:8px"></div></div>'+
+      '<div class="settings-card"><h3 data-i18n="net.connect">Connect</h3>'+
+      '<div class="field"><label data-i18n="net.ssid">SSID</label><input id="netSsid" class="input" list="scanOpts" data-i18n-ph="net.ssid_ph" placeholder="Network name"></div>'+
+      '<div class="field"><label data-i18n="net.pass">Password</label><input id="netPassword" class="input" type="password" data-i18n-ph="net.pass_ph" placeholder="WiFi password"></div>'+
+      '<div class="settings-row">'+
+      '<div class="field"><label data-i18n="net.udp_disc">UDP Discovery</label><input id="netUdpDiscovery" class="input" type="number" value="13345" min="1" placeholder="13345"></div>'+
+      '<div class="field"><label data-i18n="net.udp_ctrl">UDP Control</label><input id="netUdpControl" class="input" type="number" value="13346" min="1" placeholder="13346"></div></div>'+
+      '<label class="check"><input type="checkbox" id="netEnable" checked><span data-i18n="net.sta_enable">Enable STA (connect on boot)</span></label>'+
+      '<div class="btn-row"><button class="btn primary" type="button" id="connectBtn"><span data-i18n="net.save">Save & Reboot</span></button><span id="netMsg" class="small-note"></span></div>'+
+      '</div></div>'+
+      '<datalist id="scanOpts"></datalist>';
     applyI18n(host);
     var scanBtn=document.getElementById('scanBtn');
     var connectBtn=document.getElementById('connectBtn');
@@ -1050,41 +1159,40 @@ views.network={
     var passEl=document.getElementById('netPassword');
     var enableEl=document.getElementById('netEnable');
     var renderScanList=function(nets){
-      if(!nets.length){ scanList.innerHTML='<div class="empty" data-i18n="network.no_nets">No networks found. Try scanning again.</div>'; applyI18n(scanList); return; }
-      scanList.innerHTML='<div class="empty" style="margin-bottom:6px" data-i18n="network.click_ssid">Click an SSID to select it:</div>'+
-        nets.map(function(n){
-          return '<button class="btn btn-ghost" style="width:auto;margin:2px 4px" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>';
-        }).join('');
+      if(!nets.length){ scanList.innerHTML='<div class="empty sm" data-i18n="net.no_nets">No networks found. Try scanning again.</div>'; applyI18n(scanList); return; }
+      scanList.innerHTML='<p class="small-note" style="margin-bottom:6px" data-i18n="net.click_ssid">Click an SSID to select it:</p>'+
+        '<div class="scan-row">'+nets.map(function(n){
+          return '<button type="button" class="btn ghost sm" style="width:auto" data-ssid="'+esc(n.ssid)+'">'+esc(n.ssid)+' ('+esc(n.rssi)+' dBm)</button>';
+        }).join('')+'</div>';
       applyI18n(scanList);
       scanOpts.innerHTML=nets.map(function(n){ return '<option value="'+esc(n.ssid)+'">'; }).join('');
     };
-    /* Delegation: scan buttons are recreated per scan, so listen once here. */
     scanList.addEventListener('click',function(e){
       var b=e.target.closest?e.target.closest('[data-ssid]'):null;
       if(b) setValue(ssidEl,b.getAttribute('data-ssid'));
     });
     scanBtn.addEventListener('click',function(){
-      msg.textContent=t('network.scanning');
+      msg.textContent=t('net.scanning');
       setDisabled(scanBtn,true);
       apiFetch('/wifi/scan').then(function(nets){
         scanCache=nets||[];
         renderScanList(scanCache);
-        msg.textContent=tf('network.found',{0:scanCache.length});
+        msg.textContent=tf('net.found',{0:scanCache.length});
         setDisabled(scanBtn,false);
-      }).catch(function(){ msg.textContent=t('network.scan_failed'); setDisabled(scanBtn,false); });
+      }).catch(function(){ msg.textContent=t('net.scan_failed'); setDisabled(scanBtn,false); });
     });
     connectBtn.addEventListener('click',function(){
       var ssid=ssidEl.value.trim();
-      if(!ssid){ msg.textContent=t('network.ssid_req'); return; }
+      if(!ssid){ msg.textContent=t('net.ssid_req'); return; }
       var password=passEl.value;
       var enable=enableEl.checked;
       var udpDiscovery=document.getElementById('netUdpDiscovery').value||'13345';
       var udpControl=document.getElementById('netUdpControl').value||'13346';
-      msg.textContent=t('common.saving');
+      msg.textContent=t('btn.save');
       setDisabled(connectBtn,true);
       apiFetch('/wifi/connect',{method:'POST',body:JSON.stringify({ssid:ssid,password:password,enabled:enable,udp_discovery_port:Number(udpDiscovery),udp_control_port:Number(udpControl)})})
-        .then(function(){ msg.textContent=t('network.saved'); setTimeout(function(){ setOnline(false); },500); })
-        .catch(function(){ msg.textContent=t('network.save_failed'); setDisabled(connectBtn,false); });
+        .then(function(){ msg.textContent=t('net.saved'); setTimeout(function(){ setOnline(false); },500); })
+        .catch(function(){ msg.textContent=t('net.save_failed'); setDisabled(connectBtn,false); });
     });
   }
 };
@@ -1093,29 +1201,31 @@ views.network={
  * Wiring (runs once after all views are defined).
  * ===================================================================== */
 navTabs.addEventListener('click',function(e){
-  var b=e.target.closest?e.target.closest('.tab'):null;
+  var b=e.target.closest?e.target.closest('.navitem'):null;
   if(!b||!b.getAttribute('data-tab')) return;
   e.preventDefault();
   showView(b.getAttribute('data-tab'));
 });
-/* Every apiFetch call site has its own .catch, so any unhandled rejection is
- * a bug, not a live connectivity change - do not flip the global indicator. */
+overlayEl.addEventListener('click',function(e){
+  if(e.target===overlayEl){ closeRuleEditor(); return; }
+});
+document.getElementById('overlayClose').addEventListener('click',closeRuleEditor);
+document.getElementById('overlayCancel').addEventListener('click',closeRuleEditor);
+document.getElementById('overlaySave').addEventListener('click',saveRuleForm);
 
-buildThemePicker();
+/* Boot: theme, language and last tab are restored exactly like Qymera. */
+var savedBg=null;
+try{ savedBg=localStorage.getItem('bgColor'); }catch(e){}
+if(savedBg) setBackground(savedBg);
+setLang(LANG);
 buildNav();
-loadPrefs();
 setOnline(false);
+var validTabs=['dashboard','devices','entities','rules','skills','system','network','logs'];
+var savedTab=null;
+try{ savedTab=localStorage.getItem('tab'); }catch(e){}
+if(validTabs.indexOf(savedTab)===-1) savedTab='dashboard';
+showView(savedTab);
 setInterval(pollTick,10000);
-showView('dashboard');
-
-function loadPrefs(){
-  var t0='dark',l='es';
-  try{ t0=localStorage.getItem('qymera_theme')||'dark'; l=localStorage.getItem('qymera_lang')||'es'; }catch(e){}
-  if(l!=='es'&&l!=='en') l='es';
-  applyLang(l);
-  applyI18n(document.body);
-  setTheme(t0);
-}
 </script>
 </body>
 </html>
