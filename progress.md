@@ -1,9 +1,16 @@
 # Qymeras 1.1 Progress Tracker
 
-## Current State (2026-08-27)
+## Current State (2026-09-05)
 
 - **Branch:** `feature/ai-experiments` — AI implementation line for the next
-  release. HEAD: `df78f1d` (5 commits ahead of the last doc-sync `b885820`).
+  release. HEAD: `8ac6762`.
+  > HEAD was `df78f1d` at the 2026-08-27 snapshot; see the dashboard/GUI phase
+  > entry below for commits `4339f89`..`8ac6762` (2026-09-03..05), and
+  > **Phase 3F (2026-09-05)** for the LLM HTTP provider transport +
+  > `POST /api/v1/ai/chat` (uncommitted).
+  > **IP correction:** the attached ESP32 (COM3) now leases `192.168.1.19`
+  > (was `.16` at the fleet snapshot; DHCP-drifted and confirmed via
+  > `/api/v1/status` + heartbeat during 3F verification).
 - **Production `main`** (`b2a9b01` after 2026-08-27 force-sync) is the **AI-free
   MVP** (1.1 tree, HEAD `5e46e12` + doc-sync). This branch is where the AI
   subsystem lives; it will be folded into a future release once stabilized.
@@ -988,3 +995,245 @@ missing → silent 0/false call, and a missing `"level"` could become a silent 0
 Concrete LLM provider transport (Ollama/OpenAI HTTP against
 `qymera_llm_provider_t`) plus the request path hosting an adapter instance —
 routed through `qymera_skill_execute()` with permission/budget/recursion guards.
+
+---
+
+## Phase 3E: Dashboard GUI parity with `main` + rule persistence fixes (2026-09-03..05)
+
+### Objective
+
+Bring `feature/ai-experiments`'s dashboard GUI into **visual and behavioral
+equivalence with `main`** (the AI-free 1.1 MVP, authoritative UI/UX spec:
+`origin/main:src/html.cpp`, `html.h`, `web.cpp`, `web.h`) while **preserving
+the AI branch's incremental rendering architecture and its HTTP API**. The
+first part of the phase regularized and stabilized the pre-existing GUI; the
+second part made `main` the single visual source of truth; the tail fixed
+rule persistence and HTTP mutation endpoints found during hardware/host use.
+
+### Branch / base
+
+- Branch `feature/ai-experiments`; work spans `4339f89`..`8ac6762`.
+
+### Commits in this phase
+
+| Commit | Summary |
+|--------|---------|
+| `4339f89` | store view refs on the view object (`this`), not the host |
+| `84f7f32` | GUI regularization & stabilization pass (no behavior change) + architecture doc |
+| `c3e4702` | rules editor JSON emission + local device offline sweep |
+| `f0149ee` | rule persistence (definition-only NVS blob) + HTTP mutation endpoints |
+| `083942d` | themed & i18n GUI redesign (nav, topbar, ES/EN, 4 themes) |
+| `8ac6762` | align GUI with `main`'s visual system (tokens, nav, theming, i18n) |
+
+### Embedded GUI — incremental rendering preserved
+
+The AI GUI keeps the render contract from `DASHBOARD_GUI_ARCHITECTURE.md`:
+
+```
+MOUNT STRUCTURE ONCE · UPDATE VALUES IN PLACE ·
+RECONCILE COLLECTIONS BY KEY · REFRESH ONLY ACTIVE VIEW
+```
+
+- Views live in a single `views` registry: `dashboard` (a `main` `.dash-stats`
+  pattern), `devices`, `entities`, `rules`, `skills`, `logs`, `system`,
+  `network`.
+- `refresh` is created by `makeRefresh(path, viewName)` which carries the
+  stale-response guard (`gen`) and `setOnline`; `inflight` dedupes; only the
+  active view is polled at 10 s; `network` is `pollable:false`.
+- Collections reconcile in place via `reconcileCollection(container, list,
+  keyFn, attr, create, apply)` — never a container rebuild.
+- `uiState` (activeView / formActive / editingRuleId / pending) keeps sources
+  out of the DOM; `data-field`/`data-action`/`data-*-key` are pure bindings.
+- Listeners are delegated once per container (closest); none are attached
+  per card or inside `update()`.
+- Rule editor lives in a separate `#overlay.modal` (never rebuilt by polling);
+  `uiState.formActive` pauses polling while a form is open.
+
+### GUI parity with `main` (`8ac6762`)
+
+- **Design tokens** are `main`'s exact values (`--bg:#0d1117`,
+  `--surface:#161d29`, `--accent:#3b82f6`, `--radius-*`, `--shadow-*`, `--font`,
+  `--mono`), four themes `dark`/`light`/`forest`/`sand`; default is dark (no
+  `data-theme` attr at boot).
+- **Theming model** matches `main`: `#themePicker` `.themeDot[data-bg]` →
+  `THEME_MAP` → `setBackground(color)` sets `data-theme` on `<html>` and
+  persists `bgColor` + `theme`.
+- **Navigation** matches `main`'s `.app` grid (220 px sidebar on desktop,
+  fixed bottom bar ≤899 px), `.nav` built from the `NAV` array as `.navitem`
+  buttons + `.nav-sep`; `.topbar` carries the `Qymeras`/`1.1` brand pill,
+  status chip, theme dots and the ES/EN `langbtn` switch.
+- **Components** reuse `main`'s CSS verbatim: `btn`, `chip`, `switch`/`knob`,
+  `stat-card`, `device-card`, `rule-card`, `settings-card`, `log-panel`,
+  `modal`, `toast`, `settings-row`, `field`/`input`/`check`, responsive
+  breakpoints 1100/900/899. A class-by-class diff against `main` reports only
+  comment-prefix artifacts; rule bodies are identical.
+- **I18N** mirrors `main`: `data-i18n` → `textContent`,
+  `data-i18n-ph` → `placeholder` with `'...'` appended; `setLang` persists
+  `localStorage.lang` and refreshes only the active view. Dictionary coverage
+  checked for all 92 used keys (both `es` and `en`).
+- **Prefs** use Qymera 1.1 keys: `bgColor`, `theme`, `lang`, `tab` (last
+  view restored at boot).
+- **API untouched** (AI branch endpoints kept; no copy of `main`'s WebServerCompat
+  routes or server-side render-all model).
+
+### Rule/substrate fixes (`c3e4702`, `f0149ee`)
+
+- `get_rule` JSON: trigger/condition/action array elements emit with an
+  explicit separator managed by the caller, so embedded arrays stay valid JSON
+  regardless of earlier output length.
+- Local dashboard device is forced online in the stale sweep (registry can no
+  longer mark `dashboard` offline while firmware runs).
+- `list_entities` iterates via `qymera_registry_iterate_devices` (skips gaps).
+- Rules persist **definition-only** (`sizeof(qymera_rule_t)` blob, not the full
+  compiled runtime struct); runtime timers/counters/feedback guard are rebuilt
+  on boot. On load, a definition-only blob is recompiled before being loaded.
+  Keeps the NVS blob small (flash + SPIRAM watchdog budget).
+- `SET_BOOL` actions persist `value_u32` (not raw `value_f`) so `false` round-trips.
+- ESP32 TWDT re-armed: `esp_task_wdt_init(30000, false)` + feed guard around
+  flash writes (`qymera_wdt_reconfigure`), so NVS page erases/GC no longer tear
+  down the persisting task.
+
+### Verification
+
+- GUI: `node --check` on the extracted `<script>` (JS OK) + DOM-stub boot
+  harness exercising every `update()` path (`BOOT OK`).
+- `pio run -e esp32_devkit --target upload --upload-port COM3`: **SUCCESS**
+  (uploaded to the attached ESP32); root `/` serves the new GUI (markers:
+  brand, themeDot bg, langbtn, navitem, stat/device/rule/settings/log-panel,
+  modal, data-i18n-ph).
+- Endpoints re-verified 200: `/api/v1/status`, `/entities`, `/rules`,
+  `/devices`, `/skills`, `/logs` (`/api/v1` prefix maps `/status` correctly).
+- Header regeneration contract unchanged: edit `src/http/dashboard.html` →
+  `python tools/gen_dashboard_html.py` → rebuild (never hand-edit
+  `src/http/qymera_dashboard_html.h`).
+- Docs updated: `docs/DASHBOARD_GUI_ARCHITECTURE.md` (NAV-driven navitem nav,
+  `main` theme model, prefs keys, `'...'` placeholder, parity rules).
+- Human hands-on step (unchanged): eyeball `http://192.168.1.19` in a browser
+  — theme switching, ES/EN re-translation, rule editor overlay, responsive
+  layout.
+
+### Files
+
+- `src/http/dashboard.html` + `tools/gen_dashboard_html.py` +
+  `src/http/qymera_dashboard_html.h`.
+- `src/ai/qymera_skill.c`, `src/core/qymera_core.c`, `src/hal/qymera_hal.h/.cpp`.
+- `docs/DASHBOARD_GUI_ARCHITECTURE.md`.
+
+## Phase 3F: LLM HTTP provider transport + `/api/v1/ai/chat` (2026-09-05)
+
+### Objective
+
+Deliver the first **concrete provider transport** for the Phase 3C adapter:
+a bounded, plain-HTTP OpenAI-compatible transport (also speaks Ollama's
+`/api/chat` tool format) exposed through a new **`POST /api/v1/ai/chat`**
+endpoint that hosts an adapter instance. Provider selection comes from the
+core AI config; with no endpoint configured the deterministic **mock provider**
+is used, so the whole path is verifiable end-to-end with zero external
+dependencies.
+
+```text
+POST /api/v1/ai/chat  { "prompt": ..., "permission_mask": N, "model": ... }
+   ↓  provider chosen from core config ai.mode / *_endpoint
+qymera_llm_adapter_process  (budget + permission guards)
+   ↓  explicit tool calls only
+qymera_skill_execute  (same deterministic runtime as the rest of the API)
+   ↓
+{ "ok":true, "data":{ "ended", "tool_calls", "outcome", "final":{...} } }
+```
+
+### Branch / base
+
+- Branch `feature/ai-experiments`; base Phase 3E commit `8ac6762`.
+
+### What was added
+
+- **`src/ai/qymera_llm_http_provider.h` + `.c`** — concrete `qymera_llm_provider_t`
+  transport:
+  - Minimal bounded JSON writer builds the chat-completions request
+    (`model`, `temperature:0`, `stream:false`, system + user messages, and a
+    **tool catalog derived from the Skill registry** via
+    `qymera_llm_adapter_tool_count()/tool_at()` — never a second hard-coded
+    list; only per-skill JSON-schema field hints live here).
+  - Own minimal bounded JSON scanner (skip/validate + key lookup + string
+    decode) — no JSON library, consistent with the adapter core.
+  - Single HTTP POST over raw lwIP sockets (`lwip/netdb.h`), with
+    `SO_RCVTIMEO/SO_SNDTIMEO`, IP-literal support via `inet_aton` when
+    `gethostbyname` can't resolve (lwIP limitation), bounded read into
+    `resp_buf`.
+  - Response classification into one `qymera_llm_message_t`:
+    - OpenAI `choices[0].message.tool_calls[0].function` with
+      `arguments` **as a JSON string**,
+    - Ollama `message.tool_calls[0].function` with `arguments`
+      **as a JSON object**,
+    - assistant `content`, provider `error` object, malformed JSON,
+      timeouts, non-2xx status.
+  - Bounded capacities: `REQ_BUF 4096`, `RESP_BUF 8192`,
+    `DEFAULT_TIMEOUT_MS 8000`, `ENDPOINT_LEN 128`, `APIKEY_LEN 64`.
+  - Plain HTTP only in this increment (no TLS); HTTPS is future work.
+- **`src/http/qymera_http_server.c`** — new `h_ai_chat_post`:
+  - Body `{ "prompt": "...", "permission_mask": N, "model": "..." }`;
+    `prompt` required → `INVALID_INPUT` otherwise.
+  - `permission_mask` defaults to `READ|CONTROL|RULE_READ|RULE_WRITE`
+    (0x0F) — full local admin, consistent with the unauthenticated LAN API
+    posture. A caller-supplied mask is honored (no silent grant-all).
+  - Provider: `ai.mode` LOCAL/REMOTE/HYBRID **with a set endpoint** → HTTP
+    transport; otherwise mock. The transport buffers (~12 KB) are heap
+    `calloc`'d and freed per request — **not** on the bounded httpd task
+    stack.
+  - Adapter created per request (`qymera_llm_adapter_init` + `free`), bound to
+    the same `qymera_skill_context_t` shape as every other handler.
+  - Response envelope: `{ok, data:{ended, tool_calls, outcome,
+    final:{kind, text, tool_name}}}` with JSON escaping.
+  - Route registered as `POST /api/v1/ai/chat` (15 total), `max_uri_handlers`
+    bumped 16 → 20. `/api/v1/status` now also reports `ai_mode`.
+- **`tests/host_sanity.py`** — **Phase 3F**: request body builder mirror
+  (model fallback chain, `temperature/stream`, messages, 13-tool catalog
+  derived from `SKILLS`, per-tool field schema), OpenAI + Ollama response
+  classification, unmarshalled tool arguments, provider-error/malformed
+  handling, adapter round-trip on classified responses, default permission
+  mask = 0x0F with narrower-mask honored, full 5-step workflow driven by
+  OpenAI-format documents, and route/table checks.
+
+### Verification
+
+- `python tests/host_sanity.py` → **340/340 PASS** (299 baseline + 41 Phase 3F).
+- `pio run -e esp32_devkit --target upload --upload-port COM3`: **SUCCESS**.
+  Serial shows `Register route 14: /api/v1/ai/chat POST -> 0`;
+  `/api/v1/status` now includes `"ai_mode":"none"`.
+- On-device POST `{"prompt":"setup the garden fan automation"}` → `ok:true`,
+  `ended:"text"`, `tool_calls:4`, `outcome` transcripts each skill step
+  (`list_entities ok`, then the mock's hardcoded `node-a` targets reported as
+  `ENTITY_NOT_FOUND`/`RULE_INVALID` against the demo `dashboard/` device —
+  expected: every failure is classified and the turn continues), `final
+  {kind:"text",text:"Done."}`.
+- `POST {}` → `{ok:false, error:{code:"INVALID_INPUT", message:"prompt is
+  required"}}`.
+- **Bug found & fixed on device:** the first build put `qymera_llm_http_ctx_t`
+  (~12 KB) on the httpd task stack, overflowing it
+  (`***ERROR*** A stack overflow in task httpd has been detected` — panic
+  reset). Fixed by heap-allocating the transport context per request; verified
+  no reset, `uptime` grows, serial clean.
+
+### Files
+
+- `src/ai/qymera_llm_http_provider.h` (new), `src/ai/qymera_llm_http_provider.c` (new).
+- `src/http/qymera_http_server.c`.
+- `tests/host_sanity.py`.
+
+### KNOWN LIMITATIONS / next steps
+
+- Plain HTTP only (no TLS); use an http OpenAI-compatible endpoint (Ollama /
+  LM Studio / local gateway). HTTPS + streaming are future work.
+- HTTP provider needs a live, reachable upstream to verify on-device; host
+  mirror tests cover the pure request/parse/classify logic.
+- The mock's hardcoded `node-a`/`garden_relay` targets don't match the demo
+  `dashboard/` device; the mock is a wiring aid, not a real workflow.
+- `permission_mask` default (0x0F) is an authorization boundary only; there is
+  still no authentication on the LAN API.
+
+### NEXT PHASE
+
+Wiring a real model: set `config.ai` (local/remote endpoint + key) and run the
+`dashboard` GUI workflow against a live Ollama/OpenAI-compatible upstream with
+a matching device catalog; then a dashboard `ai` view consuming
+`/api/v1/ai/chat`, and the adaptive-context job feeding `qymera_ai_get_context`.

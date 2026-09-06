@@ -22,6 +22,8 @@
 #include "qymera_registry.h"
 #include "qymera_dashboard_html.h"
 #include "qymera_storage.h"
+#include "qymera_llm_adapter.h"
+#include "qymera_llm_http_provider.h"
 #include <esp_http_server.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -190,14 +192,21 @@ static esp_err_t h_status_get(httpd_req_t *req) {
     }
 
     char buf[512];
+    const char *ai_mode = "none";
+    switch (qymera_core_get_config(core)->ai.mode) {
+        case QYMERA_AI_MODE_LOCAL:  ai_mode = "local"; break;
+        case QYMERA_AI_MODE_REMOTE: ai_mode = "remote"; break;
+        case QYMERA_AI_MODE_HYBRID: ai_mode = "hybrid"; break;
+        default: break;
+    }
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"free_heap\":%u,\"uptime_ms\":%u,"
         "\"ip\":\"%s\",\"network\":\"%s\",\"ssid\":\"%s\","
         "\"udp_discovery_port\":%u,\"udp_control_port\":%u,"
-        "\"device_count\":%zu,\"entity_count\":%zu}}",
+        "\"device_count\":%zu,\"entity_count\":%zu,\"ai_mode\":\"%s\"}}",
         heap, up, ip, network, ssid,
         udp_discovery_port, udp_control_port,
-        dc, ec);
+        dc, ec, ai_mode);
     http_send_json(req, buf);
     return ESP_OK;
 }
@@ -545,6 +554,183 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/* =========================
+ * POST /api/v1/ai/chat
+ *
+ * Runs one bounded LLM turn through qymera_llm_adapter_process. Body:
+ *   { "prompt": "...", "permission_mask": N, "model": "..." }
+ * `prompt` is required; permission_mask defaults to READ|CONTROL|RULE_READ|
+ * RULE_WRITE (full local admin) when absent, matching the unauthenticated LAN
+ * posture of the rest of the API. `model` is optional (falls back to the
+ * provider default). The provider is chosen from the core AI config: a set
+ * local/remote endpoint selects the HTTP provider transport, otherwise the
+ * deterministic mock provider is used (safe for wiring/demo).
+ * ========================= */
+static const char *ai_turn_end_name(qymera_llm_turn_end_t e) {
+    switch (e) {
+        case QYMERA_LLM_TURN_TEXT: return "text";
+        case QYMERA_LLM_TURN_TOOL_CALL_LIMIT: return "tool_call_limit";
+        case QYMERA_LLM_TURN_PROVIDER_ERROR: return "provider_error";
+        case QYMERA_LLM_TURN_MALFORMED: return "malformed";
+        default: return "unknown";
+    }
+}
+
+static const char *ai_msg_kind_name(qymera_llm_message_kind_t k) {
+    switch (k) {
+        case QYMERA_LLM_MSG_TEXT: return "text";
+        case QYMERA_LLM_MSG_TOOL_CALL: return "tool_call";
+        case QYMERA_LLM_MSG_MALFORMED: return "malformed";
+        case QYMERA_LLM_MSG_PROVIDER_ERROR: return "provider_error";
+        case QYMERA_LLM_MSG_TIMEOUT: return "timeout";
+        default: return "none";
+    }
+}
+
+static void ai_json_escape(const char *s, char *out, size_t cap) {
+    size_t i = 0;
+    for (const unsigned char *p = (const unsigned char *)(s ? s : ""); *p && i + 1 < cap; p++) {
+        switch (*p) {
+            case '"': out[i++] = '\\'; if (i + 1 < cap) out[i++] = '"'; break;
+            case '\\': out[i++] = '\\'; if (i + 1 < cap) out[i++] = '\\'; break;
+            case '\n': out[i++] = '\\'; if (i + 1 < cap) out[i++] = 'n'; break;
+            case '\r': out[i++] = '\\'; if (i + 1 < cap) out[i++] = 'r'; break;
+            case '\t': out[i++] = '\\'; if (i + 1 < cap) out[i++] = 't'; break;
+            default: out[i++] = (char)*p; break;
+        }
+    }
+    out[i] = '\0';
+}
+
+static esp_err_t h_ai_chat_post(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+
+    /* Body read (single bounded recv; prompt is capped at QYMERA_LLM_PROMPT_LEN). */
+    char body[QYMERA_HTTP_BODY_SZ + QYMERA_LLM_PROMPT_LEN];
+    int n = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (n <= 0) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\","
+                             "\"message\":\"missing request body\"}}");
+        return ESP_OK;
+    }
+    body[n] = '\0';
+
+    char prompt[QYMERA_LLM_PROMPT_LEN] = {0};
+    http_extract_json_str(body, "prompt", prompt, sizeof(prompt));
+    if (prompt[0] == '\0') {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\","
+                             "\"message\":\"prompt is required\"}}");
+        return ESP_OK;
+    }
+
+    char mask_str[16] = {0};
+    uint32_t perm = QYMERA_PERM_READ | QYMERA_PERM_CONTROL |
+                    QYMERA_PERM_RULE_READ | QYMERA_PERM_RULE_WRITE;
+    if (http_extract_json_str(body, "permission_mask", mask_str, sizeof(mask_str))) {
+        long m = strtol(mask_str, NULL, 0);
+        if (m < 0) m = 0;
+        perm = (uint32_t)m;
+    }
+
+    char model[QYMERA_LLM_MODEL_LEN] = {0};
+    http_extract_json_str(body, "model", model, sizeof(model));
+
+    /* Skill context for tool dispatch (same shape as the other handlers). */
+    qymera_skill_context_t sctx;
+    memset(&sctx, 0, sizeof(sctx));
+    sctx.registry = qymera_core_get_registry(core);
+    sctx.rule_engine = qymera_core_get_rule_engine(core);
+    sctx.control = qymera_core_get_control(core);
+    sctx.storage = qymera_core_get_storage(core);
+    sctx.log = qymera_core_get_log(core);
+
+    qymera_llm_adapter_t *adapter = NULL;
+    qymera_llm_provider_t provider;
+    qymera_llm_mock_ctx_t mock_ctx;
+    qymera_llm_http_ctx_t *http_ctx = NULL;
+    memset(&provider, 0, sizeof(provider));
+    memset(&mock_ctx, 0, sizeof(mock_ctx));
+
+    const qymera_core_config_t *cfg = qymera_core_get_config(core);
+    bool use_http = false;
+    const qymera_ai_config_t *ai = &cfg->ai;
+    if (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_REMOTE ||
+        ai->mode == QYMERA_AI_MODE_HYBRID) {
+        const char *ep = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
+                             ? ai->local_endpoint
+                             : ai->remote_endpoint;
+        const char *key = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
+                             ? ai->local_api_key
+                             : ai->remote_api_key;
+        if (ep[0]) use_http = true;
+    }
+    if (use_http) {
+        /* The HTTP transport owns two multi-KB buffers (req+resp); keep those
+         * off the bounded httpd task stack. Freed after the turn. */
+        http_ctx = calloc(1, sizeof(*http_ctx));
+        if (!http_ctx) {
+            http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INTERNAL\","
+                                 "\"message\":\"out of memory for AI transport\"}}");
+            return ESP_OK;
+        }
+        const char *ep = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
+                             ? ai->local_endpoint : ai->remote_endpoint;
+        const char *key = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
+                             ? ai->local_api_key : ai->remote_api_key;
+        snprintf(http_ctx->config.endpoint, sizeof(http_ctx->config.endpoint), "%s", ep);
+        snprintf(http_ctx->config.api_key, sizeof(http_ctx->config.api_key), "%s", key);
+        snprintf(http_ctx->config.model, sizeof(http_ctx->config.model), "%s",
+                 ai->default_model[0] ? ai->default_model : "qymera-smart-home");
+        http_ctx->config.timeout_ms = ai->default_timeout_ms
+                                          ? ai->default_timeout_ms
+                                          : QYMERA_LLM_HTTP_DEFAULT_TIMEOUT_MS;
+        qymera_llm_http_provider_init(&provider, http_ctx);
+    } else {
+        qymera_llm_mock_provider_init(&provider, &mock_ctx);
+    }
+
+    qymera_llm_turn_result_t result;
+    memset(&result, 0, sizeof(result));
+    qymera_err_t aerr = qymera_llm_adapter_init(&adapter, &sctx, qymera_core_get_log(core));
+    if (aerr == QYMERA_OK) {
+        qymera_llm_request_t request;
+        memset(&request, 0, sizeof(request));
+        snprintf(request.prompt, sizeof(request.prompt), "%s", prompt);
+        if (model[0]) snprintf(request.model, sizeof(request.model), "%s", model);
+        request.permission_mask = perm;
+        request.max_tool_calls = QYMERA_MAX_TOOL_CALLS_PER_TURN;
+        aerr = qymera_llm_adapter_process(adapter, &provider, &request, &result);
+        free(adapter);
+        adapter = NULL;
+    }
+    if (http_ctx) {
+        free(http_ctx);
+        http_ctx = NULL;
+    }
+    if (aerr != QYMERA_OK) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INTERNAL\","
+                             "\"message\":\"AI turn could not run\"}}");
+        return ESP_OK;
+    }
+
+    char esc_outcome[QYMERA_LLM_RESULT_LEN * 2];
+    char esc_text[QYMERA_LLM_TEXT_LEN * 2];
+    char esc_tool[QYMERA_SKILL_NAME_LEN * 2];
+    ai_json_escape(result.outcome, esc_outcome, sizeof(esc_outcome));
+    ai_json_escape(result.final.text, esc_text, sizeof(esc_text));
+    ai_json_escape(result.final.tool_name, esc_tool, sizeof(esc_tool));
+
+    char buf[QYMERA_LLM_RESULT_LEN * 2 + QYMERA_LLM_PROMPT_LEN + 256];
+    snprintf(buf, sizeof(buf),
+        "{\"ok\":true,\"data\":{\"ended\":\"%s\",\"tool_calls\":%u,"
+        "\"outcome\":\"%s\",\"final\":{\"kind\":\"%s\",\"text\":\"%s\","
+        "\"tool_name\":\"%s\"}}}",
+        ai_turn_end_name(result.ended), (unsigned)result.tool_calls,
+        esc_outcome, ai_msg_kind_name(result.final.kind), esc_text, esc_tool);
+    http_send_json(req, buf);
+    return ESP_OK;
+}
+
 static esp_err_t h_root_get(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_send(req, DASHBOARD_HTML, strlen(DASHBOARD_HTML));
@@ -574,6 +760,7 @@ static const httpd_uri_t routes[] = {
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
     { .uri = "/api/v1/wifi/scan", .method = HTTP_GET, .handler = h_wifi_scan_get },
     { .uri = "/api/v1/wifi/connect", .method = HTTP_POST, .handler = h_wifi_connect_post },
+    { .uri = "/api/v1/ai/chat", .method = HTTP_POST, .handler = h_ai_chat_post },
 };
 
 /* =========================
@@ -600,7 +787,7 @@ qymera_err_t qymera_http_api_init(qymera_core_t *core) {
     config.stack_size = 32768;
     config.max_open_sockets = 4;
     config.uri_match_fn = httpd_uri_match_wildcard;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     httpd_handle_t handle = NULL;
     esp_err_t esp_err = httpd_start(&handle, &config);
     printf("[HTTP] httpd_start returned: %d\n", (int)esp_err);

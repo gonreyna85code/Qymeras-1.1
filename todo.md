@@ -39,11 +39,11 @@
 ### P2 - Nice-to-Have (Improve after 1.1)
 - [ ] HTTPS for OTA transfers
 - [ ] CSRF tokens on web forms
-- [ ] Dashboard graphical interface
+- [x] Dashboard graphical interface ✅ (Phase 3D/3E: embedded GUI on `feature/ai-experiments`)
 - [ ] MQTT integration
 - [ ] Notifications (email/SMS)
 - [ ] Mobile app companion
-- [ ] Rule editor UI improvements
+- [x] Rule editor UI ✅ (modal overlay editor, enable/disable/delete round-trip, 2026-09-03..05)
 
 ### P3 - Future (Phase 3+, relative to the 1.1 MVP on `main`)
 - [ ] AI/ML subsystem — **ACTIVE on `feature/ai-experiments`** (authorized 2026-08).
@@ -175,12 +175,24 @@
 
 ## Next AI Work (this branch — feature/ai-experiments)
 
+- [x] Dashboard GUI parity with `main` (visual/behavioral; tokens, nav, theming,
+      i18n; AI architecture + API preserved) ✅ committed `8ac6762` (2026-09-05).
+      Phase 3E in `progress.md`.
+- [x] LLM HTTP provider transport (bounded OpenAI-compatible POST + Ollama
+      response classification; tool catalog derived from Skill registry) +
+      `POST /api/v1/ai/chat` endpoint (adapter per request, default permission
+      mask 0x0F, mock provider when no endpoint set). Host tests 340/340;
+      verified on COM3 ESP32 (192.168.1.19). ✅ uncommitted (2026-09-05).
+      Phase 3F in `progress.md`.
+- [ ] Wire a live upstream: set `config.ai` local/remote endpoint + key and run
+      the full adapter loop (tool catalog → tool call → result → final) against
+      an OpenAI-compatible model on device
 - [ ] Finish `/ai/chat` relay hardening: upstream TLS/proxy edge cases, streaming parse of chunked upstream bodies
 - [ ] Agent loop semantics (browser): tool-result truncation to match context budget; history eviction strategy
 - [ ] Re-verify device-side `/ai/run` validators + CONTROL against the relayed tool schema (two-path parity)
 - [ ] AIDIG/AIANA freshness policy decision (data-table row "stale-result invalidation" NOTE)
 - [ ] Per-slot model override (qwen2:0.5b DIGITAL/ANALOG/ANALYTIC vs ornith-local:9b CONDITIONAL/CONTROL)
-- [ ] Sustained soak on ESP32 (192.168.1.16) with the new relay+browser path present
+- [ ] Sustained soak on ESP32 (192.168.1.19) with the new relay+browser path present
 - [ ] Fold stabilized AI subset into a future release branch (NOT into `main` without owner request)
 
 ## Status Summary

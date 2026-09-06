@@ -15,6 +15,7 @@ Exit code 0 = all pass.
 import time
 import math
 import json
+from copy import deepcopy
 
 PASS = 0
 FAIL = 0
@@ -1871,6 +1872,266 @@ check("P3D1 ROUTE: GET /status -> status", resolve_route(routes31, "GET", "/api/
 check("P3D1 ROUTE: GET /logs -> logs", resolve_route(routes31, "GET", "/api/v1/logs") == "/api/v1/logs")
 check("P3D1 ROUTE: unknown endpoint -> 404 (no route)",
       resolve_route(routes31, "GET", "/api/v1/nope") is None)
+
+# ==========================================================================
+# Phase 3F: LLM HTTP provider transport (request builder + response parser)
+#
+# Mirrors src/ai/qymera_llm_http_provider.c. The transport is pure: it builds
+# a bounded OpenAI-compatible request (model + system + user messages + a tool
+# catalog DERIVED from the Skill registry) and classifies one bounded response
+# into exactly one message kind. No real network here; these tests pin the
+# request shape and the OpenAI/Ollama classification contract, including the
+# arguments-as-string (OpenAI) vs arguments-as-object (Ollama) distinction.
+# ==========================================================================
+
+TOOL_FIELDS = {
+    "list_devices": [], "list_entities": [], "list_rules": [],
+    "get_entity_state": ["device_id", "entity_id"],
+    "get_entity_info": ["device_id", "entity_id"],
+    "set_relay": ["device_id", "entity_id", "value"],
+    "set_dimmer": ["device_id", "entity_id", "level"],
+    "get_rule": ["rule_id"], "delete_rule": ["rule_id"],
+    "enable_rule": ["rule_id"], "disable_rule": ["rule_id"],
+    "update_rule": ["rule_id", "name", "rule"],
+    "create_rule": ["name", "rule"],
+}
+TOOL_FIELD_SCHEMA = {
+    "device_id": {"type": "string"}, "entity_id": {"type": "string"},
+    "name": {"type": "string"}, "rule_id": {"type": "string"},
+    "value": {"type": "boolean"},
+    "level": {"type": "integer", "minimum": 0, "maximum": 100},
+    "enabled": {"type": "boolean"}, "rule": {"type": "object"},
+}
+
+def http_build_request(model, prompt):
+    """Mirror of build_request_body(): returns the exact request doc as a dict.
+    Tool catalog derives from SKILLS (the host reference registry)."""
+    messages = [
+        {"role": "system", "content": QYMERA_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt or ""},
+    ]
+    tools = []
+    for name in sorted(SKILLS):
+        props = {f: TOOL_FIELD_SCHEMA[f] for f in TOOL_FIELDS[name]}
+        tools.append({"type": "function",
+                      "function": {"name": name,
+                                   "parameters": {"type": "object", "properties": props}}})
+    return {"model": model, "temperature": 0, "stream": False,
+            "messages": messages, "tools": tools}
+
+QYMERA_SYSTEM_PROMPT = (
+    "You are Qymera's home-automation assistant. Only call the provided tools. "
+    "Never invent tool names or arguments. If an action is needed, emit exactly "
+    "one tool call. Otherwise reply concisely in plain text.")
+
+body = http_build_request("test-model", "turn the relay off")
+check("P3F REQ: body is valid JSON and carries model/temperature/stream",
+      json.loads(json.dumps(body)) == body and body["stream"] is False)
+check("P3F REQ: messages are exactly system+user",
+      [m["role"] for m in body["messages"]] == ["system", "user"])
+check("P3F REQ: user prompt mirrored", body["messages"][1]["content"] == "turn the relay off")
+def http_pick_model(requested, provider_default):
+    """Mirror of the C model selection: request, then config, then constant."""
+    return (requested or "") or (provider_default or "qymera-smart-home")
+check("P3F REQ: request model wins over provider default",
+      http_pick_model("my-model", "fallback") == "my-model")
+check("P3F REQ: missing request model falls back to provider default",
+      http_pick_model("", "cfg-model") == "cfg-model")
+check("P3F REQ: empty everything falls back to qymera-smart-home",
+      http_pick_model("", "") == "qymera-smart-home")
+tool_names = [t["function"]["name"] for t in body["tools"]]
+check("P3F REQ: tool catalog derived from registry (13 tools)",
+      set(tool_names) == set(SKILLS) and len(tool_names) == 13)
+check("P3F REQ: each tool is type=function", all(t["type"] == "function" for t in body["tools"]))
+
+# Tool schema is per-skill field hints (NOT a second hardcoded catalog).
+for name, fields in TOOL_FIELDS.items():
+    fn = next(t["function"] for t in body["tools"] if t["function"]["name"] == name)
+    props = fn["parameters"]["properties"]
+    expected = {f: TOOL_FIELD_SCHEMA[f] for f in fields}
+    check("P3F REQ: %s exposes exactly its flat field schema" % name, props == expected)
+
+# -- Response classification: OpenAI chat-completions ------------------------
+# OpenAI: arguments are a JSON *string*; content may be null on tool calls.
+openai_tool = {
+    "id": "call_1", "type": "function",
+    "function": {"name": "set_relay",
+                 "arguments": "{\"device_id\":\"node-a\",\"entity_id\":\"relay0\",\"value\":true}"},
+}
+openai_tc = {"choices": [{"message": {"role": "assistant", "content": None,
+                                      "tool_calls": [openai_tool]}}]}
+openai_text = {"choices": [{"message": {"role": "assistant", "content": "All done."}}]}
+
+def llm_classify_response(doc):
+    """Mirror of parse_response(): returns (kind, text_or_err, tool_name, args)."""
+    if not doc:
+        return "malformed", "malformed provider JSON", None, {}
+    # Provider error object (OpenAI style) wins.
+    if isinstance(doc, dict) and isinstance(doc.get("error"), dict):
+        em = doc["error"].get("message")
+        return "error", (em if isinstance(em, str) else "provider returned an error"), None, {}
+    # Locate the message: choices[0].message (OpenAI) or message (Ollama).
+    choice = None
+    if isinstance(doc, dict) and isinstance(doc.get("choices"), list) and doc["choices"]:
+        choice = doc["choices"][0]
+    msg = (choice or {}).get("message")
+    if choice is None:
+        msg = doc.get("message") if isinstance(doc, dict) else None
+    if not isinstance(msg, dict):
+        return "malformed", "response has no message object", None, {}
+    tcs = msg.get("tool_calls")
+    if isinstance(tcs, list) and tcs:
+        fn = (tcs[0] or {}).get("function")
+        if not isinstance(fn, dict):
+            return "malformed", "tool call is not structurally valid", None, {}
+        tname = fn.get("name")
+        if not isinstance(tname, str) or not tname:
+            return "malformed", "tool call is not structurally valid", None, {}
+        av = fn.get("arguments")
+        if isinstance(av, str):
+            try:
+                args = json.loads(av)
+            except (ValueError, TypeError):
+                return "malformed", "tool arguments invalid", None, {}
+        elif isinstance(av, dict):
+            args = av          # Ollama-style object arguments
+        else:
+            return "malformed", "tool arguments missing", None, {}
+        if not isinstance(args, dict):
+            return "malformed", "tool arguments invalid", None, {}
+        return "tool_call", None, tname, args
+    content = msg.get("content")
+    if isinstance(content, str):
+        return "text", content, None, {}
+    return "malformed", "response has no usable content", None, {}
+
+k, txt, tname, args = llm_classify_response(openai_tc)
+check("P3F RESP: OpenAI tool call -> TOOL_CALL + name",
+      k == "tool_call" and tname == "set_relay")
+check("P3F RESP: OpenAI string arguments decoded to structured args",
+      args == {"device_id": "node-a", "entity_id": "relay0", "value": True})
+
+k, txt, tname, args = llm_classify_response(openai_text)
+check("P3F RESP: OpenAI assistant text -> TEXT", k == "text" and txt == "All done.")
+
+k, txt, tname, args = llm_classify_response(
+    {"error": {"message": "rate limit exceeded"}})
+check("P3F RESP: provider error object -> PROVIDER_ERROR + message",
+      k == "error" and txt == "rate limit exceeded")
+
+# Ollama /api/chat emits arguments as an OBJECT (not a JSON string).
+ollama_tool = {"message": {"role": "assistant", "content": "",
+                           "tool_calls": [{"function": {"name": "set_dimmer", "type": "function",
+                                                        "arguments": {"device_id": "node-a",
+                                                                       "entity_id": "dim0", "level": 70}}}]}}
+k, txt, tname, args = llm_classify_response(ollama_tool)
+check("P3F RESP: Ollama tool call -> TOOL_CALL",
+      k == "tool_call" and tname == "set_dimmer")
+check("P3F RESP: Ollama object arguments parsed",
+      args == {"device_id": "node-a", "entity_id": "dim0", "level": 70})
+
+k, txt, tname, args = llm_classify_response(
+    {"message": {"role": "assistant", "content": "No tools needed."}})
+check("P3F RESP: Ollama assistant text -> TEXT", k == "text" and txt == "No tools needed.")
+
+k, txt, tname, args = llm_classify_response(
+    {"choices": [{"message": {"role": "assistant"}}]})
+check("P3F RESP: no content/tool_calls -> MALFORMED", k == "malformed")
+
+k, txt, tname, args = llm_classify_response(
+    {"choices": [{"message": {"tool_calls": [{"function": {"name": "set_relay"}}]}}]})
+check("P3F RESP: tool call without arguments -> MALFORMED", k == "malformed")
+
+k, txt, tname, args = llm_classify_response(None)
+check("P3F RESP: empty body -> MALFORMED", k == "malformed")
+
+# -- Request/response round-trip through the adapter -------------------------
+# A JSON tool-call response feeds the local provider; the adapter dispatches it
+# through the Skill layer only (permission + bounded budget).
+class HttpProvider:
+    """Provider shaped like MockProvider that yields messages classified from
+    OpenAI/Ollama response documents (never executes anything itself)."""
+    def __init__(self, docs):
+        self.docs = list(docs)
+        self.i = 0
+
+    def next(self):
+        if self.i >= len(self.docs):
+            return {"kind": "text", "text": "[end]"}
+        d = deepcopy(self.docs[self.i])
+        self.i += 1
+        k, txt, tname, args = llm_classify_response(d)
+        return {"kind": k, "text": txt, "name": tname, "args": args}
+
+rt_env = SkillEnv()
+rt_env.add_device("node-a")
+rt_env.add_entity("node-a", "relay0", "Relay0", "actuator.relay", ["actuator.relay"], obs=False)
+rt_adp = LLMAdapter(rt_env)
+r = rt_adp.process(HttpProvider([openai_tc, openai_text]),
+                   perm=PERMS["READ"] | PERMS["CONTROL"], max_calls=4)
+check("P3F ADAPTER: tool-call response then text -> 1 tool ran, ends text",
+      r["tool_calls"] == 1 and r["ended"] == "text" and r["steps"][0][0] == "set_relay")
+check("P3F ADAPTER: tool result envelope is the skill OK envelope",
+      r["steps"][0][2]["ok"] is True)
+
+# Default permission mask at the /api/v1/ai/chat endpoint (mirror of the
+# handler default) is READ|CONTROL|RULE_READ|RULE_WRITE; it must NOT be the
+# all-bits literal 0xFF cascade that silently blesses everything.
+ai_default_perm = PERMS["READ"] | PERMS["CONTROL"] | PERMS["RULE_READ"] | PERMS["RULE_WRITE"]
+check("P3F ENDPOINT: default perm = READ|CONTROL|RULE_READ|RULE_WRITE",
+      ai_default_perm == 0x0F)
+den_env = SkillEnv()
+den_env.add_device("node-a")
+den_env.add_entity("node-a", "relay0", "Relay0", "actuator.relay", ["actuator.relay"], obs=False)
+den_adp = LLMAdapter(den_env)
+terr, _ = den_adp.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                               perm=PERMS["READ"])
+check("P3F ENDPOINT: caller-supplied narrower mask is honored (READ cannot CONTROL)",
+      terr == "PERMISSION")
+terr, _ = den_adp.execute_tool("set_relay", {"device_id": "node-a", "entity_id": "relay0", "value": True},
+                               perm=ai_default_perm)
+check("P3F ENDPOINT: default admin mask allows control", terr == "OK")
+
+# Full structured workflow driven by OpenAI-tool-call responses (no LLM).
+hf = SkillEnv()
+hf.add_device("node-a")
+hf.add_entity("node-a", "temperature", "Temp", "sensor.numeric", ["sensor.numeric"], obs=30.0)
+hf.add_entity("node-a", "garden_relay", "Garden Relay", "actuator.relay", ["actuator.relay"], obs=False)
+wf_docs = [
+    {"choices": [{"message": {"role": "assistant", "content": None,
+                  "tool_calls": [{"function": {"name": "list_entities", "arguments": "{}"}}]}}]},
+    {"choices": [{"message": {"role": "assistant", "content": None,
+                  "tool_calls": [{"function": {"name": "get_entity_state",
+                                  "arguments": "{\"device_id\":\"node-a\",\"entity_id\":\"temperature\"}"}}]}}]},
+    {"choices": [{"message": {"role": "assistant", "content": None,
+                  "tool_calls": [{"function": {"name": "create_rule", "arguments": json.dumps({
+                      "name": "Garden fan", "rule": {
+                          "trigger": trig, "conditions": [], "actions": act}})}}]}}]},
+    {"choices": [{"message": {"role": "assistant", "content": None,
+                  "tool_calls": [{"function": {"name": "enable_rule", "arguments": "{\"rule_id\":\"rule_1\"}"}}]}}]},
+    {"choices": [{"message": {"role": "assistant", "content": None,
+                  "tool_calls": [{"function": {"name": "set_relay",
+                                  "arguments": "{\"device_id\":\"node-a\",\"entity_id\":\"garden_relay\",\"value\":true}"}}]}}]},
+    {"choices": [{"message": {"role": "assistant", "content": "Workflow complete."}}]},
+]
+wf_adp = LLMAdapter(hf)
+rw = wf_adp.process(HttpProvider(wf_docs), perm=0xFF, max_calls=8)
+rw_names = [n for n, _, _ in rw["steps"]]
+check("P3F WORKFLOW: OpenAI-format responses drive the same 6-step turn",
+      rw_names == ["list_entities", "get_entity_state", "create_rule",
+                   "enable_rule", "set_relay"] and rw["ended"] == "text"
+      )
+check("P3F WORKFLOW: rule created and enabled through the tool path",
+      "rule_1" in hf.rules and hf.rules["rule_1"]["enabled"] is True)
+
+# /api/v1/ai/chat route registration + handler cap.
+routes31f = routes31 + [("/api/v1/ai/chat", "POST", "ai_chat")]
+check("P3F ROUTE: /api/v1/ai/chat is a distinct POST route (no conflict)",
+      len(route_conflicts(routes31f)) == 0 and resolve_route(routes31f, "POST", "/api/v1/ai/chat") == "/api/v1/ai/chat")
+check("P3F ROUTE: route count stays under max_uri_handlers (20)",
+      len(routes31f) <= 20)
+check("P3F ROUTE: GET /api/v1/ai/chat is not served",
+      resolve_route(routes31f, "GET", "/api/v1/ai/chat") is None)
 
 print()
 print("host_sanity: %d passed, %d failed" % (PASS, FAIL))
