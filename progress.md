@@ -3,13 +3,14 @@
 ## Current State (2026-09-05)
 
 - **Branch:** `feature/ai-experiments` — AI implementation line for the next
-  release. HEAD: `e33d122` (+ uncommitted Phase 3G work).
+  release. HEAD: `e33d122` (+ uncommitted Phase 3G + 3H work).
   > HEAD was `df78f1d` at the 2026-08-27 snapshot; see the dashboard/GUI phase
   > entry below for commits `4339f89`..`8ac6762` (2026-09-03..05),
   > **Phase 3F (2026-09-05)** for the LLM HTTP provider transport +
-  > `POST /api/v1/ai/chat` (`e33d122`), and **Phase 3G (2026-09-05)** for
+  > `POST /api/v1/ai/chat` (`e33d122`), **Phase 3G (2026-09-05)** for
   > `config.ai` persistence + `POST /api/v1/ai/config` + the live Ollama
-  > verification (uncommitted).
+  > verification, and **Phase 3H (2026-09-05)** for the dashboard **AI view**
+  > (assistant config + chat) — 3G/3H uncommitted.
   > **IP correction:** the attached ESP32 (COM3) now leases `192.168.1.19`
   > (was `.16` at the fleet snapshot; DHCP-drifted and confirmed via
   > `/api/v1/status` + heartbeat during 3F verification). The PC (Ollama host)
@@ -1339,3 +1340,64 @@ fine.
   `model` override (fallback chain unchanged).
 - Next: dashboard `ai` view consuming `/api/v1/ai/chat`; adaptive-context job
   feeding `qymera_ai_get_context`; TLS for the upstream.
+
+## Phase 3H: Dashboard AI view — assistant config + chat (2026-09-05)
+
+### Objective
+
+Expose the Phase 3G upstream wiring in the embedded dashboard GUI: an **AI
+view** where the user configures the assistant (`config.ai` via the
+`/api/v1/ai/config` endpoint, save-and-reboot like the network card) and chats
+with the model through `POST /api/v1/ai/chat`, showing every tool step plus
+the final answer. Built server-side-free: pure HTML/CSS/JS in the existing
+single-file dashboard, embedded via `tools/gen_dashboard_html.py`.
+
+### What was added (`src/http/dashboard.html` → `qymera_dashboard_html.h`)
+
+- **Nav entry** `{id:'ai'}` (sparkle icon) between `skills` and the separator;
+  `validTabs` extended to 9 views; `nav.ai` / `page.ai` i18n keys (ES/EN).
+- **Config card**: mode select (none/local/remote/hybrid), endpoint, API key,
+  model, timeout (ms) → `POST /api/v1/ai/config`, shows
+  "saved, rebooting into <mode> mode…". Current `ai_mode` is pre-filled from
+  `/api/v1/status` (best-effort fetch, no toast on failure).
+- **Chat card**: message thread (`chat-list`), user bubbles vs assistant
+  bubbles, thinking placeholder, Send button + Enter-to-send, `maxlength` 2000.
+  `POST /api/v1/ai/chat` with `{prompt, permission_mask:0x0F}`; uses its own
+  **~3 min** `AbortController` timeout (a turn runs each tool call through the
+  model, ~8 s each on qwen3.5:2b) instead of the 8 s `apiFetch` timeout.
+  Response rendered as: `tool-calls` count + ended chip (text/tool_call_limit/
+  malformed/provider_error/timeout/error), the `outcome` transcript parsed
+  per `[tool:<skill>:<ok|error>]` line into color-coded mono steps, and the
+  `final` text. Errors are rendered inline (red bubble).
+- **CSS**: `.chat-list/.chat-row/.chat-bubble/.chat-tools/.chat-step/
+  .chat-final/.chat-input-row`, all on existing theme tokens.
+- View is `pollable:false` (no auto-refresh; chat + config are user-driven).
+
+### Verification
+
+- `node` syntax check of the extracted `<script>`: **JS OK**.
+- `tools/gen_dashboard_html.py` regenerated the header (86 015 → 93 028 B);
+  `pio run -e esp32_devkit -t upload --upload-port COM3`: **SUCCESS**.
+- `GET /` on the device: 86 016 B page served with the nav entry, i18n keys
+  (ES/EN incl. `LÍMITE DE LLAMADAS`), the view markup (`aiCfgGrid`,
+  `aiChatList`), the chat endpoint call, `permission_mask:0x0F`, chat CSS, and
+  the 9-tab `validTabs`.
+- Live smoke test with the view's exact payload
+  (`{prompt, permission_mask:0x0F}`) against the persisted Ollama upstream:
+  `ended:"text"`, `final.text:"I am Qymera's home-automation assistant…"`.
+
+### Files
+
+- `src/http/dashboard.html`, `src/http/qymera_dashboard_html.h` (generated).
+- `progress.md`.
+
+### KNOWN LIMITATIONS / next steps
+
+- The other views (rules/entities/logs) are unchanged; only `ai` added.
+- No GET endpoint for the persisted AI config, so the form only pre-fills
+  `mode` from `/status`; endpoint/model/key fields start blank (placeholders
+  show the lab defaults). A `GET /api/v1/ai/config` is future work.
+- Chat turns take tens of seconds with a small local model; the UI shows a
+  "Pensando…" placeholder while the device is busy.
+- Next: adaptive-context job feeding `qymera_ai_get_context`; TLS upstream;
+  `GET /api/v1/ai/config` for full prefill.

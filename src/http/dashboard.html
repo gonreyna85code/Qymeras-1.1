@@ -206,6 +206,22 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .wizard-hint{font-size:12px;color:var(--text-muted)}
 .cond-box,.action-box{border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .small-note{font-size:11px;color:var(--text-muted)}
+.chat-list{display:flex;flex-direction:column;gap:10px;max-height:56vh;min-height:120px;overflow-y:auto;padding:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md)}
+.chat-row{display:flex;flex-direction:column;gap:4px}
+.chat-row.user{align-items:flex-end}
+.chat-row .chat-meta{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted)}
+.chat-row.user .chat-meta{text-align:right}
+.chat-bubble{max-width:84%;padding:9px 12px;border-radius:var(--radius-md);background:var(--surface);border:1px solid var(--border);font-size:13px;word-break:break-word}
+.chat-row.user .chat-bubble{background:var(--accent);color:var(--on-accent)}
+.chat-bubble.err{border-color:rgba(239,68,68,.45);color:var(--danger)}
+.chat-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);margin-bottom:4px}
+.chat-tools{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.chat-step{font-family:var(--mono);font-size:11px;color:var(--text-muted);word-break:break-word;line-height:1.5}
+.chat-step.ok{color:var(--success)}
+.chat-step.err{color:var(--danger)}
+.chat-final{margin:8px 0 0;font-weight:600;white-space:pre-wrap}
+.chat-input-row{display:flex;gap:8px;margin-top:10px}
+.chat-input-row input{flex:1}
 @media (min-width:900px){
 .app{grid-template-columns:220px 1fr;grid-template-rows:auto 1fr}
 .topbar{grid-column:1/-1}
@@ -283,8 +299,8 @@ var sysInfoEl=document.getElementById('sysInfo');
  * ===================================================================== */
 var I18N={
 es:{
- 'nav.dashboard':'Panel','nav.devices':'Dispositivos','nav.entities':'Entidades',
- 'nav.rules':'Reglas','nav.skills':'Habilidades','nav.system':'Sistema','nav.network':'Red','nav.logs':'Registros',
+'nav.dashboard':'Panel','nav.devices':'Dispositivos','nav.entities':'Entidades',
+  'nav.rules':'Reglas','nav.skills':'Habilidades','nav.ai':'IA','nav.system':'Sistema','nav.network':'Red','nav.logs':'Registros',
  'page.dashboard':'Panel','page.dashboard.sub':'Vista general del nodo',
  'page.devices':'Dispositivos','page.devices.sub':'Vistas de actuadores y sensores en tiempo real',
  'page.entities':'Entidades','page.entities.sub':'Modelo de datos de entidades del nodo',
@@ -293,6 +309,7 @@ es:{
  'page.system':'Sistema','page.system.sub':'Información del nodo',
  'page.network':'Red','page.network.sub':'Conexión WiFi del nodo',
  'page.logs':'Registros','page.logs.sub':'Registros recientes del sistema',
+  'page.ai':'Asistente IA','page.ai.sub':'Consulta y actuación sobre el nodo mediante el modelo',
  'btn.newRule':'Nueva regla','btn.save':'Guardar','btn.cancel':'Cancelar','btn.edit':'Editar','btn.delete':'Eliminar',
  'btn.enable':'Activar','btn.disable':'Desactivar',
  'chip.online':'En línea','chip.offline':'Sin conexión','chip.enabled':'Activa','chip.disabled':'Desactivada',
@@ -301,8 +318,18 @@ es:{
  'fields.state':'Estado','fields.type':'Tipo','fields.unit':'Unidad','fields.revision':'Revisión',
  'fields.trigger':'Disparador','fields.caps':'Capacidades','fields.current':'Actual','fields.desired':'Deseado',
  'fields.reliability':'Fiabilidad','fields.schema':'Esquema','fields.perms':'Permisos',
- 'stat.status':'Estado','stat.ip':'Dirección IP','stat.heap':'Memoria libre','stat.uptime':'Tiempo activo',
- 'stat.devices':'Dispositivos','stat.entities':'Entidades',
+'stat.status':'Estado','stat.ip':'Dirección IP','stat.heap':'Memoria libre','stat.uptime':'Tiempo activo',
+  'stat.devices':'Dispositivos','stat.entities':'Entidades',
+  'ai.config':'Asistente IA','ai.mode':'Modo','ai.mode_none':'Sin modelo','ai.mode_local':'Local','ai.mode_remote':'Remoto','ai.mode_hybrid':'Híbrido',
+  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'http://192.168.1.16:11434',
+  'ai.key':'Clave API','ai.key_ph':'Opcional (OpenAI)','ai.model':'Modelo','ai.model_ph':'qwen3.5:2b',
+  'ai.timeout':'Timeout del modelo (ms)','ai.save':'Guardar y reiniciar','ai.saved':'Guardado. Reiniciando en modo {0}...','ai.save_failed':'Error al guardar.',
+  'ai.config_hint':'Configura el upstream del asistente. Tras guardar, el dispositivo se reinicia con la nueva configuración.',
+  'ai.chat':'Chat','ai.empty':'Envía una instrucción para que el asistente inspeccione y actúe sobre este nodo.',
+  'ai.prompt_ph':'Describe qué quieres hacer...','ai.send':'Enviar','ai.thinking':'Pensando...','ai.you':'Tú','ai.assistant':'Asistente',
+  'ai.steps':'Llamadas a herramientas: {0}','ai.timeout_msg':'El modelo tardó demasiado en responder.',
+  'ai.prompt_req':'Escribe una instrucción primero.',
+  'ai.end.text':'TEXTO','ai.end.tool_call_limit':'LÍMITE DE LLAMADAS','ai.end.malformed':'RESPUESTA MALFORMADA','ai.end.provider_error':'ERROR DEL MODELO','ai.end.timeout':'TIEMPO AGOTADO','ai.end.error':'ERROR',
  'log.updated':'Actualizado: {0} · {1} registros','log.empty':'Sin registros',
  'log.error':'No se pudieron cargar los registros',
  'rules.titleNew':'Nueva regla de automatización','rules.titleEdit':'Editar regla de automatización',
@@ -331,8 +358,8 @@ es:{
  'common.on':'ON','common.off':'OFF'
 },
 en:{
- 'nav.dashboard':'Panel','nav.devices':'Devices','nav.entities':'Entities',
- 'nav.rules':'Rules','nav.skills':'Skills','nav.system':'System','nav.network':'Network','nav.logs':'Logs',
+'nav.dashboard':'Panel','nav.devices':'Devices','nav.entities':'Entities',
+  'nav.rules':'Rules','nav.skills':'Skills','nav.ai':'AI','nav.system':'System','nav.network':'Network','nav.logs':'Logs',
  'page.dashboard':'Panel','page.dashboard.sub':'Node overview',
  'page.devices':'Devices','page.devices.sub':'Real-time views of actuators and sensors',
  'page.entities':'Entities','page.entities.sub':'Node entity data model',
@@ -341,6 +368,7 @@ en:{
  'page.system':'System','page.system.sub':'Node information',
  'page.network':'Network','page.network.sub':'Node WiFi connection',
  'page.logs':'Logs','page.logs.sub':'Recent system logs',
+  'page.ai':'AI Assistant','page.ai.sub':'Query and act on this node through the model',
  'btn.newRule':'New rule','btn.save':'Save','btn.cancel':'Cancel','btn.edit':'Edit','btn.delete':'Delete',
  'btn.enable':'Enable','btn.disable':'Disable',
  'chip.online':'Online','chip.offline':'Offline','chip.enabled':'Enabled','chip.disabled':'Disabled',
@@ -349,8 +377,18 @@ en:{
  'fields.state':'State','fields.type':'Type','fields.unit':'Unit','fields.revision':'Revision',
  'fields.trigger':'Trigger','fields.caps':'Capabilities','fields.current':'Current','fields.desired':'Desired',
  'fields.reliability':'Reliability','fields.schema':'Schema','fields.perms':'Perms',
- 'stat.status':'Status','stat.ip':'IP Address','stat.heap':'Free Heap','stat.uptime':'Uptime',
- 'stat.devices':'Devices','stat.entities':'Entities',
+'stat.status':'Status','stat.ip':'IP Address','stat.heap':'Free Heap','stat.uptime':'Uptime',
+  'stat.devices':'Devices','stat.entities':'Entities',
+  'ai.config':'AI Assistant','ai.mode':'Mode','ai.mode_none':'No model','ai.mode_local':'Local','ai.mode_remote':'Remote','ai.mode_hybrid':'Hybrid',
+  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'http://192.168.1.16:11434',
+  'ai.key':'API key','ai.key_ph':'Optional (OpenAI)','ai.model':'Model','ai.model_ph':'qwen3.5:2b',
+  'ai.timeout':'Model timeout (ms)','ai.save':'Save & Reboot','ai.saved':'Saved. Rebooting into {0} mode...','ai.save_failed':'Save failed.',
+  'ai.config_hint':'Configure the assistant upstream. After saving, the device reboots with the new configuration.',
+  'ai.chat':'Chat','ai.empty':'Send an instruction for the assistant to inspect and act on this node.',
+  'ai.prompt_ph':'Describe what you want to do...','ai.send':'Send','ai.thinking':'Thinking...','ai.you':'You','ai.assistant':'Assistant',
+  'ai.steps':'Tool calls: {0}','ai.timeout_msg':'The model took too long to respond.',
+  'ai.prompt_req':'Type an instruction first.',
+  'ai.end.text':'TEXT','ai.end.tool_call_limit':'TOOL CALL LIMIT','ai.end.malformed':'MALFORMED RESPONSE','ai.end.provider_error':'MODEL ERROR','ai.end.timeout':'TIMEOUT','ai.end.error':'ERROR',
  'log.updated':'Updated: {0} · {1} entries','log.empty':'No entries',
  'log.error':'Could not load the logs',
  'rules.titleNew':'New automation rule','rules.titleEdit':'Edit automation rule',
@@ -430,6 +468,7 @@ var NAV=[
   {id:'entities',icon:'<path d="M12 3 3 8v8l9 5 9-5V8l-9-5z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>'},
   {id:'rules',icon:'<path d="M13 2 3 14h7l-1 8 9-12h-6l1-8z" stroke-linejoin="round"/>'},
   {id:'skills',icon:'<path d="M12 3l1.6 4 4 1.6-4 1.6L12 14l-1.6-3.8L6.4 8.6l4-1.6L12 3z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"/>'},
+  {id:'ai',icon:'<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 16l-1.7-5L6 9.3l4.3-1.7L12 3z"/><path d="M19 15l.8 1.7 1.7.8-1.7.8L19 20l-.8-1.7-1.7-.8 1.7-.8L19 15z"/>'},
   {sep:true},
   {id:'system',icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.33-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.33H9a1.7 1.7 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.51 1.7 1.7 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.33 1.82V9a1.7 1.7 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" stroke-linejoin="round"/>'},
   {id:'network',icon:'<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><path d="M12 20h.01"/>'},
@@ -1049,6 +1088,144 @@ views.skills={
 };
 
 /* =====================================================================
+ * AI view (assistant): configure the upstream and chat through
+ * POST /api/v1/ai/chat. Long turns are allowed (the device runs each tool
+ * call through the model), so chat uses its own ~3 min timeout instead of
+ * the 8 s apiFetch one. Not polled.
+ * ===================================================================== */
+function aiEndIsErr(e){ return e==='malformed'||e==='provider_error'||e==='timeout'||e==='error'; }
+function aiParseOutcome(o){
+  if(!o) return [];
+  var res=[];
+  String(o).split('\n').forEach(function(l){
+    if(!l) return;
+    var m=/^\[tool:([^\]]+):(ok|error)\]\s?([\s\S]*)$/.exec(l);
+    res.push(m?{st:m[2], text:'['+m[1]+':'+m[2]+'] '+(m[3]||'')}:{st:'', text:l});
+  });
+  return res;
+}
+views.ai={
+  pollable:false,
+  mount:function(host){
+    host.innerHTML=
+      '<div class="page-head"><div><h1 data-i18n="page.ai">Asistente IA</h1><p class="page-sub" data-i18n="page.ai.sub"></p></div></div>'+
+      '<div class="settings-grid" id="aiCfgGrid">'+
+      '<div class="settings-card"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.mode">Modo</span><h3 data-i18n="ai.config">Asistente IA</h3></div><span class="chip" id="aiModeChip">—</span></div>'+
+      '<p class="small-note" data-i18n="ai.config_hint"></p>'+
+      '<div class="field"><label data-i18n="ai.mode">Modo</label><select id="aiMode" class="input">'+
+      '<option value="none" data-i18n="ai.mode_none">Sin modelo</option>'+
+      '<option value="local" data-i18n="ai.mode_local">Local</option>'+
+      '<option value="remote" data-i18n="ai.mode_remote">Remoto</option>'+
+      '<option value="hybrid" data-i18n="ai.mode_hybrid">Híbrido</option></select></div>'+
+      '<div class="field"><label data-i18n="ai.endpoint">Endpoint</label><input id="aiEndpoint" class="input" data-i18n-ph="ai.endpoint_ph" placeholder="http://192.168.1.16:11434"></div>'+
+      '<div class="field"><label data-i18n="ai.key">Clave API</label><input id="aiKey" class="input" type="password" data-i18n-ph="ai.key_ph"></div>'+
+      '<div class="field"><label data-i18n="ai.model">Modelo</label><input id="aiModel" class="input" data-i18n-ph="ai.model_ph" placeholder="qwen3.5:2b"></div>'+
+      '<div class="field"><label data-i18n="ai.timeout">Timeout</label><input id="aiTimeout" class="input" type="number" value="60000" min="1000" max="120000"></div>'+
+      '<div class="btn-row"><button id="aiSave" class="btn primary" type="button"><span data-i18n="ai.save">Guardar y reiniciar</span></button><span id="aiCfgMsg" class="small-note"></span></div>'+
+      '</div></div>'+
+      '<div class="settings-card" style="margin-top:14px"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.chat">Chat</span><h3 data-i18n="page.ai">Asistente IA</h3></div></div>'+
+      '<div id="aiChatList" class="chat-list"></div>'+
+      '<div class="chat-input-row"><input id="aiPrompt" class="input" maxlength="2000" data-i18n-ph="ai.prompt_ph" placeholder="Describe qué quieres hacer..."><button id="aiSend" class="btn primary" type="button"><span data-i18n="ai.send">Enviar</span></button></div>'+
+      '</div>';
+    applyI18n(host);
+    var modeSel=host.querySelector('#aiMode');
+    var epEl=host.querySelector('#aiEndpoint');
+    var keyEl=host.querySelector('#aiKey');
+    var modelEl=host.querySelector('#aiModel');
+    var timeoutEl=host.querySelector('#aiTimeout');
+    var saveBtn=host.querySelector('#aiSave');
+    var cfgMsg=host.querySelector('#aiCfgMsg');
+    var modeChip=host.querySelector('#aiModeChip');
+    var list=host.querySelector('#aiChatList');
+    var promptEl=host.querySelector('#aiPrompt');
+    var sendBtn=host.querySelector('#aiSend');
+    var busy=false;
+    list.appendChild(el('div',{'class':'chat-step','text':t('ai.empty')}));
+    /* Prefill current mode from /status (best-effort, no toast on failure). */
+    fetch(API+'/status',{headers:{'Content-Type':'application/json'}}).then(function(r){
+      return r.json();
+    }).then(function(j){
+      if(j&&j.ok&&j.data){
+        var m=j.data.ai_mode||'none';
+        if(['none','local','remote','hybrid'].indexOf(m)>=0) modeSel.value=m;
+        setText(modeChip,t('ai.mode_'+m));
+      }
+    }).catch(function(){});
+    var aiRenderError=function(wait,msg){
+      wait.appendChild(el('div',{'class':'chat-bubble err','text':msg}));
+      list.scrollTop=list.scrollHeight;
+    };
+    var aiRenderTurn=function(wait,data){
+      var bubble=el('div',{'class':'chat-bubble'});
+      var head=el('div',{'class':'chat-head','text':tf('ai.steps',{0:data.tool_calls})+' · '});
+      head.appendChild(el('span',{'class':'chip '+(aiEndIsErr(data.ended)?'danger':'ok'),'text':t('ai.end.'+(data.ended||'error'))}));
+      bubble.appendChild(head);
+      var steps=aiParseOutcome(data.outcome);
+      if(steps.length){
+        var tl=el('div',{'class':'chat-tools'});
+        steps.forEach(function(st){ tl.appendChild(el('div',{'class':'chat-step '+st.st,'text':st.text})); });
+        bubble.appendChild(tl);
+      }
+      var ft=(data.final&&data.final.text)?data.final.text:null;
+      if(ft) bubble.appendChild(el('p',{'class':'chat-final','text':ft}));
+      wait.appendChild(bubble);
+      list.scrollTop=list.scrollHeight;
+    };
+    var chatSend=function(){
+      var p=(promptEl.value||'').trim();
+      if(!p){ showError(new Error(t('ai.prompt_req'))); return; }
+      if(busy) return;
+      busy=true;
+      setDisabled(sendBtn,true);
+      promptEl.value='';
+      var urow=el('div',{'class':'chat-row user'});
+      urow.appendChild(el('div',{'class':'chat-meta','text':t('ai.you')}));
+      urow.appendChild(el('div',{'class':'chat-bubble','text':p}));
+      list.appendChild(urow);
+      var wait=el('div',{'class':'chat-row ai'});
+      wait.appendChild(el('div',{'class':'chat-meta','text':t('ai.assistant')}));
+      wait.appendChild(el('div',{'class':'chat-bubble','text':t('ai.thinking')}));
+      list.appendChild(wait);
+      list.scrollTop=list.scrollHeight;
+      var ctrl=new AbortController();
+      var timer=setTimeout(function(){ ctrl.abort(); },180000);
+      fetch(API+'/ai/chat',{method:'POST',signal:ctrl.signal,
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({prompt:p,permission_mask:0x0F})})
+        .then(function(r){ clearTimeout(timer); return r.text(); })
+        .then(function(txt){
+          busy=false; setDisabled(sendBtn,false);
+          var j=null; try{ j=JSON.parse(txt); }catch(e){ j=null; }
+          if(!j||!j.ok){ aiRenderError(wait,(j&&j.error&&j.error.message)?(j.error.code?j.error.code+': ':'')+j.error.message:'request failed'); return; }
+          aiRenderTurn(wait,j.data);
+        })
+        .catch(function(e){
+          clearTimeout(timer); busy=false; setDisabled(sendBtn,false);
+          aiRenderError(wait,(e&&e.name==='AbortError')?t('ai.timeout_msg'):(e&&e.message?e.message:String(e)));
+        });
+    };
+    sendBtn.addEventListener('click',chatSend);
+    promptEl.addEventListener('keydown',function(e){
+      if(e.key==='Enter') e.preventDefault();
+      if(e.key==='Enter'&&!e.shiftKey){ chatSend(); }
+    });
+    saveBtn.addEventListener('click',function(){
+      setDisabled(saveBtn,true);
+      var body={
+        mode:modeSel.value,
+        local_endpoint:epEl.value.trim()||'',
+        local_api_key:keyEl.value.trim()||'',
+        default_model:modelEl.value.trim()||'',
+        default_timeout_ms:parseInt(timeoutEl.value,10)||60000
+      };
+      apiFetch('/ai/config',{method:'POST',body:JSON.stringify(body)})
+        .then(function(){ cfgMsg.textContent=tf('ai.saved',{0:body.mode}); setOnline(false); })
+        .catch(function(e){ cfgMsg.textContent=t('ai.save_failed'); setDisabled(saveBtn,false); showError(e); });
+    });
+  }
+};
+
+/* =====================================================================
  * LOGS view (log-panel grammar)
  * ===================================================================== */
 function logKey(e){
@@ -1220,7 +1397,7 @@ if(savedBg) setBackground(savedBg);
 setLang(LANG);
 buildNav();
 setOnline(false);
-var validTabs=['dashboard','devices','entities','rules','skills','system','network','logs'];
+var validTabs=['dashboard','devices','entities','rules','skills','ai','system','network','logs'];
 var savedTab=null;
 try{ savedTab=localStorage.getItem('tab'); }catch(e){}
 if(validTabs.indexOf(savedTab)===-1) savedTab='dashboard';

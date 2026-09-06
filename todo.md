@@ -193,6 +193,13 @@
       Ollama's trailing `\n` after the JSON → parser now tolerates trailing
       JSON whitespace (RFC 8259). Host tests 344/344. ✅ uncommitted
       (2026-09-05). Phase 3G in `progress.md`.
+- [x] Dashboard **AI view**: nav entry + assistant config card
+      (`POST /api/v1/ai/config` save & reboot, mode prefilled from
+      `/api/v1/status`) + chat card (`POST /api/v1/ai/chat` with
+      `permission_mask:0x0F`, ~3 min timeout, per-step tool transcript +
+      final answer, inline errors), i18n ES/EN, theme-token CSS. Verified
+      served on COM3 (192.168.1.19) and smoke-tested against the live
+      Ollama upstream. ✅ uncommitted (2026-09-05). Phase 3H in `progress.md`.
 - [ ] Wire a live upstream: set `config.ai` local/remote endpoint + key and run
       the full adapter loop (tool catalog → tool call → result → final) against
       an OpenAI-compatible model on device ✅ done in 3G; remaining polish: get a
