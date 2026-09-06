@@ -3,14 +3,14 @@
 ## Current State (2026-09-05)
 
 - **Branch:** `feature/ai-experiments` — AI implementation line for the next
-  release. HEAD: `e33d122` (+ uncommitted Phase 3G + 3H work).
+  release. HEAD: `5a30af4`.
   > HEAD was `df78f1d` at the 2026-08-27 snapshot; see the dashboard/GUI phase
   > entry below for commits `4339f89`..`8ac6762` (2026-09-03..05),
   > **Phase 3F (2026-09-05)** for the LLM HTTP provider transport +
   > `POST /api/v1/ai/chat` (`e33d122`), **Phase 3G (2026-09-05)** for
   > `config.ai` persistence + `POST /api/v1/ai/config` + the live Ollama
-  > verification, and **Phase 3H (2026-09-05)** for the dashboard **AI view**
-  > (assistant config + chat) — 3G/3H uncommitted.
+  > verification (`8d8a330`), and **Phase 3H (2026-09-05)** for the dashboard
+  > **AI view** (assistant config + chat) (`5a30af4`).
   > **IP correction:** the attached ESP32 (COM3) now leases `192.168.1.19`
   > (was `.16` at the fleet snapshot; DHCP-drifted and confirmed via
   > `/api/v1/status` + heartbeat during 3F verification). The PC (Ollama host)
