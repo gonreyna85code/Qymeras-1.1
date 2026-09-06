@@ -558,7 +558,10 @@ static const char *r_find_message(const char *body) {
 static qymera_err_t parse_response(const char *body, size_t len,
                                    qymera_llm_message_t *message) {
     if (!body || !message || len == 0) return QYMERA_ERR_INVALID_ARG;
-    if (j_skip(body) != body + len) {
+    const char *end = j_skip(body);
+    while (end < body + len && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n'))
+        end++;
+    if (end != body + len) {
         set_msg_kind(message, QYMERA_LLM_MSG_MALFORMED, "malformed provider JSON", NULL);
         return QYMERA_OK;
     }

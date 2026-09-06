@@ -79,6 +79,10 @@ static qymera_err_t core_init_subsystems(qymera_core_t *core) {
     err = qymera_storage_load_general(core->storage, &core->config.general);
     if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_gen=%d", err); return err; }
     
+    err = qymera_storage_load_ai(core->storage, &core->config.ai);
+    if (err != QYMERA_OK && err != QYMERA_ERR_NOT_FOUND) { qymera_log_early("load_ai=%d", err); return err; }
+    qymera_log_early("[AI] mode=%d persisted/NVS", (int)core->config.ai.mode);
+    
     qymera_log_config_t log_cfg = {0};
     log_cfg.log_ring.data = core->log_ring_storage;
     log_cfg.log_ring.capacity = QYMERA_MAX_LOG_ENTRIES;

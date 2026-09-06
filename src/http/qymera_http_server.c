@@ -476,6 +476,35 @@ static bool http_extract_json_str(const char *body, const char *key,
     return true;
 }
 
+/* Locate `"key":` exactly (same scanner as http_extract_json_str), then parse
+ * the raw JSON number following the colon into `*out` when present. Returns
+ * false if the key is absent or its value is not a bare JSON number. */
+static bool http_extract_json_num(const char *body, const char *key,
+                                  uint32_t *out) {
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char *p = body;
+    const char *v = NULL;
+    while ((p = strstr(p, pat)) != NULL) {
+        const char *q = p + strlen(pat);
+        while (*q == ' ' || *q == '\t' || *q == '\n' || *q == '\r') q++;
+        if (*q == ':') { v = q + 1; break; }
+        p = q;
+    }
+    if (!v) return false;
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (*v == '-') v++;
+    if (*v < '0' || *v > '9') return false;
+    long val = 0;
+    while (*v >= '0' && *v <= '9') {
+        val = val * 10 + (*v - '0');
+        v++;
+    }
+    if (val < 0) val = 0;
+    *out = (uint32_t)val;
+    return true;
+}
+
 /* GET /api/v1/wifi/scan -> list of nearby networks {"ssid","rssi"}. */
 static esp_err_t h_wifi_scan_get(httpd_req_t *req) {
     char buf[2048];
@@ -544,6 +573,92 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
         }
     }
     qymera_err_t serr = qymera_storage_save_network(st, &net);
+    if (serr != QYMERA_OK) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
+        return ESP_OK;
+    }
+    http_send_json(req, "{\"ok\":true,\"data\":{\"status\":\"rebooting\"}}");
+    vTaskDelay(pdMS_TO_TICKS(300));
+    qymera_system_restart();
+    return ESP_OK;
+}
+
+/* =========================
+ * POST /api/v1/ai/config
+ *
+ * Persists the AI provider configuration (Ollama/OpenAI upstream) in NVS and
+ * reboots so the core applies it on boot. Body (all optional, absent fields
+ * keep their persisted value):
+ *   { "mode": "none"|"local"|"remote"|"hybrid",
+ *     "local_endpoint": "...", "local_api_key": "...",
+ *     "remote_endpoint": "...", "remote_api_key": "...",
+ *     "default_model": "...", "timeout_ms": N, "rate_limit_ms": N,
+ *     "cache_ms": N }
+ * `local_endpoint`/`remote_endpoint` are base URLs like
+ * `http://192.168.1.16:11434` (the provider appends /v1/chat/completions).
+ * ========================= */
+static esp_err_t h_ai_config_post(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+    if (!core) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INTERNAL\"}}");
+        return ESP_OK;
+    }
+
+    char body[QYMERA_HTTP_BODY_SZ + 1] = {0};
+    int bl = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (bl < 0) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"BAD_REQUEST\"}}");
+        return ESP_OK;
+    }
+    body[bl] = '\0';
+
+    qymera_storage_t *st = qymera_core_get_storage(core);
+    qymera_ai_config_t ai;
+    memset(&ai, 0, sizeof(ai));
+    qymera_err_t lerr = qymera_storage_load_ai(st, &ai);
+    if (lerr != QYMERA_OK && lerr != QYMERA_ERR_NOT_FOUND) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
+        return ESP_OK;
+    }
+    if (lerr == QYMERA_ERR_NOT_FOUND) {
+        ai.mode = QYMERA_AI_MODE_NONE;
+        ai.default_timeout_ms = QYMERA_LLM_HTTP_DEFAULT_TIMEOUT_MS;
+    }
+
+    {
+        char mode[16] = {0};
+        if (http_extract_json_str(body, "mode", mode, sizeof(mode)) && mode[0]) {
+            if (strcmp(mode, "none") == 0) ai.mode = QYMERA_AI_MODE_NONE;
+            else if (strcmp(mode, "local") == 0) ai.mode = QYMERA_AI_MODE_LOCAL;
+            else if (strcmp(mode, "remote") == 0) ai.mode = QYMERA_AI_MODE_REMOTE;
+            else if (strcmp(mode, "hybrid") == 0) ai.mode = QYMERA_AI_MODE_HYBRID;
+            else {
+                http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\","
+                                     "\"message\":\"mode must be none|local|remote|hybrid\"}}");
+                return ESP_OK;
+            }
+        }
+    }
+    http_extract_json_str(body, "local_endpoint", ai.local_endpoint, sizeof(ai.local_endpoint));
+    http_extract_json_str(body, "local_api_key", ai.local_api_key, sizeof(ai.local_api_key));
+    http_extract_json_str(body, "remote_endpoint", ai.remote_endpoint, sizeof(ai.remote_endpoint));
+    http_extract_json_str(body, "remote_api_key", ai.remote_api_key, sizeof(ai.remote_api_key));
+    http_extract_json_str(body, "default_model", ai.default_model, sizeof(ai.default_model));
+    {
+        uint32_t tmp = 0;
+        bool have_timeout = http_extract_json_num(body, "timeout_ms", &tmp);
+        bool have_rate = http_extract_json_num(body, "rate_limit_ms", &tmp);
+        bool have_cache = http_extract_json_num(body, "cache_ms", &tmp);
+        if (have_timeout) {
+            ai.default_timeout_ms = (uint16_t)tmp;
+            if (ai.default_timeout_ms < 1000) ai.default_timeout_ms = 1000;
+            if (ai.default_timeout_ms > 120000) ai.default_timeout_ms = 120000;
+        }
+        if (have_rate) ai.default_rate_limit_ms = (uint32_t)tmp;
+        if (have_cache) ai.default_cache_ms = (uint32_t)tmp;
+    }
+
+    qymera_err_t serr = qymera_storage_save_ai(st, &ai);
     if (serr != QYMERA_OK) {
         http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
         return ESP_OK;
@@ -760,6 +875,7 @@ static const httpd_uri_t routes[] = {
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
     { .uri = "/api/v1/wifi/scan", .method = HTTP_GET, .handler = h_wifi_scan_get },
     { .uri = "/api/v1/wifi/connect", .method = HTTP_POST, .handler = h_wifi_connect_post },
+    { .uri = "/api/v1/ai/config", .method = HTTP_POST, .handler = h_ai_config_post },
     { .uri = "/api/v1/ai/chat", .method = HTTP_POST, .handler = h_ai_chat_post },
 };
 

@@ -3,14 +3,17 @@
 ## Current State (2026-09-05)
 
 - **Branch:** `feature/ai-experiments` — AI implementation line for the next
-  release. HEAD: `8ac6762`.
+  release. HEAD: `e33d122` (+ uncommitted Phase 3G work).
   > HEAD was `df78f1d` at the 2026-08-27 snapshot; see the dashboard/GUI phase
-  > entry below for commits `4339f89`..`8ac6762` (2026-09-03..05), and
+  > entry below for commits `4339f89`..`8ac6762` (2026-09-03..05),
   > **Phase 3F (2026-09-05)** for the LLM HTTP provider transport +
-  > `POST /api/v1/ai/chat` (uncommitted).
+  > `POST /api/v1/ai/chat` (`e33d122`), and **Phase 3G (2026-09-05)** for
+  > `config.ai` persistence + `POST /api/v1/ai/config` + the live Ollama
+  > verification (uncommitted).
   > **IP correction:** the attached ESP32 (COM3) now leases `192.168.1.19`
   > (was `.16` at the fleet snapshot; DHCP-drifted and confirmed via
-  > `/api/v1/status` + heartbeat during 3F verification).
+  > `/api/v1/status` + heartbeat during 3F verification). The PC (Ollama host)
+  > is Ethernet-only at `192.168.1.16`; ignore the virtual `172.x` adapters.
 - **Production `main`** (`b2a9b01` after 2026-08-27 force-sync) is the **AI-free
   MVP** (1.1 tree, HEAD `5e46e12` + doc-sync). This branch is where the AI
   subsystem lives; it will be folded into a future release once stabilized.
@@ -1237,3 +1240,102 @@ Wiring a real model: set `config.ai` (local/remote endpoint + key) and run the
 `dashboard` GUI workflow against a live Ollama/OpenAI-compatible upstream with
 a matching device catalog; then a dashboard `ai` view consuming
 `/api/v1/ai/chat`, and the adaptive-context job feeding `qymera_ai_get_context`.
+
+## Phase 3G: `config.ai` persistence + `/api/v1/ai/config` + live Ollama verification (2026-09-05)
+
+### Objective
+
+Make the AI upstream **runtime-configurable and persistent** (not a compile-time
+default) and wire the device to a **real, live model** to prove the full
+adapter loop on hardware: tool catalog → real tool call → skill execute on the
+actual `dashboard/` device → (repeated till budget or final text). Also
+find/repair the parser defect that made any **live** upstream response report
+"malformed provider JSON" while identical bytes replayed from a file parsed
+fine.
+
+### What was added
+
+- **`src/storage/qymera_storage.h/.c`** — persist the whole `qymera_ai_config_t`
+  (`mode`, `local/remote_endpoint[128]`, `local/remote_api_key[64]`,
+  `default_model[64]`, `default_timeout_ms`, `default_rate_limit_ms`,
+  `default_cache_ms`) to NVS under the existing `qymera_ai` namespace / key
+  `ai_cfg` (`QYMERA_KEY_AI `), same load-dict/save-dict pattern as the network
+  and general configs; `qymera_storage.h` now includes `qymera_ai.h`.
+- **`src/core/qymera_core.c`** — `core_init_subsystems()` loads the AI config at
+  boot (log: `[AI] mode=%d persisted or NVS`), so a persisted endpoint is
+  active immediately, before any handler runs.
+- **`src/http/qymera_http_server.c`** —
+  - **`POST /api/v1/ai/config`** (`h_ai_config_post`): accepts
+    `{mode: none|local|remote|hybrid, local_endpoint, local_api_key,
+    remote_endpoint, remote_api_key, default_model, default_timeout_ms,
+    default_rate_limit_ms, default_cache_ms}`, persists and **reboots** the
+    device (same pattern as the wifi config endpoint); route #16
+    (`max_uri_handlers` already at 20).
+  - **`http_extract_json_num`** — the body key scanner gained a numeric extractor
+    (the existing `http_extract_json_str` only returns quoted strings, so a bare
+    `"timeout_ms":20000` was silently dropped and the 8 s default stayed).
+    Numeric keys are honored and clamped (`timeout` 1 000..120 000 ms, rate/cache
+    upper-bounded) with "present" flags, matching the `wifi config` param
+    semantics.
+- **`src/ai/qymera_llm_http_provider.c`** — parser fix in `parse_response()`:
+  Ollama's `/v1/chat/completions` terminates the body with a trailing `\n` after
+  the JSON value; the strict `j_skip(body) == body + len` check then classified
+  **every live** response as malformed even though the bytes were fully received
+  and structurally valid. The parser now skips trailing JSON whitespace
+  (`' '`, `'\t'`, `'\r'`, `'\n'` — RFC 8259) before the end comparison. This is
+  the root cause of the on-device `malformed provider JSON` under any live
+  upstream; replaying the same bytes via a fixed-response proxy "worked" only
+  because the harness stripped the trailing newline on write-back.
+- **`tests/host_sanity.py`** — **Phase 3G**: `llm_classify_raw()` mirror of
+  `parse_response()` over a raw body, plus 4 checks: trailing `\n`, trailing
+  whitespace, exact-end, and trailing garbage → malformed. Suite: **344/344**.
+
+### Verification
+
+- `python tests/host_sanity.py` → **344/344 PASS** (340 + 4 Phase 3G).
+- `pio run -e esp32_devkit -t upload --upload-port COM3`: **SUCCESS**.
+- `POST /api/v1/ai/config {mode:local, local_endpoint:http://192.168.1.16:11434,
+  default_model:qwen3.5:2b, timeout_ms:60000}` → `{ok:true, ...rebooting}`;
+  after boot `/api/v1/status` reports `"ai_mode":"local"` and the config is
+  applied (persisted through reboot).
+- **Live loop on device (no proxy):** `POST /api/v1/ai/chat
+  {prompt:"setup the garden fan automation"}` → `ended:"tool_call_limit"`,
+  `tool_calls:8` — the adapter ran 8 real `list_devices` calls against the live
+  `dashboard/` device (each `[tool:list_devices:ok]` returning the real device
+  JSON), i.e. catalog → tool call → skill execute works end-to-end against
+  Ollama on hardware. Each `complete()` is one ~8 s qwen3.5:2b generation, so
+  the turn is ~60 s.
+- Plain-text path: `{prompt:"...just say hello"}` → `ended:"text"`,
+  `final.kind:"text", text:"Hello!"` (no tools).
+- Before the 3G parser fix, the **same** live response produced
+  `ended:"malformed", text:"malformed provider JSON"` with the debug proof
+  `sep=1 blen=1010`, raw body ending `...1098}}` + `\n` — confirming the body
+  was fully received and the trailing newline was the only defect.
+- Tool-calling model capability on the lab Ollama: `qwen3.5:2b` and
+  `ornith-local:latest` support tools; `qwen2:0.5b` and `gemma3:*` do not;
+  `qwen3.5:0.8b` fails in Ollama's own XML/tools parser. Upstream is
+  `http://192.168.1.16:11434` (LAN-reachable from the device).
+
+### Files
+
+- `src/storage/qymera_storage.h`, `src/storage/qymera_storage.c`.
+- `src/core/qymera_core.c`.
+- `src/http/qymera_http_server.c`.
+- `src/ai/qymera_llm_http_provider.c`.
+- `tests/host_sanity.py`.
+- `.gitignore` (+ `__pycache__/`, `*.pyc`).
+
+### KNOWN LIMITATIONS / next steps
+
+- qwen3.5:2b keeps choosing `list_devices` on "setup the garden fan
+  automation", so the loop ends on the 8-call budget rather than a final rule
+  text — expected model behavior for this small model; the pipeline itself is
+  proven. Test `ornith-local:latest` for a one-call-then-text flow, or craft a
+  prompt that settles directly.
+- Plain HTTP only (no TLS); HTTPS + streaming future work. No authentication on
+  the LAN API (endpoints are admin-by-default; `0x0F` permission mask is the
+  authorization boundary).
+- `default_model` lives in `config.ai`; the endpoint also accepts a per-request
+  `model` override (fallback chain unchanged).
+- Next: dashboard `ai` view consuming `/api/v1/ai/chat`; adaptive-context job
+  feeding `qymera_ai_get_context`; TLS for the upstream.

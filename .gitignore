@@ -5,3 +5,7 @@
 /AGENTS.md
 /skill/wifi_creds_local.h
 /src/wifi_creds_local.h
+
+# Python
+__pycache__/
+*.pyc

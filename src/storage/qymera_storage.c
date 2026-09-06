@@ -71,6 +71,21 @@ qymera_err_t qymera_storage_save_general(qymera_storage_t *storage, const qymera
     return storage_put(QYMERA_NS_CONFIG, QYMERA_KEY_GENERAL, config, sizeof(qymera_general_config_t));
 }
 
+qymera_err_t qymera_storage_load_ai(qymera_storage_t *storage, qymera_ai_config_t *config) {
+    if (!storage || !storage->initialized || !config) return QYMERA_ERR_INVALID_ARG;
+    size_t len = sizeof(qymera_ai_config_t);
+    qymera_err_t err = storage_get(QYMERA_NS_CONFIG, QYMERA_KEY_AI, config, &len);
+    if (err == QYMERA_OK && len != sizeof(qymera_ai_config_t)) {
+        return QYMERA_ERR_STORAGE;
+    }
+    return err;
+}
+
+qymera_err_t qymera_storage_save_ai(qymera_storage_t *storage, const qymera_ai_config_t *config) {
+    if (!storage || !storage->initialized || !config) return QYMERA_ERR_INVALID_ARG;
+    return storage_put(QYMERA_NS_CONFIG, QYMERA_KEY_AI, config, sizeof(qymera_ai_config_t));
+}
+
 /* NVS stores a single blob per key and a page holds at most ~4032 data
  * bytes, while the rules index (QYMERA_MAX_STORED_RULES entries) can exceed
  * one page. The index is therefore persisted as fixed-width chunks under

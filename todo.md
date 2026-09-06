@@ -182,11 +182,22 @@
       response classification; tool catalog derived from Skill registry) +
       `POST /api/v1/ai/chat` endpoint (adapter per request, default permission
       mask 0x0F, mock provider when no endpoint set). Host tests 340/340;
-      verified on COM3 ESP32 (192.168.1.19). ✅ uncommitted (2026-09-05).
-      Phase 3F in `progress.md`.
+      verified on COM3 ESP32 (192.168.1.19). ✅ committed `e33d122` (2026-09-05).
+      Phase 3F in `progress.md`. Fault found on device (httpd task stack
+      overflow from the ~12 KB transport context) → fixed with heap allocation.
+- [x] `config.ai` persistence (NVS) + `POST /api/v1/ai/config` endpoint
+      (persist + reboot; numeric key extraction incl. timeout clamp) +
+      **live Ollama verification on device**: full adapter loop ran 8 real
+      tool calls against the live `dashboard/` device; plain-text path also
+      OK (`Hello!`). Root cause of the live-only "malformed provider JSON" was
+      Ollama's trailing `\n` after the JSON → parser now tolerates trailing
+      JSON whitespace (RFC 8259). Host tests 344/344. ✅ uncommitted
+      (2026-09-05). Phase 3G in `progress.md`.
 - [ ] Wire a live upstream: set `config.ai` local/remote endpoint + key and run
       the full adapter loop (tool catalog → tool call → result → final) against
-      an OpenAI-compatible model on device
+      an OpenAI-compatible model on device ✅ done in 3G; remaining polish: get a
+      final-text conclusion reliably (qwen3.5:2b keeps looping list_devices —
+      try `ornith-local:latest` or a settling prompt)
 - [ ] Finish `/ai/chat` relay hardening: upstream TLS/proxy edge cases, streaming parse of chunked upstream bodies
 - [ ] Agent loop semantics (browser): tool-result truncation to match context budget; history eviction strategy
 - [ ] Re-verify device-side `/ai/run` validators + CONTROL against the relayed tool schema (two-path parity)

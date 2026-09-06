@@ -5,6 +5,7 @@
 #pragma once
 
 #include "qymera_types.h"
+#include "qymera_ai.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -30,6 +31,7 @@ extern "C" {
 #define QYMERA_KEY_NETWORK    "network"
 #define QYMERA_KEY_GENERAL    "general"
 #define QYMERA_KEY_IDENTITY   "identity"
+#define QYMERA_KEY_AI         "ai_cfg"
 #define QYMERA_KEY_RULES      "rules_list"
 #define QYMERA_KEY_RULE_PREFIX "rule_"
 #define QYMERA_KEY_DEVICES    "devices_list"
@@ -134,6 +136,22 @@ qymera_err_t qymera_storage_load_general(qymera_storage_t *storage, qymera_gener
  * @return QYMERA_OK on success
  */
 qymera_err_t qymera_storage_save_general(qymera_storage_t *storage, const qymera_general_config_t *config);
+
+/**
+ * Load AI configuration
+ * @param storage Storage handle
+ * @param config  Output configuration
+ * @return QYMERA_OK on success, QYMERA_ERR_NOT_FOUND if never configured
+ */
+qymera_err_t qymera_storage_load_ai(qymera_storage_t *storage, qymera_ai_config_t *config);
+
+/**
+ * Save AI configuration
+ * @param storage Storage handle
+ * @param config  Configuration to save
+ * @return QYMERA_OK on success
+ */
+qymera_err_t qymera_storage_save_ai(qymera_storage_t *storage, const qymera_ai_config_t *config);
 
 /**
  * Load rules index

@@ -2045,6 +2045,35 @@ check("P3F RESP: tool call without arguments -> MALFORMED", k == "malformed")
 k, txt, tname, args = llm_classify_response(None)
 check("P3F RESP: empty body -> MALFORMED", k == "malformed")
 
+# Phase 3G: Ollama's /v1/chat/completions appends a trailing newline after the
+# JSON value. parse_response() must tolerate trailing JSON whitespace (RFC 8259)
+# instead of requiring the value to end exactly at the buffer end.
+def llm_classify_raw(raw):
+    """Mirror of parse_response() over a raw body (bytes or str)."""
+    if not raw:
+        return "malformed", "malformed provider JSON", None, {}
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return "malformed", "malformed provider JSON", None, {}
+    try:
+        doc = json.loads(raw)
+    except (ValueError, TypeError):
+        return "malformed", "malformed provider JSON", None, {}
+    return llm_classify_response(doc)
+
+p3g_body = json.dumps(openai_tc).encode()
+k, txt, tname, args = llm_classify_raw(p3g_body + b"\n")
+check("P3G RESP: trailing newline after provider JSON tolerated",
+      k == "tool_call" and tname == "set_relay")
+k, txt, tname, args = llm_classify_raw(p3g_body + b"  \r\n\t")
+check("P3G RESP: trailing JSON whitespace tolerated", k == "tool_call")
+k, txt, tname, args = llm_classify_raw(p3g_body)
+check("P3G RESP: exact JSON end accepted", k == "tool_call")
+k, txt, tname, args = llm_classify_raw(p3g_body + b"\n{")
+check("P3G RESP: trailing garbage after JSON rejected", k == "malformed")
+
 # -- Request/response round-trip through the adapter -------------------------
 # A JSON tool-call response feeds the local provider; the adapter dispatches it
 # through the Skill layer only (permission + bounded budget).
