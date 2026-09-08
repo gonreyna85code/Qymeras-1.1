@@ -245,7 +245,7 @@ qymera_err_t qymera_core_init(qymera_core_t **core, const qymera_core_config_t *
         c->config.network.udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
         c->config.network.udp_control_port = QYMERA_UDP_PORT_CONTROL;
         c->config.network.report_interval_ms = 5000;
-        c->config.ai.mode = QYMERA_AI_MODE_NONE;
+        qymera_ai_config_defaults(&c->config.ai);
     }
     
     err = core_init_subsystems(c);

@@ -222,11 +222,17 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
 .chat-final{margin:8px 0 0;font-weight:600;white-space:pre-wrap}
 .chat-input-row{display:flex;gap:8px;margin-top:10px}
 .chat-input-row input{flex:1}
+.ai-layout{display:flex;flex-direction:column;gap:14px}
+.ai-layout .ai-chat{order:1}
+.ai-layout .ai-cfg{order:2}
 @media (min-width:900px){
 .app{grid-template-columns:220px 1fr;grid-template-rows:auto 1fr}
 .topbar{grid-column:1/-1}
 .nav{grid-row:2;grid-column:1;min-height:calc(100vh - 58px);position:sticky;top:58px;align-self:start;height:calc(100vh - 58px)}
 .main{grid-column:2;grid-row:2;padding:24px}
+.ai-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;grid-template-areas:"chat cfg";align-items:start}
+.ai-layout .ai-chat{grid-area:chat}
+.ai-layout .ai-cfg{grid-area:cfg;position:sticky;top:82px}
 }
 @media (max-width:899px){
 .nav{position:fixed;left:0;right:0;bottom:0;top:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-top:1px solid var(--border);border-right:none;z-index:110;background:var(--surface);box-shadow:0 -4px 16px rgba(0,0,0,.25)}
@@ -321,10 +327,10 @@ es:{
 'stat.status':'Estado','stat.ip':'Dirección IP','stat.heap':'Memoria libre','stat.uptime':'Tiempo activo',
   'stat.devices':'Dispositivos','stat.entities':'Entidades',
   'ai.config':'Asistente IA','ai.mode':'Modo','ai.mode_none':'Sin modelo','ai.mode_local':'Local','ai.mode_remote':'Remoto','ai.mode_hybrid':'Híbrido',
-  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'http://192.168.1.16:11434',
-  'ai.key':'Clave API','ai.key_ph':'Opcional (OpenAI)','ai.model':'Modelo','ai.model_ph':'qwen3.5:2b',
+  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'https://api.groq.com/openai/v1/chat/completions',
+  'ai.key':'Clave API','ai.key_ph':'Clave API gratis (groq_...)','ai.model':'Modelo','ai.model_ph':'llama-3.3-70b-versatile',
   'ai.timeout':'Timeout del modelo (ms)','ai.save':'Guardar y reiniciar','ai.saved':'Guardado. Reiniciando en modo {0}...','ai.save_failed':'Error al guardar.',
-  'ai.config_hint':'Configura el upstream del asistente. Tras guardar, el dispositivo se reinicia con la nueva configuración.',
+  'ai.config_hint':'Por defecto apunta al cloud gratuito de Groq (necesita tu clave API gratis en console.groq.com). También sirve para un Ollama local: http://192.168.1.16:11434',
   'ai.chat':'Chat','ai.empty':'Envía una instrucción para que el asistente inspeccione y actúe sobre este nodo.',
   'ai.prompt_ph':'Describe qué quieres hacer...','ai.send':'Enviar','ai.thinking':'Pensando...','ai.you':'Tú','ai.assistant':'Asistente',
   'ai.steps':'Llamadas a herramientas: {0}','ai.timeout_msg':'El modelo tardó demasiado en responder.',
@@ -380,10 +386,10 @@ en:{
 'stat.status':'Status','stat.ip':'IP Address','stat.heap':'Free Heap','stat.uptime':'Uptime',
   'stat.devices':'Devices','stat.entities':'Entities',
   'ai.config':'AI Assistant','ai.mode':'Mode','ai.mode_none':'No model','ai.mode_local':'Local','ai.mode_remote':'Remote','ai.mode_hybrid':'Hybrid',
-  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'http://192.168.1.16:11434',
-  'ai.key':'API key','ai.key_ph':'Optional (OpenAI)','ai.model':'Model','ai.model_ph':'qwen3.5:2b',
+  'ai.endpoint':'Endpoint (Ollama/OpenAI)','ai.endpoint_ph':'https://api.groq.com/openai/v1/chat/completions',
+  'ai.key':'API key','ai.key_ph':'Free API key (groq_...)','ai.model':'Model','ai.model_ph':'llama-3.3-70b-versatile',
   'ai.timeout':'Model timeout (ms)','ai.save':'Save & Reboot','ai.saved':'Saved. Rebooting into {0} mode...','ai.save_failed':'Save failed.',
-  'ai.config_hint':'Configure the assistant upstream. After saving, the device reboots with the new configuration.',
+  'ai.config_hint':'Defaults to the free Groq cloud (needs your free API key from console.groq.com). Also works with a local Ollama: http://192.168.1.16:11434',
   'ai.chat':'Chat','ai.empty':'Send an instruction for the assistant to inspect and act on this node.',
   'ai.prompt_ph':'Describe what you want to do...','ai.send':'Send','ai.thinking':'Thinking...','ai.you':'You','ai.assistant':'Assistant',
   'ai.steps':'Tool calls: {0}','ai.timeout_msg':'The model took too long to respond.',
@@ -1109,23 +1115,24 @@ views.ai={
   mount:function(host){
     host.innerHTML=
       '<div class="page-head"><div><h1 data-i18n="page.ai">Asistente IA</h1><p class="page-sub" data-i18n="page.ai.sub"></p></div></div>'+
-      '<div class="settings-grid" id="aiCfgGrid">'+
-      '<div class="settings-card"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.mode">Modo</span><h3 data-i18n="ai.config">Asistente IA</h3></div><span class="chip" id="aiModeChip">—</span></div>'+
+      '<div class="ai-layout">'+
+      '<div class="settings-card ai-chat"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.chat">Chat</span><h3 data-i18n="page.ai">Asistente IA</h3></div></div>'+
+      '<div id="aiChatList" class="chat-list"></div>'+
+      '<div class="chat-input-row"><input id="aiPrompt" class="input" maxlength="2000" data-i18n-ph="ai.prompt_ph" placeholder="Describe qué quieres hacer..."><button id="aiSend" class="btn primary" type="button"><span data-i18n="ai.send">Enviar</span></button></div>'+
+      '</div>'+
+      '<div class="settings-card ai-cfg"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.config">Config</span><h3 data-i18n="ai.config">Asistente IA</h3></div><span class="chip" id="aiModeChip">—</span></div>'+
       '<p class="small-note" data-i18n="ai.config_hint"></p>'+
       '<div class="field"><label data-i18n="ai.mode">Modo</label><select id="aiMode" class="input">'+
       '<option value="none" data-i18n="ai.mode_none">Sin modelo</option>'+
       '<option value="local" data-i18n="ai.mode_local">Local</option>'+
       '<option value="remote" data-i18n="ai.mode_remote">Remoto</option>'+
       '<option value="hybrid" data-i18n="ai.mode_hybrid">Híbrido</option></select></div>'+
-      '<div class="field"><label data-i18n="ai.endpoint">Endpoint</label><input id="aiEndpoint" class="input" data-i18n-ph="ai.endpoint_ph" placeholder="http://192.168.1.16:11434"></div>'+
+      '<div class="field"><label data-i18n="ai.endpoint">Endpoint</label><input id="aiEndpoint" class="input" data-i18n-ph="ai.endpoint_ph" placeholder="https://api.groq.com/openai/v1/chat/completions"></div>'+
       '<div class="field"><label data-i18n="ai.key">Clave API</label><input id="aiKey" class="input" type="password" data-i18n-ph="ai.key_ph"></div>'+
-      '<div class="field"><label data-i18n="ai.model">Modelo</label><input id="aiModel" class="input" data-i18n-ph="ai.model_ph" placeholder="qwen3.5:2b"></div>'+
-      '<div class="field"><label data-i18n="ai.timeout">Timeout</label><input id="aiTimeout" class="input" type="number" value="60000" min="1000" max="120000"></div>'+
+      '<div class="field"><label data-i18n="ai.model">Modelo</label><input id="aiModel" class="input" data-i18n-ph="ai.model_ph" placeholder="llama-3.3-70b-versatile"></div>'+
+      '<div class="field"><label data-i18n="ai.timeout">Timeout</label><input id="aiTimeout" class="input" type="number" value="60000" min="1000" max="65535"></div>'+
       '<div class="btn-row"><button id="aiSave" class="btn primary" type="button"><span data-i18n="ai.save">Guardar y reiniciar</span></button><span id="aiCfgMsg" class="small-note"></span></div>'+
-      '</div></div>'+
-      '<div class="settings-card" style="margin-top:14px"><div class="settings-card-head"><div><span class="eyebrow" data-i18n="ai.chat">Chat</span><h3 data-i18n="page.ai">Asistente IA</h3></div></div>'+
-      '<div id="aiChatList" class="chat-list"></div>'+
-      '<div class="chat-input-row"><input id="aiPrompt" class="input" maxlength="2000" data-i18n-ph="ai.prompt_ph" placeholder="Describe qué quieres hacer..."><button id="aiSend" class="btn primary" type="button"><span data-i18n="ai.send">Enviar</span></button></div>'+
+      '</div>'+
       '</div>';
     applyI18n(host);
     var modeSel=host.querySelector('#aiMode');
@@ -1141,21 +1148,50 @@ views.ai={
     var sendBtn=host.querySelector('#aiSend');
     var busy=false;
     list.appendChild(el('div',{'class':'chat-step','text':t('ai.empty')}));
-    /* Prefill current mode from /status (best-effort, no toast on failure). */
-    fetch(API+'/status',{headers:{'Content-Type':'application/json'}}).then(function(r){
+    /* ---------- config prefill (GET /ai/config, best-effort) ---------- */
+    var saved=null;
+    var slotFor=function(m){ return (m==='local'||m==='hybrid')?'local':'remote'; };
+    var fillFromSaved=function(){
+      if(!saved) return;
+      var s=slotFor(modeSel.value);
+      epEl.value=(s==='local')?(saved.local_endpoint||''):(saved.remote_endpoint||'');
+      keyEl.value=(s==='local')?(saved.local_api_key||''):(saved.remote_api_key||'');
+    };
+    var applyCfg=function(c){
+      saved=c;
+      var m=['none','local','remote','hybrid'].indexOf(c.mode)>=0?c.mode:'none';
+      modeSel.value=m;
+      setText(modeChip,t('ai.mode_'+m));
+      fillFromSaved();
+      if(c.default_model) modelEl.value=c.default_model;
+      if(c.default_timeout_ms) timeoutEl.value=c.default_timeout_ms;
+    };
+    fetch(API+'/ai/config',{headers:{'Content-Type':'application/json'}}).then(function(r){
       return r.json();
     }).then(function(j){
-      if(j&&j.ok&&j.data){
-        var m=j.data.ai_mode||'none';
-        if(['none','local','remote','hybrid'].indexOf(m)>=0) modeSel.value=m;
-        setText(modeChip,t('ai.mode_'+m));
-      }
-    }).catch(function(){});
-    var aiRenderError=function(wait,msg){
+      if(j&&j.ok&&j.data) applyCfg(j.data);
+    }).catch(function(){
+      /* Fallback: only the mode, from /status. */
+      fetch(API+'/status',{headers:{'Content-Type':'application/json'}}).then(function(r){ return r.json(); })
+        .then(function(j){
+          if(j&&j.ok&&j.data){
+            var m=j.data.ai_mode||'none';
+            if(['none','local','remote','hybrid'].indexOf(m)>=0) modeSel.value=m;
+            setText(modeChip,t('ai.mode_'+m));
+          }
+        }).catch(function(){});
+    });
+    modeSel.addEventListener('change',function(){
+      setText(modeChip,t('ai.mode_'+modeSel.value));
+      fillFromSaved();
+    });
+    var aiRenderError=function(wait,think,msg){
+      if(think&&think.parentNode) think.parentNode.removeChild(think);
       wait.appendChild(el('div',{'class':'chat-bubble err','text':msg}));
       list.scrollTop=list.scrollHeight;
     };
-    var aiRenderTurn=function(wait,data){
+    var aiRenderTurn=function(wait,think,data){
+      if(think&&think.parentNode) think.parentNode.removeChild(think);
       var bubble=el('div',{'class':'chat-bubble'});
       var head=el('div',{'class':'chat-head','text':tf('ai.steps',{0:data.tool_calls})+' · '});
       head.appendChild(el('span',{'class':'chip '+(aiEndIsErr(data.ended)?'danger':'ok'),'text':t('ai.end.'+(data.ended||'error'))}));
@@ -1184,7 +1220,8 @@ views.ai={
       list.appendChild(urow);
       var wait=el('div',{'class':'chat-row ai'});
       wait.appendChild(el('div',{'class':'chat-meta','text':t('ai.assistant')}));
-      wait.appendChild(el('div',{'class':'chat-bubble','text':t('ai.thinking')}));
+      var think=el('div',{'class':'chat-bubble','text':t('ai.thinking')});
+      wait.appendChild(think);
       list.appendChild(wait);
       list.scrollTop=list.scrollHeight;
       var ctrl=new AbortController();
@@ -1196,12 +1233,12 @@ views.ai={
         .then(function(txt){
           busy=false; setDisabled(sendBtn,false);
           var j=null; try{ j=JSON.parse(txt); }catch(e){ j=null; }
-          if(!j||!j.ok){ aiRenderError(wait,(j&&j.error&&j.error.message)?(j.error.code?j.error.code+': ':'')+j.error.message:'request failed'); return; }
-          aiRenderTurn(wait,j.data);
+          if(!j||!j.ok){ aiRenderError(wait,think,(j&&j.error&&j.error.message)?(j.error.code?j.error.code+': ':'')+j.error.message:'request failed'); return; }
+          aiRenderTurn(wait,think,j.data);
         })
         .catch(function(e){
           clearTimeout(timer); busy=false; setDisabled(sendBtn,false);
-          aiRenderError(wait,(e&&e.name==='AbortError')?t('ai.timeout_msg'):(e&&e.message?e.message:String(e)));
+          aiRenderError(wait,think,(e&&e.name==='AbortError')?t('ai.timeout_msg'):(e&&e.message?e.message:String(e)));
         });
     };
     sendBtn.addEventListener('click',chatSend);
@@ -1211,15 +1248,16 @@ views.ai={
     });
     saveBtn.addEventListener('click',function(){
       setDisabled(saveBtn,true);
+      var m=modeSel.value;
       var body={
-        mode:modeSel.value,
-        local_endpoint:epEl.value.trim()||'',
-        local_api_key:keyEl.value.trim()||'',
-        default_model:modelEl.value.trim()||'',
-        default_timeout_ms:parseInt(timeoutEl.value,10)||60000
+        mode:m,
+        timeout_ms:parseInt(timeoutEl.value,10)||60000,
+        default_model:modelEl.value.trim()||''
       };
+      if(slotFor(m)==='local'){ body.local_endpoint=epEl.value.trim()||''; body.local_api_key=keyEl.value.trim()||''; }
+      else { body.remote_endpoint=epEl.value.trim()||''; body.remote_api_key=keyEl.value.trim()||''; }
       apiFetch('/ai/config',{method:'POST',body:JSON.stringify(body)})
-        .then(function(){ cfgMsg.textContent=tf('ai.saved',{0:body.mode}); setOnline(false); })
+        .then(function(){ cfgMsg.textContent=tf('ai.saved',{0:m}); setOnline(false); })
         .catch(function(e){ cfgMsg.textContent=t('ai.save_failed'); setDisabled(saveBtn,false); showError(e); });
     });
   }

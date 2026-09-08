@@ -13,7 +13,8 @@
  *  - No JSON library dependency: a minimal, bounded, deterministic JSON
  *    scanner lives in this module and is mirrored by host tests.
  *  - Bounded buffers: one request buffer, one response buffer, fixed at
- *    compile time. No malloc per call, no unbounded reads, bounded timeout.
+ *    compile time. No malloc per call (a short-lived TLS session block is the
+ *    only heap use on https:// endpoints), no unbounded reads, bounded timeout.
  *  - Only explicit tool calls from the model are surfaced; nothing is ever
  *    executed outside qymera_llm_adapter_process (permission/budget guards).
  *  - The tool catalog given to the model is DERIVED from the Skill registry
@@ -26,6 +27,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+
+struct qymera_log_s;
+typedef struct qymera_log_s qymera_log_t;   /* fwd decl, matches qymera_log.h */
 
 #ifdef __cplusplus
 extern "C" {
@@ -59,8 +63,16 @@ typedef struct {
 
 struct qymera_llm_http_ctx_s {
     qymera_llm_http_config_t config;
-    char req_buf[QYMERA_LLM_HTTP_REQ_BUF];
-    char resp_buf[QYMERA_LLM_HTTP_RESP_BUF];
+    /* A single bounded I/O buffer, allocated on the heap only after the
+     * connect + TLS handshake complete: the mbedtls session alone needs two
+     * ~16 KB content buffers (plus context), and holding our request/response
+     * buffers at the same time starves the RSA modpow scratch during the
+     * ServerKeyExchange verify (mbedtls -0x4290 = RSA_PUBLIC_FAILED |
+     * MPI_ALLOC_FAILED on this board). The one buffer is reused for the
+     * outbound JSON body and then for the inbound HTTP response. Freed when
+     * the turn ends. */
+    char *io_buf;    /* heap, capacity QYMERA_LLM_HTTP_REQ_BUF (also RESP) */
+    qymera_log_t *log;   /* optional logging handle (set by the owner) */
 };
 typedef struct qymera_llm_http_ctx_s qymera_llm_http_ctx_t;
 

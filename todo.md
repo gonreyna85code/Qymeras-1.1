@@ -191,7 +191,7 @@
       tool calls against the live `dashboard/` device; plain-text path also
       OK (`Hello!`). Root cause of the live-only "malformed provider JSON" was
       Ollama's trailing `\n` after the JSON → parser now tolerates trailing
-      JSON whitespace (RFC 8259). Host tests 344/344. ✅ uncommitted
+      JSON whitespace (RFC 8259). Host tests 344/344. ✅ committed `8d8a330`
       (2026-09-05). Phase 3G in `progress.md`.
 - [x] Dashboard **AI view**: nav entry + assistant config card
       (`POST /api/v1/ai/config` save & reboot, mode prefilled from
@@ -199,7 +199,23 @@
       `permission_mask:0x0F`, ~3 min timeout, per-step tool transcript +
       final answer, inline errors), i18n ES/EN, theme-token CSS. Verified
       served on COM3 (192.168.1.19) and smoke-tested against the live
-      Ollama upstream. ✅ uncommitted (2026-09-05). Phase 3H in `progress.md`.
+      Ollama upstream. ✅ committed `5a30af4` (2026-09-05). Phase 3H in `progress.md`.
+- [x] **Cloud (TLS) upstream + config default + AI-view v2**: HTTPS transport
+      with mbedtls (`VERIFY_NONE`, SNI, `Authorization: Bearer`, 250 ms step
+      socket timeouts + shared deadline incl. connect, `inet_aton` IP-literal
+      fast path, errno/mbedtls diagnostics); factory default → free Groq
+      (`https://api.groq.com/openai/v1/chat/completions`, `llama-3.3-70b-versatile`);
+      `GET /api/v1/ai/config` for full prefill; AI view chat-on-top (mobile) +
+      config-left/chat-right (desktop), prefill of persisted values, `timeout_ms`
+      persisted (was `default_timeout_ms`), thinking bubble removed on reply.
+      Build+upload COM3 SUCCESS, host 344/344, served-page checks OK.
+      ✅ Cloud e2e **completed** (2026-09-08): fixed the three-layer failure
+      (dead DHCP IPs — board now `192.168.1.5`, PC `.25`; mbedtls heap OOM →
+      single post-handshake `io_buf` of 8 KB; lost TLS payload → ≤1 KB chunked
+      `mbedtls_ssl_write` + `TCP_NODELAY`). Local raw-SSL harness delivers
+      `ended=text "ok-tls"`; Groq (no key) returns `provider HTTP status 401`.
+      Config restored to local Ollama at `.25:11434` + Groq parked in remote
+      slot. ✅ uncommitted (2026-09-08). Phase 3I in `progress.md`.
 - [ ] Wire a live upstream: set `config.ai` local/remote endpoint + key and run
       the full adapter loop (tool catalog → tool call → result → final) against
       an OpenAI-compatible model on device ✅ done in 3G; remaining polish: get a

@@ -84,6 +84,15 @@ typedef struct {
     uint32_t default_cache_ms;
 } qymera_ai_config_t;
 
+/* Factory defaults: a free cloud LLM (Groq) so a fresh device comes with an
+ * assistant that works after the user pastes a free API key. The remote
+ * endpoint carries the full path (the provider appends nothing when a path is
+ * present). FIELD NAMES/ORDER MATTER: this struct is persisted verbatim to NVS. */
+#define QYMERA_AI_DEFAULT_REMOTE_ENDPOINT \
+    "https://api.groq.com/openai/v1/chat/completions"
+#define QYMERA_AI_DEFAULT_MODEL "llama-3.3-70b-versatile"
+#define QYMERA_AI_DEFAULT_TIMEOUT_MS 60000
+
 /* =========================
  * AI Context (for agent)
  * ========================= */
@@ -114,6 +123,12 @@ typedef struct qymera_ai_s qymera_ai_t;
  * @return QYMERA_OK on success
  */
 qymera_err_t qymera_ai_init(qymera_ai_t **ai, const qymera_ai_config_t *config);
+
+/**
+ * Fill `config` with the factory defaults (free cloud LLM, remote mode).
+ * @param config Config to fill (zeroed first)
+ */
+void qymera_ai_config_defaults(qymera_ai_config_t *config);
 
 /**
  * Execute inference request

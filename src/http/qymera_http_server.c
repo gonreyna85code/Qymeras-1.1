@@ -621,8 +621,7 @@ static esp_err_t h_ai_config_post(httpd_req_t *req) {
         return ESP_OK;
     }
     if (lerr == QYMERA_ERR_NOT_FOUND) {
-        ai.mode = QYMERA_AI_MODE_NONE;
-        ai.default_timeout_ms = QYMERA_LLM_HTTP_DEFAULT_TIMEOUT_MS;
+        qymera_ai_config_defaults(&ai);
     }
 
     {
@@ -717,6 +716,47 @@ static void ai_json_escape(const char *s, char *out, size_t cap) {
     out[i] = '\0';
 }
 
+/* =========================
+ * GET /api/v1/ai/config
+ *
+ * Returns the effective AI provider configuration (persisted values, or the
+ * factory defaults on a fresh device) so the dashboard can show/prefill what
+ * is configured. Same unauthenticated-LAN posture as the rest of the API; the
+ * API keys are returned since they are the device's own config.
+ * ========================= */
+static esp_err_t h_ai_config_get(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+    const qymera_core_config_t *cfg = core ? qymera_core_get_config(core) : NULL;
+    if (!cfg) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INTERNAL\"}}");
+        return ESP_OK;
+    }
+    const qymera_ai_config_t *a = &cfg->ai;
+    const char *mode = (a->mode == QYMERA_AI_MODE_LOCAL) ? "local"
+                      : (a->mode == QYMERA_AI_MODE_REMOTE) ? "remote"
+                      : (a->mode == QYMERA_AI_MODE_HYBRID) ? "hybrid" : "none";
+
+    char e_local[256], e_key[128], e_remote[256], e_rkey[128], e_model[128];
+    ai_json_escape(a->local_endpoint, e_local, sizeof(e_local));
+    ai_json_escape(a->local_api_key, e_key, sizeof(e_key));
+    ai_json_escape(a->remote_endpoint, e_remote, sizeof(e_remote));
+    ai_json_escape(a->remote_api_key, e_rkey, sizeof(e_rkey));
+    ai_json_escape(a->default_model, e_model, sizeof(e_model));
+
+    char buf[900];
+    snprintf(buf, sizeof(buf),
+        "{\"ok\":true,\"data\":{\"mode\":\"%s\","
+        "\"local_endpoint\":\"%s\",\"local_api_key\":\"%s\","
+        "\"remote_endpoint\":\"%s\",\"remote_api_key\":\"%s\","
+        "\"default_model\":\"%s\",\"default_timeout_ms\":%u,"
+        "\"default_rate_limit_ms\":%lu,\"default_cache_ms\":%lu}}",
+        mode, e_local, e_key, e_remote, e_rkey, e_model,
+        (unsigned)a->default_timeout_ms,
+        (unsigned long)a->default_rate_limit_ms, (unsigned long)a->default_cache_ms);
+    http_send_json(req, buf);
+    return ESP_OK;
+}
+
 static esp_err_t h_ai_chat_post(httpd_req_t *req) {
     qymera_core_t *core = (qymera_core_t *)req->user_ctx;
 
@@ -788,6 +828,7 @@ static esp_err_t h_ai_chat_post(httpd_req_t *req) {
                                  "\"message\":\"out of memory for AI transport\"}}");
             return ESP_OK;
         }
+        http_ctx->log = qymera_core_get_log(core);
         const char *ep = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
                              ? ai->local_endpoint : ai->remote_endpoint;
         const char *key = (ai->mode == QYMERA_AI_MODE_LOCAL || ai->mode == QYMERA_AI_MODE_HYBRID)
@@ -875,6 +916,7 @@ static const httpd_uri_t routes[] = {
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
     { .uri = "/api/v1/wifi/scan", .method = HTTP_GET, .handler = h_wifi_scan_get },
     { .uri = "/api/v1/wifi/connect", .method = HTTP_POST, .handler = h_wifi_connect_post },
+    { .uri = "/api/v1/ai/config", .method = HTTP_GET, .handler = h_ai_config_get },
     { .uri = "/api/v1/ai/config", .method = HTTP_POST, .handler = h_ai_config_post },
     { .uri = "/api/v1/ai/chat", .method = HTTP_POST, .handler = h_ai_chat_post },
 };

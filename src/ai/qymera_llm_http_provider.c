@@ -3,9 +3,10 @@
  *
  * Concrete, bounded OpenAI-compatible chat provider (also speaks Ollama's
  * /api/chat tool format). Builds a compact JSON request body carrying the
- * registry-derived tool catalog, performs a single HTTP POST, and classifies
- * the bounded response into exactly one qymera_llm_message_t. Everything here
- * is deterministic and bounded; no JSON library, no TLS, no streaming.
+ * registry-derived tool catalog, performs a single HTTP POST (plain TCP, or
+ * TLS via mbedtls for https:// endpoints), and classifies the bounded
+ * response into exactly one qymera_llm_message_t. Everything here is
+ * deterministic and bounded; no JSON library, no streaming.
  *
  * The pure request-builder / response-parser logic is mirrored by host tests in
  * tests/host_sanity.py (Phase 3F) so the classification contract is pinned
@@ -22,9 +23,17 @@
 #include <unistd.h>
 #include <errno.h>
 #include "lwip/netdb.h"
+#include "esp_timer.h"
+#include "esp_heap_caps.h"
+#include <mbedtls/ssl.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
 
-#define LOG_AI(l, ...)   qymera_log_ai((l), "llhttp", __VA_ARGS__)
-#define LOG_ERR(l, ...)  qymera_log_error((l), "llhttp", __VA_ARGS__)
+/* Logging shortcut: (handle, level, ...) — qymera_log_logf's first argument
+ * is the qymera_log_t * handle, NOT a level enum (see qymera_log.h). */
+#define LOG_AI(h, l, ...)   qymera_log_logf((h), (l), "llhttp", __VA_ARGS__)
+#define LOG_ERR(h, l, ...)  qymera_log_logf((h), (l), "llhttp", __VA_ARGS__)
 
 /* =========================
  * Tolerances
@@ -149,8 +158,8 @@ static void jw_field_schema(jw_t *w, unsigned f) {
 static qymera_err_t build_request_body(qymera_llm_http_ctx_t *ctx,
                                        const qymera_llm_request_t *request) {
     jw_t w;
-    w.buf = ctx->req_buf;
-    w.cap = sizeof(ctx->req_buf);
+    w.buf = ctx->io_buf;
+    w.cap = QYMERA_LLM_HTTP_RESP_BUF;
     w.len = 0;
     w.truncated = false;
 
@@ -190,20 +199,34 @@ static qymera_err_t build_request_body(qymera_llm_http_ctx_t *ctx,
 
 /* =========================
  * Endpoint URL parsing (bounded). Format:
- *   http://host[:port][/path]
- * Accepts IP literals and hostnames. Defaults: port 80, path
- * /v1/chat/completions.
+ *   http://host[:port][/path]    (plain TCP, port 80)
+ *   https://host[:port][/path]   (TLS via mbedtls, port 443)
+ * Accepts IP literals and hostnames. A path is used verbatim; with no path
+ * the default /v1/chat/completions is appended. A base like
+ * `http://192.168.1.16:11434` (no path) gets the /v1/chat/completions suffix;
+ * cloud providers need the full path, e.g.
+ * `https://api.groq.com/openai/v1/chat/completions`.
  * ========================= */
 typedef struct {
     char host[96];
     uint16_t port;
     char path[96];
+    bool tls;    /* https: mbedtls transport instead of plain TCP */
 } llhttp_target_t;
 
 static bool parse_endpoint(const char *endpoint, llhttp_target_t *t) {
     memset(t, 0, sizeof(*t));
-    if (!endpoint || strncmp(endpoint, "http://", 7) != 0) return false;
-    const char *p = endpoint + 7;
+    if (!endpoint) return false;
+    if (strncmp(endpoint, "http://", 7) == 0) {
+        t->tls = false;
+        endpoint += 7;
+    } else if (strncmp(endpoint, "https://", 8) == 0) {
+        t->tls = true;
+        endpoint += 8;
+    } else {
+        return false;
+    }
+    const char *p = endpoint;
 
     /* host: up to ':' (with port) or '/' (path) or end. */
     const char *host_start = p;
@@ -217,7 +240,7 @@ static bool parse_endpoint(const char *endpoint, llhttp_target_t *t) {
     if (hlen == 0 || hlen >= sizeof(t->host)) return false;
     memcpy(t->host, host_start, hlen);
     t->host[hlen] = '\0';
-    t->port = 80;
+    t->port = t->tls ? 443 : 80;
 
     if (colon && (!slash || colon < slash)) {
         p = colon + 1;
@@ -243,15 +266,165 @@ static bool parse_endpoint(const char *endpoint, llhttp_target_t *t) {
 }
 
 /* =========================
- * Outbound HTTP POST (plain TCP, bounded, with timeout).
+ * TLS transport (mbedtls over the same bounded socket).
+ *
+ * The connection is plain TCP for http:// and wrapped in TLS for https://.
+ * The session is created per HTTP POST and torn down afterwards, matching the
+ * existing per-step reconnect model (a chat turn opens one provider connection
+ * per model call, same as the local plain-HTTP path).
+ *
+ * NOTE: server certificates are NOT verified (MBEDTLS_SSL_VERIFY_NONE). This
+ * matches the device's LAN posture of this transport and the absence of any
+ * CA/trust-provisioning UI; SNI is still sent so virtual-hosted providers
+ * (e.g. Groq/OpenRouter) route correctly. Certificate pinning is future work.
+ * ========================= */
+typedef struct {
+    int fd;
+    qymera_log_t *log;
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config conf;
+    mbedtls_ctr_drbg_context ctr;
+    mbedtls_entropy_context entropy;
+} ll_tls_t;
+
+static int ll_tls_bio_send(void *bio_ctx, const unsigned char *buf, size_t len) {
+    int fd = *(const int *)bio_ctx;
+    ssize_t n = send(fd, buf, len, 0);
+    if (n < 0) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) return MBEDTLS_ERR_SSL_WANT_WRITE;
+        return MBEDTLS_ERR_NET_SEND_FAILED;
+    }
+    return (int)n;
+}
+
+static int ll_tls_bio_recv(void *bio_ctx, unsigned char *buf, size_t len) {
+    int fd = *(const int *)bio_ctx;
+    ssize_t n = recv(fd, buf, len, 0);
+    if (n > 0) return (int)n;
+    if (n == 0) return MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
+    if (errno == EWOULDBLOCK || errno == EAGAIN) return MBEDTLS_ERR_SSL_WANT_READ;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
+static qymera_err_t ll_tls_connect(ll_tls_t *t, const llhttp_target_t *target,
+                                   uint32_t timeout_ms, qymera_log_t *log) {
+    mbedtls_entropy_init(&t->entropy);
+    mbedtls_ctr_drbg_init(&t->ctr);
+    mbedtls_ssl_init(&t->ssl);
+    mbedtls_ssl_config_init(&t->conf);
+
+    int ret = mbedtls_ctr_drbg_seed(&t->ctr, mbedtls_entropy_func, &t->entropy, NULL, 0);
+    if (ret != 0) return QYMERA_ERR_NETWORK;
+    ret = mbedtls_ssl_config_defaults(&t->conf, MBEDTLS_SSL_IS_CLIENT,
+                                      MBEDTLS_SSL_TRANSPORT_STREAM,
+                                      MBEDTLS_SSL_PRESET_DEFAULT);
+    if (ret != 0) return QYMERA_ERR_NETWORK;
+    mbedtls_ssl_conf_authmode(&t->conf, MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls_ssl_conf_rng(&t->conf, mbedtls_ctr_drbg_random, &t->ctr);
+    ret = mbedtls_ssl_setup(&t->ssl, &t->conf);
+    if (ret != 0) return QYMERA_ERR_NETWORK;
+    ret = mbedtls_ssl_set_hostname(&t->ssl, target->host);
+    if (ret != 0) return QYMERA_ERR_NETWORK;
+    mbedtls_ssl_set_bio(&t->ssl, &t->fd, ll_tls_bio_send, ll_tls_bio_recv, NULL);
+
+    int64_t deadline = (int64_t)esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    do {
+        ret = mbedtls_ssl_handshake(&t->ssl);
+    } while ((ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) &&
+             (int64_t)esp_timer_get_time() < deadline);
+    if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        LOG_ERR(log, QYMERA_LOG_WARNING, "tls handshake %s:%u timed out", target->host, (unsigned)target->port);
+        return QYMERA_ERR_TIMEOUT;
+    }
+    if (ret != 0) {
+        LOG_ERR(log, QYMERA_LOG_WARNING, "tls handshake %s:%u failed: mbedtls -0x%04X",
+                target->host, (unsigned)target->port, (unsigned)(-ret));
+        return QYMERA_ERR_NETWORK;
+    }
+    return QYMERA_OK;
+}
+
+static void ll_tls_free(ll_tls_t *t) {
+    if (!t) return;
+    mbedtls_ssl_free(&t->ssl);
+    mbedtls_ssl_config_free(&t->conf);
+    mbedtls_ctr_drbg_free(&t->ctr);
+    mbedtls_entropy_free(&t->entropy);
+    free(t);
+}
+
+/* Write all bytes. Returns 0 on success, -1 network error, -2 timeout. */
+static int ll_io_write_all(int fd, ll_tls_t *tls, const char *buf, size_t len,
+                           int64_t deadline) {
+    size_t pos = 0;
+    while (pos < len) {
+        if (!tls) {
+            ssize_t n = send(fd, buf + pos, len - pos, 0);
+            if (n >= 0) { pos += (size_t)n; continue; }
+            if ((errno == EWOULDBLOCK || errno == EAGAIN) &&
+                (int64_t)esp_timer_get_time() < deadline) continue; /* step write timeout: keep trying */
+            return -1;
+        } else {
+            size_t want = len - pos;
+            if (want > 1024) want = 1024;
+            int n = mbedtls_ssl_write(&tls->ssl, (const unsigned char *)(buf + pos),
+                                      want);
+            if (n > 0) { pos += (size_t)n; continue; }
+            if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+                if ((int64_t)esp_timer_get_time() >= deadline) return -2;
+                continue;
+            }
+            LOG_ERR(tls->log, QYMERA_LOG_WARNING, "tls write failed: mbedtls -0x%04X", (unsigned)(-n));
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* Read up to cap bytes. Returns >0 read, 0 clean EOF, -1 network, -2 timeout.
+ * The socket timeouts are a small step (250 ms): a step EAGAIN is NOT a fatal
+ * error — it only means "no data within this step", so we keep waiting until
+ * the shared deadline (slow upstreams, e.g. local Llama generating a turn,
+ * legitimately take longer than one step). */
+static int ll_io_read(int fd, ll_tls_t *tls, char *buf, size_t cap, int64_t deadline) {
+    if (!tls) {
+        for (;;) {
+            ssize_t n = recv(fd, buf, cap, 0);
+            if (n > 0) return (int)n;
+            if (n == 0) return 0;
+            if ((errno == EWOULDBLOCK || errno == EAGAIN) &&
+                (int64_t)esp_timer_get_time() < deadline) continue; /* step timeout: keep waiting */
+            return -1;
+        }
+    }
+    for (;;) {
+        int n = mbedtls_ssl_read(&tls->ssl, (unsigned char *)buf, cap);
+        if (n > 0) return n;
+        if (n == 0 || n == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) return 0;
+        if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            if ((int64_t)esp_timer_get_time() >= deadline) return -2;
+            continue;
+        }
+        LOG_ERR(tls->log, QYMERA_LOG_WARNING, "tls read failed: mbedtls -0x%04X", (unsigned)(-n));
+        return -1;
+    }
+}
+
+/* =========================
+ * Outbound HTTP POST (plain TCP or TLS, bounded, with timeout).
  * Returns 0 on success (HTTP 2xx captured in *status), or a negative
  * QYMERA_ERR_* code. The full response (headers + body) is left in
- * ctx->resp_buf (NUL-terminated, bounded).
+ * ctx->io_buf (NUL-terminated, bounded). An optional API key is sent as an
+ * Authorization: Bearer header (OpenAI-compatible clouds require it).
+ *
+ * The bounded request/response buffers are allocated only after the connect +
+ * TLS handshake complete (see the ctx comment in the header for why).
  * ========================= */
 static qymera_err_t http_post(qymera_llm_http_ctx_t *ctx,
                               const llhttp_target_t *target,
                               uint32_t timeout_ms,
-                              long *status_out) {
+                              long *status_out,
+                              const qymera_llm_request_t *request) {
     *status_out = 0;
 
     struct sockaddr_in addr;
@@ -266,9 +439,16 @@ static qymera_err_t http_post(qymera_llm_http_ctx_t *ctx,
         memcpy(&addr.sin_addr.s_addr, he->h_addr_list[0], hen_len(he));
     }
 
+    /* Overall wall-clock bound for connect + TLS handshake + IO. Socket-level
+     * timeouts use a small step (250 ms) instead of the whole budget: recv may
+     * return EAGAIN that early, so the mbedtls WANT loops poll and yield until
+     * the deadline instead of spinning or blocking the httpd task for very
+     * long (WiFi drops, dead DNS). */
+    int64_t deadline = (int64_t)esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    uint32_t step_ms = 250;
     struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    tv.tv_sec = step_ms / 1000;
+    tv.tv_usec = (step_ms % 1000) * 1000;
 
     int fd = -1;
     bool connected = false;
@@ -277,61 +457,131 @@ static qymera_err_t http_post(qymera_llm_http_ctx_t *ctx,
         if (fd < 0) return QYMERA_ERR_NETWORK;
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        int nodelay = 1;
+        setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
         if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) connected = true;
-        else { close(fd); fd = -1; }
+        else {
+            int ce = errno;
+            close(fd); fd = -1;
+            LOG_ERR(ctx->log, QYMERA_LOG_WARNING, "connect %s:%u attempt %d failed: errno %d",
+                    target->host, (unsigned)target->port, attempt, ce);
+        }
+        if ((int64_t)esp_timer_get_time() >= deadline) break;
     }
-    if (!connected) return QYMERA_ERR_TIMEOUT;
+    if (!connected) { LOG_ERR(ctx->log, QYMERA_LOG_ERROR, "all connects to %s:%u failed", target->host, (unsigned)target->port); return QYMERA_ERR_TIMEOUT; }
 
-    size_t body_len = strlen(ctx->req_buf);
+    /* TLS session (only for https:// endpoints), heap-backed: the mbedtls
+     * contexts must stay off the bounded httpd task stack. */
+    ll_tls_t *tls = NULL;
+    if (target->tls) {
+        tls = calloc(1, sizeof(*tls));
+        if (!tls) { close(fd); return QYMERA_ERR_NO_SPACE; }
+        tls->fd = fd;
+        tls->log = ctx->log;
+        qymera_err_t terr = ll_tls_connect(tls, target, timeout_ms, ctx->log);
+        if (terr != QYMERA_OK) {
+            if (ctx->log) LOG_ERR(ctx->log, QYMERA_LOG_WARNING, "ll_tls_connect failed terr=%d", (int)terr);
+            ll_tls_free(tls); close(fd); return terr;
+        }
+    }
 
-    /* Request line + headers (bounded). */
-    char header[256];
+    /* One bounded I/O buffer, allocated AFTER the handshake (see ctx comment). The
+     * buffer is intentionally taken alone so a tight-but-usable heap still
+     * satisfies it. */
+    if (!ctx->io_buf) {
+        ctx->io_buf = malloc(QYMERA_LLM_HTTP_RESP_BUF);
+        if (!ctx->io_buf) { if (ctx->log) LOG_ERR(ctx->log, QYMERA_LOG_WARNING, "io_buf malloc failed"); if (tls) ll_tls_free(tls); close(fd); return QYMERA_ERR_NO_SPACE; }
+    }
+    qymera_err_t berr = build_request_body(ctx, request);
+    if (berr != QYMERA_OK) {
+        free(ctx->io_buf); ctx->io_buf = NULL;
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_PROTOCOL;
+    }
+
+    size_t body_len = strlen(ctx->io_buf);
+
+    /* Optional Authorization header (sent only when an API key is set). */
+    char auth[96];
+    auth[0] = '\0';
+    if (ctx->config.api_key[0]) {
+        snprintf(auth, sizeof(auth), "Authorization: Bearer %.64s\r\n", ctx->config.api_key);
+    }
+
+    char header[384];
     int hlen = snprintf(header, sizeof(header),
         "POST %s HTTP/1.1\r\n"
         "Host: %s\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: %u\r\n"
-        "Connection: close\r\n",
-        target->path, target->host, (unsigned)body_len);
-    if (hlen < 0 || (size_t)hlen >= sizeof(header)) { close(fd); return QYMERA_ERR_PROTOCOL; }
+        "Connection: close\r\n"
+        "%s",
+        target->path, target->host, (unsigned)body_len, auth);
+    if (hlen < 0 || (size_t)hlen >= sizeof(header)) {
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_PROTOCOL;
+    }
     header[hlen] = '\0';
 
-    if ((size_t)hlen + body_len + 2 > sizeof(ctx->resp_buf)) { close(fd); return QYMERA_ERR_NO_SPACE; }
+    if ((size_t)hlen + 2 > QYMERA_LLM_HTTP_RESP_BUF) {
+        free(ctx->io_buf); ctx->io_buf = NULL;
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_NO_SPACE;
+    }
 
     /* Spoon the request in bounded chunks. */
-    char hdr_full[256 + 2];
+    char hdr_full[384 + 2];
     memcpy(hdr_full, header, (size_t)hlen);
     hdr_full[hlen] = '\r';
     hdr_full[hlen + 1] = '\n';
     hdr_full[hlen + 2] = '\0';
 
-    ssize_t sent = send(fd, hdr_full, (size_t)hlen + 2, 0);
-    if (sent < 0) { close(fd); return QYMERA_ERR_NETWORK; }
-    size_t pos = 0;
-    while (pos < body_len) {
-        ssize_t n = send(fd, ctx->req_buf + pos, body_len - pos, 0);
-        if (n <= 0) { close(fd); return QYMERA_ERR_NETWORK; }
-        pos += (size_t)n;
+    int w = ll_io_write_all(fd, tls, hdr_full, (size_t)hlen + 2, deadline);
+    if (w == 0) w = ll_io_write_all(fd, tls, ctx->io_buf, body_len, deadline);
+    if (w == -2) {
+        free(ctx->io_buf); ctx->io_buf = NULL;
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_TIMEOUT;
+    }
+    if (w != 0) {
+        free(ctx->io_buf); ctx->io_buf = NULL;
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_NETWORK;
     }
 
     /* Read the whole bounded response. */
     size_t got = 0;
     for (;;) {
-        ssize_t n = recv(fd, ctx->resp_buf + got, sizeof(ctx->resp_buf) - 1 - got, 0);
+        int n = ll_io_read(fd, tls, ctx->io_buf + got,
+                           QYMERA_LLM_HTTP_RESP_BUF - 1 - got, deadline);
         if (n > 0) {
             got += (size_t)n;
-            if (got >= sizeof(ctx->resp_buf) - 1) break; /* bounded */
-            continue;
+            if (got >= QYMERA_LLM_HTTP_RESP_BUF - 1) break; /* bounded */
+continue;
         }
         if (n == 0) break; /* clean close */
-        if (errno == EWOULDBLOCK || errno == EAGAIN) { close(fd); return QYMERA_ERR_TIMEOUT; }
-        close(fd); return QYMERA_ERR_NETWORK;
+        if (n == -2) {
+            free(ctx->io_buf); ctx->io_buf = NULL;
+            if (tls) ll_tls_free(tls);
+            close(fd);
+            return QYMERA_ERR_TIMEOUT;
+        }
+        free(ctx->io_buf); ctx->io_buf = NULL;
+        if (tls) ll_tls_free(tls);
+        close(fd);
+        return QYMERA_ERR_NETWORK;
     }
+    if (tls) ll_tls_free(tls);
     close(fd);
-    ctx->resp_buf[got] = '\0';
+    ctx->io_buf[got] = '\0';
 
     /* Parse status line: "HTTP/1.1 200 OK". */
-    char *sp = strchr(ctx->resp_buf, ' ');
+    char *sp = strchr(ctx->io_buf, ' ');
     if (sp) {
         long code = strtol(sp + 1, NULL, 10);
         if (code >= 200 && code < 300) { *status_out = code; return QYMERA_OK; }
@@ -663,8 +913,7 @@ void qymera_llm_http_provider_init(qymera_llm_provider_t *provider,
     provider->provider_ctx = ctx;
     provider->complete = provider_complete;
     if (ctx) {
-        memset(ctx->req_buf, 0, sizeof(ctx->req_buf));
-        memset(ctx->resp_buf, 0, sizeof(ctx->resp_buf));
+        ctx->io_buf = NULL;
     }
 }
 
@@ -686,12 +935,6 @@ qymera_err_t qymera_llm_http_complete(qymera_llm_http_ctx_t *ctx,
         return QYMERA_OK;
     }
 
-    qymera_err_t err = build_request_body(ctx, request);
-    if (err != QYMERA_OK) {
-        set_msg_kind(message, QYMERA_LLM_MSG_MALFORMED, "request body build failed", NULL);
-        return QYMERA_OK;
-    }
-
     llhttp_target_t target;
     if (!parse_endpoint(ctx->config.endpoint, &target)) {
         set_msg_kind(message, QYMERA_LLM_MSG_PROVIDER_ERROR, "provider endpoint malformed", NULL);
@@ -701,29 +944,27 @@ qymera_err_t qymera_llm_http_complete(qymera_llm_http_ctx_t *ctx,
     uint32_t timeout = ctx->config.timeout_ms ? ctx->config.timeout_ms
                                               : QYMERA_LLM_HTTP_DEFAULT_TIMEOUT_MS;
     long status = 0;
-    err = http_post(ctx, &target, timeout, &status);
+    qymera_err_t err = http_post(ctx, &target, timeout, &status, request);
+
+    qymera_err_t r = QYMERA_OK;
     if (err == QYMERA_ERR_TIMEOUT) {
         set_msg_kind(message, QYMERA_LLM_MSG_TIMEOUT, "provider request timed out", NULL);
-        return QYMERA_OK;
-    }
-    if (err == QYMERA_ERR_NETWORK) {
+    } else if (err == QYMERA_ERR_NETWORK) {
         set_msg_kind(message, QYMERA_LLM_MSG_PROVIDER_ERROR, "provider unreachable", NULL);
-        return QYMERA_OK;
-    }
-    if (err == QYMERA_ERR_PROTOCOL && status != 0) {
+    } else if (err == QYMERA_ERR_PROTOCOL && status != 0) {
         char txt[40];
         snprintf(txt, sizeof(txt), "provider HTTP status %ld", status);
         set_msg_kind(message, QYMERA_LLM_MSG_PROVIDER_ERROR, txt, NULL);
-        return QYMERA_OK;
-    }
-    if (err != QYMERA_OK) {
+    } else if (err != QYMERA_OK) {
         set_msg_kind(message, QYMERA_LLM_MSG_PROVIDER_ERROR, "provider transport failure", NULL);
-        return QYMERA_OK;
+    } else {
+        /* Locate the response body after the "\r\n\r\n" separator. */
+        const char *sep = strstr(ctx->io_buf, "\r\n\r\n");
+        const char *body = sep ? sep + 4 : ctx->io_buf;
+        size_t blen = strlen(body);
+        r = parse_response(body, blen, message);
     }
 
-    /* Locate the response body after the "\r\n\r\n" separator. */
-    const char *sep = strstr(ctx->resp_buf, "\r\n\r\n");
-    const char *body = sep ? sep + 4 : ctx->resp_buf;
-    size_t blen = strlen(body);
-    return parse_response(body, blen, message);
+    free(ctx->io_buf); ctx->io_buf = NULL;
+    return r;
 }

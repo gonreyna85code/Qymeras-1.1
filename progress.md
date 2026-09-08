@@ -1401,3 +1401,145 @@ single-file dashboard, embedded via `tools/gen_dashboard_html.py`.
   "Pensando…" placeholder while the device is busy.
 - Next: adaptive-context job feeding `qymera_ai_get_context`; TLS upstream;
   `GET /api/v1/ai/config` for full prefill.
+
+---
+
+## Phase 3I: Cloud (TLS) upstream + config default + AI-view v2 (2026-09-05)
+
+### Objective
+
+Four user-requested changes to the AI view plus the enabling infrastructure
+behind them:
+
+1. **Mobile layout** — invert card order so the chat is on top and the
+   assistant config is below (desktop keeps chat left, config right).
+2. **Free cloud LLM by default** — factory default becomes Groq
+   (`https://api.groq.com/openai/v1/chat/completions`,
+   `llama-3.3-70b-versatile`), which requires the transport to speak **TLS**.
+3. **Config visibility** — add `GET /api/v1/ai/config` so the endpoint form
+   pre-fills the persisted values (you can see which API is set).
+4. **"Pensando…" fix** — the thinking placeholder must disappear when the
+   response arrives.
+
+The user explicitly chose **implementing TLS now** so the cloud default is
+actually reachable from the ESP32.
+
+### HTTPS transport (`src/ai/qymera_llm_http_provider.c/.h`)
+
+- `parse_endpoint` accepts `http://` and `https://` (`llhttp_target_t.tls`,
+  default ports 80/443); no path → appended `/v1/chat/completions` (so cloud
+  endpoints must be the **full URL**).
+- mbedtls (from the Arduino/ESP-IDF toolchain) per `http_post`:
+  `mbedtls_ssl_conf_authmode(VERIFY_NONE)` (self-signed OK; **certificates are
+  not validated**, SNI is still sent via `mbedtls_ssl_set_hostname`),
+  CTR_DRBG seeded from the device entropy, `ll_tls_t` is heap-allocated
+  (framed off the bounded httpd stack) and freed with the session.
+- `Authorization: Bearer <api_key>` header sent when a key is configured
+  (OpenAI-compatible clouds require it).
+- **Bounded, task-friendly I/O**: an overall `deadline` is computed *before*
+  connect (DNS/connect/SSL/IO all share it); socket timeouts use a **250 ms
+  step** instead of the full budget, so mbedtls WANT loops poll in 250 ms
+  increments and yield instead of blocking/spinning; IP-literal endpoints skip
+  lwIP's blocking `gethostbyname` via `inet_aton`; 3 connect attempts bounded
+  by the deadline; distinct WARNING/ERROR logs report `errno` on connect
+  failures and mbedtls codes on TLS-handshake failures.
+- HTTPS endpoints now return bounded provider outcomes (timeout/network/HTTP
+  status) instead of hanging the httpd task; **lwIP's blocking `gethostbyname`
+  is still not interruptible** by the deadline (known limitation, bounded by
+  lwIP's own DNS timeout).
+
+### Cloud factory default (`src/ai/qymera_ai.h/.c`, `src/core/qymera_core.c`)
+
+- `QYMERA_AI_DEFAULT_REMOTE_ENDPOINT`, `QYMERA_AI_DEFAULT_MODEL
+  ("llama-3.3-70b-versatile")`, `QYMERA_AI_DEFAULT_TIMEOUT_MS (60000)`; new
+  `qymera_ai_config_defaults()` (mode `remote`) applied in core `create()`'s
+  else-branch, `qymera_ai_init`, and the `POST /api/v1/ai/config` NOT_FOUND
+  branch. Existing NVS (local/Ollama) is untouched → defaults only apply to a
+  fresh device.
+
+### `GET /api/v1/ai/config`
+
+- New `h_ai_config_get` handler (escaped strings) + HTTP_GET route
+  (16/20 routes) returning the effective `mode`, local/remote endpoint+key,
+  `default_model`, `timeout_ms`. Verified live from the device.
+
+### AI view v2 (`src/http/dashboard.html`)
+
+- **Card order**: chat card first, config card second, inside a new
+  `.ai-layout` (column on mobile; desktop `@media (min-width:900px)` grid
+  `minmax(0,1fr) 300px`, areas `"chat cfg"`, config sticky). `aiCfgGrid` id
+  removed; timeout input `max` 120000→65535.
+- **Prefill**: form now loads `GET /api/v1/ai/config` (fallback `/status`);
+  `slotFor`/`fillFromSaved`/`applyCfg` map local/hybrid→`local_*`,
+  remote→`remote_*` fields, and the mode selector re-fills the endpoint/key of
+  the active slot on change — you always see the API that is set.
+- **Thinking fix**: `aiRenderTurn(wait,think,data)` / `aiRenderError(...)` now
+  take the placeholder's element (`var think=el('chat-thinking')`) and remove
+  it before rendering the assistant reply.
+- **Save fix**: the config POST now sends `timeout_ms` (previously
+  `default_timeout_ms`, which the handler never read — timeout was never
+  persisted) and writes the endpoint/key into the active mode's slot.
+- **i18n (ES/EN)**: hint text mentions the free Groq cloud
+  (`console.groq.com`), endpoint/model placeholders default to the Groq URL and
+  `llama-3.3-70b-versatile`, key placeholder `groq_...`.
+
+### Verification
+
+- ESP32 build+upload COM3: **SUCCESS**; header regenerated (88 017 → 95 180 B),
+  `node --check` on extracted JS OK; `host_sanity.py` **344/344** (no header
+  mirroring needed — only `build_request_body`/`llm_classify_raw` are mirrored).
+- Served page checks **10/11 PASS** incl. `.ai-layout` CSS, chat-first DOM,
+  desktop grid, no `aiCfgGrid`, Groq hint/placeholders, `var think=el(`, config
+  fetch, `timeout_ms:`; the 1 FAIL was a bad grep string (real call is
+  `aiRenderTurn(wait,think,j.data)`) and re-passed live.
+- Live `GET /api/v1/ai/config` returns the persisted config correctly.
+- **Cloud end-to-end (completed 2026-09-08)** — the earlier "not verifiable"
+  session ran into three confounding layers that were each diagnosed and fixed:
+
+  1. **Renamed/dead device IPs (DHCP churn).** The PC moved `192.168.1.16` →
+     `192.168.1.25` and the board left `192.168.1.19` (now occupied by another
+     device serving an old dashboard with no `/api/v1/ai/*` — source of the
+     404s). The AI board now lives at `192.168.1.5` (verify via serial
+     `HEARTBEAT … ip=` when unsure). All live tests must target `.5`.
+  2. **mbedtls heap pressure (root cause of the `-0x4290` RSA-scratch OOM).**
+     The mbedtls session holds two ~16 KB content buffers plus context, so
+     holding the request+response buffers concurrently during connect starved
+     the RSA modpow scratch in the ServerKeyExchange verify. Fix: allocate a
+     **single bounded I/O buffer after the handshake** (`io_buf`, 8 KB,
+     replaces `req_buf`+`resp_buf`) — built body is written from it, then it is
+     reused for the inbound response; even a tight 20 KB post-setup heap
+     satisfies the single 8 KB block reliably (resp-first ordering alone still
+     let the smaller req buffer fail some runs).
+  3. **TLS payload delivery.** `mbedtls_ssl_write` returned full counts but only
+     the header reached the server. Fix: chunk outbound TLS writes to ≤1 KB per
+     `mbedtls_ssl_write` + `TCP_NODELAY` on the plain socket. The raw-SSL test
+     server now receives the complete POST (131 B header + 2765 B body) and the
+     device parses the response.
+
+  Local TLS e2e (self-signed `wcs` cert, raw-SSL python harness on PC:9443):
+  `ended=text final={kind:"text", text:"ok-tls"}`. Groq with no API key:
+  `ended=provider_error final={kind:"provider_error", text:"provider HTTP
+  status 401"}` — proves handshake/SNI/POST/status-path against a real cloud.
+  Device config restored to `mode=local` +
+  `http://192.168.1.25:11434` (current PC IP) + `qwen3.5:2b`, with the Groq URL
+  + empty key parked in the remote slot.
+
+### Known limitations
+
+- TLS uses `VERIFY_NONE` — unauthored-server risk on hostile networks; SNI
+  still sent; cert pinning not implemented.
+- Blocking DNS can exceed the 250 ms step budget (lwIP limitation).
+- Cloud default applies only on devices with no persisted `config.ai`.
+
+### Files
+
+- `src/ai/qymera_llm_http_provider.c/.h` — HTTPS transport: single post-handshake
+  `io_buf`, ≤1 KB chunked TLS writes, `TCP_NODELAY`, 250 ms I/O step.
+- `src/ai/qymera_ai.h/.c`, `src/core/qymera_core.c` — cloud defaults.
+- `src/http/qymera_http_server.c` — `GET /api/v1/ai/config`.
+- `src/http/dashboard.html`, `src/http/qymera_dashboard_html.h` — AI view v2.
+- `progress.md` — this entry.
+
+### Next
+
+- Adaptive-context job + `GET /api/v1/ai/config` docs.

@@ -21,6 +21,17 @@ struct qymera_ai_s {
     bool available;
 };
 
+void qymera_ai_config_defaults(qymera_ai_config_t *config) {
+    if (!config) return;
+    memset(config, 0, sizeof(*config));
+    config->mode = QYMERA_AI_MODE_REMOTE;
+    strncpy(config->remote_endpoint, QYMERA_AI_DEFAULT_REMOTE_ENDPOINT,
+            sizeof(config->remote_endpoint) - 1);
+    strncpy(config->default_model, QYMERA_AI_DEFAULT_MODEL,
+            sizeof(config->default_model) - 1);
+    config->default_timeout_ms = QYMERA_AI_DEFAULT_TIMEOUT_MS;
+}
+
 qymera_err_t qymera_ai_init(qymera_ai_t **ai, const qymera_ai_config_t *config) {
     if (!ai) return QYMERA_ERR_INVALID_ARG;
     
@@ -31,10 +42,7 @@ qymera_err_t qymera_ai_init(qymera_ai_t **ai, const qymera_ai_config_t *config) 
         a->config = *config;
     } else {
         // Defaults
-        a->config.mode = QYMERA_AI_MODE_NONE;
-        a->config.default_timeout_ms = 5000;
-        a->config.default_cache_ms = 30000;
-        strncpy(a->config.default_model, "gpt-4o-mini", sizeof(a->config.default_model) - 1);
+        qymera_ai_config_defaults(&a->config);
     }
     
     a->available = false;

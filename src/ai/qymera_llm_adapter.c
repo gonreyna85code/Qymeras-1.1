@@ -15,8 +15,10 @@
 /* =========================
  * Logging shortcut
  * ========================= */
-#define LOG_AI(l, ...)   qymera_log_ai((l), "llm", __VA_ARGS__)
-#define LOG_ERR(l, ...)  qymera_log_error((l), "llm", __VA_ARGS__)
+/* Logging shortcut: (handle, level, ...) — qymera_log_logf's first argument
+ * is the qymera_log_t * handle, NOT a level enum (see qymera_log.h). */
+#define LOG_AI(h, l, ...)   qymera_log_logf((h), (l), "llm", __VA_ARGS__)
+#define LOG_ERR(h, l, ...)  qymera_log_logf((h), (l), "llm", __VA_ARGS__)
 
 /* =========================
  * Adapter handle
