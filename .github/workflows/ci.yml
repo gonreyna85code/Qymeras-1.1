@@ -25,10 +25,19 @@ jobs:
           sleep 2
           python - <<'EOF'
           import json, urllib.request
-          with urllib.request.urlopen("http://127.0.0.1:8123/api/v1/status", timeout=5) as r:
-              env = json.loads(r.read().decode())
-          assert env["ok"] is True and env["data"]["api_version"] == "1.0"
-          print("mock status OK")
+          with urllib.request.urlopen("http://127.0.0.1:8123/calib", timeout=5) as r:
+              body = json.loads(r.read().decode())
+          assert isinstance(body, list) and len(body) >= 1, "expect bare /calib array"
+          row = body[0]
+          req = {"id", "index", "device_uid", "name", "value", "correction", "avail",
+                 "pulse", "state", "pulse_ms", "persist", "fade", "type", "local",
+                 "age_ms", "ip"}
+          assert req <= set(row.keys()), "calib field set"
+          assert 1 <= row["type"] <= 12, "calib type in 1..12"
+          with urllib.request.urlopen("http://127.0.0.1:8123/firmware", timeout=5) as r:
+              fw = json.loads(r.read().decode())
+          assert all(k in fw for k in ("product", "version", "platform"))
+          print("mock calib+firmware OK")
           EOF
           kill $MOCK_PID
 

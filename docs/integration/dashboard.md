@@ -8,13 +8,13 @@ removed in this rebase.
 
 ## Ownership & the single boundary
 
-- The contract file is the Dashboard's working machine-readable spec. The
-  **authoritative** copy lives in the Qymera (firmware) repo and is published
-  once the Node v1 API lands.
+- `docs/api-contract.yaml` is **authoritative**: it mirrors the Qymera 1.0.0
+  firmware surface (`GET /calib` bare entity array, `GET /firmware`,
+  `POST /toggle`, `POST /dimmer`, HTTP-status-only errors, no JSON envelope).
 - The **single boundary** is `src/network/qymera_node_client.{h,c}`. All
-  Node discovery, reconciliation and commands pass through it. When the
-  authoritative firmware spec arrives, reconcile only inside this module and
-  the integration mock/tests it drives.
+  Node discovery, reconciliation and commands pass through it. If the firmware
+  surface evolves, reconcile only inside this module and the integration
+  mock/tests it drives.
 - `src/control/qymera_control.c` only resolves pending commands against the
   client's `on_remote_state` authoritative snapshots; it never talks wire.
 
@@ -22,10 +22,10 @@ removed in this rebase.
 
 | Path | Purpose |
 | --- | --- |
-| `docs/api-contract.yaml` | Working draft, machine-readable (envelopes, schemas, codes) |
+| `docs/api-contract.yaml` | Authoritative Node HTTP contract (bare `/calib`, `/firmware`, `/toggle`, `/dimmer`, status-only errors) |
 | `src/network/qymera_node_client.{h,c}` | v1 HTTP client: reconcile + command dispatch |
 | `src/control/qymera_control.{h,c}` | Pending-command machine (dispatch/accept/confirm/timeout) |
-| `tests/integration/mock_node.py` | v1 mock Node (status/entities/command) |
+| `tests/integration/mock_node.py` | v1 mock Node (calib/firmware/toggle/dimmer + fault injection) |
 | `tests/integration/test_contract.py` | Contract tests over real HTTP |
 | `tests/integration/run_dashboard_tests.py` | Runs `tests/host_sanity.py` mirrors |
 | `tests/integration/run_contract_tests.py` | Runs the contract suite |
@@ -36,13 +36,15 @@ removed in this rebase.
 ## Command lifecycle (happy path)
 
 1. Control API `set_relay`/`set_dimmer` → pending entry `DISPATCHED`.
-2. `qymera_node_client_send_command` → `POST /api/v1/entities/<id>/command`.
-   - Node accepted (`accepted:true`) → status `ACKED` (desired stays
-     `PENDING`).
-   - Node rejected (`accepted:false`, canonical `error.code`) → terminal
-     `FAILED`; caller receives the mapped error.
-   - Transport failure → terminal `FAILED`.
-3. Node reconcile (`GET /api/v1/entities`) feeds authoritative state through
+2. `qymera_node_client_send_command` dispatches by capability:
+   - relay → `POST /toggle` with form `id=<uid>` (the Node **flips**, it does
+     not set absolutely — the control layer skips the toggle when the observed
+     state already equals the desired state).
+   - dimmer → `POST /dimmer` with form `id=<uid>&value=<0..100>`.
+   - Node HTTP 200 `text/plain "OK"` → status `ACKED` (desired stays
+     `PENDING`). Non-200 maps to a canonical error → terminal `FAILED`;
+     transport failure → terminal `FAILED`.
+3. Node reconcile (`GET /calib`) feeds authoritative state through
    `qymera_control_on_remote_state`. Snapshot matches desired → `CONFIRMED`;
    mismatch → `FAILED`. HTTP 200 alone never confirms an actuator.
 4. No snapshot within the deadline → `TIMEOUT` (desired kept, observed kept).
@@ -66,19 +68,22 @@ network-config struct shape stays stable. The dashboard UI's **Nodes** view
 lists targets and marks them online when a matching remote device reports
 online.
 
-## Version negotiation
+## Identity & metadata
 
-The client reads `api_version` / `protocol_version` / `firmware_version`
-from `/status` and stores them on the device. Major `api_version` mismatch
-→ node surfaced as incompatible(`UNSUPPORTED_API_VERSION`), never a black
-hole. Dashboard identity is `device_id`, never IP or array index.
+- Entity identity is the calib `id` uid (base-10 string); device identity is
+  the calib `device_uid` (base-10 string). Never IP, never array index.
+- Device `ip` comes from the calib owner `ip` field; port = target port;
+  `name`/`fw_version`/`model` are refreshed from `GET /firmware`.
+- There is **no** `api_version`/`protocol_version` on the wire; the client
+  stamps the device with `"1.0"` statically. `UNSUPPORTED_API_VERSION` is
+  therefore unused against Nodes today.
 
 ## Manual hardware verification
 
 ```
 python tests/integration/start_node_mock.py 8123
 # point the Dashboard's Nodes view at 127.0.0.1:8123 (or the host IP on the
-# board's network); observe /api/v1/status, /api/v1/entities and commands.
+# board's network); observe /calib, /firmware, /toggle and /dimmer.
 ```
 
 ## Governance

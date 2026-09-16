@@ -1,268 +1,237 @@
-# Qymera v1 Integration Contract (Dashboard -> Node)
+# Qymera v1 Integration Contract (Node HTTP API)
 #
-# STATUS: WORKING DRAFT (Dashboard side).
-# The authoritative copy of this contract lives in the Qymera (firmware) repo
-# and is published once the Node v1 API lands. This file is the Dashboard's
-# machine-readable working specification: the qymera_node_client,
-# tests/integration/mock_node.py and tests/integration/test_contract.py all
-# implement and validate exactly this surface. When the authoritative
-# firmware spec differs, reconcile in the client module (single boundary).
+# STATUS: AUTHORITATIVE. Mirrors the Qymera 1.0.0 firmware surface served by
+# every Node (src/web.cpp + src/sensors.cpp in the Qymera repo). The Dashboard
+# qymera_node_client, tests/integration/mock_node.py,
+# tests/integration/test_contract.py and the host-sanity NodeClientMirror
+# implement and validate exactly this surface.
 #
 # PRINCIPLES
-#   - Dashboard NEVER speaks to Nodes through raw transports (UDP/ESP-NOW).
-#     All Node communication is this HTTP application API.
-#   - Device/entity identity is stable (device_id / entity_id strings), never
-#     IP address and never array index.
-#   - HTTP 200 does NOT mean an actuator reached its state. Command results
-#     carry status + resulting state; the Dashboard confirms by authoritative
-#     state snapshot.
-#   - The Node is authoritative for device/entity state. Dashboard never
-#     invents a remote state.
+#   - No JSON envelope. GET /calib is a bare array, GET /firmware is a bare
+#     object, command responses are text/plain "OK" on success. Errors are
+#     signalled ONLY by HTTP status (bodies are text/plain, not JSON).
+#     There is NO api_version / protocol_version on the wire.
+#   - Entity identity is the u32 uid (`id`) and is immutable. `device_uid` is
+#     the owning device identity (local Node: GET_CHIP_ID(); remote: owner id).
+#     The Dashboard maps both to decimal strings (entity_id / device_id).
+#   - POST /toggle FLIPS a digital actuator's state (it does not set it
+#     absolutely). POST /dimmer sets the 0..100 level. Neither endpoint is
+#     rate-limited; only /calib/set is (burst 6 within 2000 ms -> 429).
+#   - HTTP 200 means the command ran on the Node, not that an effect has
+#     propagated. The Dashboard confirms through the next /calib snapshot.
+#   - The Node is authoritative for device/entity state. The Dashboard never
+#     invents remote state; stale/offline marks are Dashboard-local.
 openapi: 3.0.3
 info:
-  title: Qymera Node v1 API
-  version: "1.0"
-  description: Application API served by a Qymera Node (firmware).
-
-x-version-negotiation:
-  api_version: "1.0"        # Dashboard<->Node API surface version
-  protocol_version: "1.0"   # Node-to-Node transport version (never used by Dashboard)
-  rules:
-    - Dashboard accepts a Node if Node api_version has the same major
-      version as the Dashboard's, unless rejected by capability checks.
-    - api_version mismatch (major) -> UNSUPPORTED_API_VERSION; the Node is
-      surfaced as incompatible, not a black hole.
+  title: Qymera Node HTTP API
+  version: "1.0.0"
+  description: Application HTTP API served by a Qymera Node on port 80.
 
 servers:
-  - url: http://{node}/api/v1
+  - url: http://{node}/:80
     variables:
       node:
         default: "192.168.1.5"
-        description: Host and port of a Node (discovered via Dashboard node config).
+        description: Host of a Node (targets configured in Dashboard NVS).
 
 # ------------------------------------------------------------------
-# Envelope (all endpoints)
+# Wire schemas (bare, envelope-free)
 # ------------------------------------------------------------------
 components:
   schemas:
-    OkEnvelope:
+    CalibEntity:
       type: object
-      required: [ok]
+      description: One calib row of GET /calib. `id` is the immutable entity uid.
+      required: [id, index, device_uid, name, value, correction, avail, pulse,
+                 state, pulse_ms, persist, fade, type, local, age_ms, ip]
       properties:
-        ok: { const: true }
-        data: { nullable: true }
-    ErrorEnvelope:
-      type: object
-      required: [ok, error]
-      properties:
-        ok: { const: false }
-        error:
-          type: object
-          required: [code]
-          properties:
-            code:
-              type: string
-              enum:
-                - INVALID_REQUEST
-                - ENTITY_NOT_FOUND
-                - DEVICE_NOT_FOUND
-                - COMMAND_NOT_SUPPORTED
-                - INVALID_VALUE
-                - NOT_AUTHORIZED
-                - DEVICE_OFFLINE
-                - TIMEOUT
-                - RATE_LIMITED
-                - INTERNAL_ERROR
-                - UNSUPPORTED_API_VERSION
-            message: { type: string }
-            details: { type: object, nullable: true }
-    Error: { $ref: "#/components/schemas/ErrorEnvelope" }
-    Device:
-      type: object
-      required: [device_id, name, model, firmware_version, api_version, protocol_version, ip, online, capabilities]
-      properties:
-        device_id: { type: string }
+        id: { type: integer, format: uint32, description: Immutable entity uid (entity_id base-10) }
+        index: { type: integer, description: Index in the node's calib table }
+        device_uid:
+          type: integer
+          format: uint32
+          description: Owner device uid (device_id base-10). Local node: chip id.
         name: { type: string }
-        model: { type: string }
-        firmware_version: { type: string }
-        api_version: { type: string }
-        protocol_version: { type: string }
-        ip: { type: string }
-        uptime_ms: { type: integer }
-        free_heap: { type: integer }
-        online: { type: boolean }
-        capabilities:
-          type: array
-          items: { type: string }
-          enum:
-            - entities
-            - commands
-            - automations
-            - ota
-    Entity:
-      type: object
-      required: [entity_id, device_id, name, type, capabilities, state, config]
-      properties:
-        entity_id: { type: string }           # stable, immutable
-        device_id: { type: string }           # stable, immutable
-        name: { type: string }
+        value: { type: number, description: Numeric reading or actuator level }
+        correction: { type: number }
+        avail: { type: boolean, description: Sensor/inference availability }
+        pulse: { type: boolean, description: Pulse flag }
+        state: { type: boolean, description: Digital state (relay/sensor) }
+        pulse_ms: { type: integer, format: uint32 }
+        persist: { type: boolean }
+        fade: { type: integer, format: uint32 }
         type:
-          type: string
-          enum:
-            - sensor.temperature
-            - sensor.humidity
-            - sensor.luminosity
-            - sensor.pressure
-            - sensor.level
-            - sensor.airq
-            - sensor.rain
-            - sensor.contact
-            - sensor.generic
-            - actuator.relay
-            - actuator.dimmer
-            - virtual.digital
-            - virtual.analog
-            - inference.result
-            - time
-        capabilities:
-          type: array
-          items: { type: string }
-          enum:
-            - sensor.numeric
-            - sensor.digital
-            - actuator.relay
-            - actuator.dimmer
-            - actuator.generic
-            - inference.result
-            - time.source
-        unit: { type: string, nullable: true }
-        state:
-          type: object
-          required: [value, available]
-          properties:
-            value: { type: [number, boolean], example: 23.5 }
-            available: { type: boolean }
-            reliability:
-              type: string
-              enum: [live, stale, offline]
-            timestamp: { type: integer }
-        config:
-          type: object
-          properties:
-            native_min: { type: number }
-            native_max: { type: number }
-            unit: { type: string }
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: |-
+            Entity kind. Maps to the Dashboard entity type:
+            1 sensor.luminosity, 2 sensor.humidity, 3 sensor.temperature,
+            4 sensor.pressure, 5 sensor.level, 6 sensor.airq, 7 sensor.rain,
+            8 actuator.dimmer, 9 actuator.relay, 10 time, 11 sensor.generic,
+            12 sensor.contact.
+          enum: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        local: { type: boolean }
+        age_ms: { type: integer, format: uint32, description: Sensor age in ms }
+        ip: { type: string, nullable: true, description: Owner IP (used as device ip) }
+    CapabilityMap:
+      type: object
+      description: calib type -> Dashboard capability(s)
+      properties:
+        "8": { type: array, items: { const: actuator.dimmer } }
+        "9": { type: array, items: { const: actuator.relay } }
+        "10": { type: array, items: { const: time.source } }
+        "12": { type: array, items: { const: sensor.digital } }
+        others: { type: array, items: { const: sensor.numeric } }
+    Firmware:
+      type: object
+      description: Bare /firmware object (node_fetch_firmware reads product/version/platform).
+      properties:
+        product: { type: string }
+        version: { type: string }
+        platform: { type: string }
+        state: { type: string, nullable: true }
+        latest: { type: string, nullable: true }
+        channel: { type: string, nullable: true }
+        available: { type: boolean }
+        progress: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
 
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
 paths:
-  /status:
+  /calib:
     get:
-      summary: Node identity + runtime + version negotiation data
-      operationId: getStatus
+      summary: Full authoritative entity snapshot.
+      description: |-
+        Bare JSON array (no envelope). Every snapshot is a complete replacement
+        set; absence of an entity in a later snapshot means stale/offline.
+      operationId: getCalib
       responses:
         "200":
-          description: Node identity and version/capability info
+          description: Bare array of calib rows.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok: { const: true }
-                  data: { $ref: "#/components/schemas/Device" }
-  /entities:
-    get:
-      summary: Full authoritative entity snapshot (initial + reconciliation)
-      operationId: listEntities
-      responses:
-        "200":
-          description: Entity snapshot
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: { const: true }
-                  data:
-                    type: array
-                    items: { $ref: "#/components/schemas/Entity" }
-  /entities/{entity_id}/command:
+                type: array
+                items: { $ref: "#components/schemas/CalibEntity" }
     post:
-      summary: Execute one command on an entity
-      operationId: sendCommand
-      parameters:
-        - { name: entity_id, in: path, required: true, schema: { type: string } }
+      summary: Protected write endpoint (NOT used by the Dashboard).
+      description: Form-encoded calib mutation. Rate-limited: burst 6 within 2000 ms -> 429.
+      responses:
+        "200": { description: Accepted (text/plain). }
+        "400": { description: Malformed body/invalid value. }
+        "429": { description: Rate limit exceeded. }
+
+  /firmware:
+    get:
+      summary: Node firmware identity + OTA status (dashboard /firmware view).
+      operationId: getFirmware
+      responses:
+        "200":
+          description: Bare firmware object.
+          content:
+            application/json:
+              schema: { $ref: "#components/schemas/Firmware" }
+
+  /toggle:
+    post:
+      summary: Flip a digital actuator's state (relay).
+      description: |-
+        Form-encoded `id=<uid>`. FLIPS the current state (never sets it
+        absolutely). Success returns text/plain "200 OK". Not rate-limited.
+        The Dashboard control layer therefore skips redundant toggles when the
+        observed state already equals the desired state.
+      operationId: toggleEntity
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [action]
+              required: [id]
               properties:
-                action:
-                  type: string
-                  enum: [set_relay, set_dimmer]
-                value:
-                  oneOf:
-                    - { type: boolean, description: "set_relay: true/false" }
-                    - { type: number, minimum: 0, maximum: 100, description: "set_dimmer: 0..100" }
-                device_id:
-                  type: string
-                  description: Optional; the Node validates it matches the entity owner.
+                id: { type: string, description: Decimal uid of the entity }
       responses:
         "200":
-          description: |-
-            Command accepted or rejected. HTTP 200 means the request was
-            understood and answered; use status/error to learn the outcome.
+          description: Toggled. text/plain "OK".
           content:
-            application/json:
-              schema:
-                type: object
-                required: [accepted, status, target]
-                properties:
-                  accepted: { type: boolean }
-                  status:
-                    type: string
-                    enum: [done, error]   # executing retained for very slow effects; never required
-                  target:
-                    type: object
-                    properties:
-                      device_id: { type: string }
-                      entity_id: { type: string }
-                  result:
-                    type: object
-                    description: Resulting authoritative state after command (best effort)
-                    properties:
-                      value: { type: [number, boolean] }
-                  error: { $ref: "#/components/schemas/Error" }
-        "400":
-          description: Malformed body / invalid value
+            text/plain: { schema: { type: string, example: OK } }
+        "400": { description: Malformed/missing/non-numeric id or non-actuator type. }
+        "401": { description: Not permitted to control this entity. }
+        "404": { description: Unknown uid. }
+
+  /dimmer:
+    post:
+      summary: Set a dimmer's output level.
+      description: |-
+        Form-encoded `id=<uid>&value=0..100`. Sets the level; success returns
+        text/plain "200 OK". Not rate-limited.
+      operationId: setDimmer
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [id, value]
+              properties:
+                id: { type: string, description: Decimal uid of the entity }
+                value:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                  description: Output level 0..100
+      responses:
+        "200":
+          description: Level set. text/plain "OK".
           content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
-        "404":
-          description: Unknown entity
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+            text/plain: { schema: { type: string, example: OK } }
+        "400": { description: Malformed body, value out of range, or non-dimmer type. }
+        "401": { description: Not permitted to control this entity. }
+        "404": { description: Unknown uid. }
+
+# ------------------------------------------------------------------
+# Dashboard-side error mapping (HTTP status -> canonical error code)
+# ------------------------------------------------------------------
+x-status-mapping:
+  "200":
+    - accepted
+  "400":
+    - INVALID_INPUT
+  "401":
+    - NOT_AUTHORIZED
+  "404":
+    - ENTITY_NOT_FOUND
+  "405":
+    - METHOD_NOT_ALLOWED
+  "408":
+    - TIMEOUT
+  "429":
+    - RATE_LIMITED
+  ">=500":
+    - DEVICE_OFFLINE
+  network_failure:
+    - 0 == NETWORK (device surfaced offline; command marked TIMEOUT)
 
 # ------------------------------------------------------------------
 # Command semantics
 # ------------------------------------------------------------------
 x-command-semantics:
-  - "accepted:false + error.code -> terminal failure (COMMAND_NOT_SUPPORTED, INVALID_VALUE, ENTITY_NOT_FOUND, DEVICE_OFFLINE, NOT_AUTHORIZED, RATE_LIMITED, INTERNAL_ERROR)."
-  - "accepted:true + status:done -> the Node applied the command; Dashboard still confirms via snapshot state (authoritative)."
-  - "accepted:true + status:error -> applied-but-failed; terminal failure; Dashboard keeps desired only if a later snapshot matches."
-  - "Network failure / timeout -> Dashboard marks the Node unreachable and the command TIMEOUT; the snapshot on recovery reconciles real state."
+  - "relay (opcode 1): POST /toggle with id=<uid>. Node flips state; no value is sent."
+  - "dimmer (opcode 2): POST /dimmer with id=<uid>&value=<0..100 clamped>."
+  - "HTTP 200 on toggle/dimmer = the Node applied the command; the Dashboard still confirms via the next /calib snapshot (authoritative)."
+  - "Non-200 maps to the canonical error above; a pending command is FAILED/TIMEOUT and the snapshot later reconciles real state."
+  - "Because toggle flips, set_relay only dispatches when observed != desired (else it short-circuits with desired CONFIRMED)."
 
 # ------------------------------------------------------------------
 # State synchronization (Dashboard side of the contract)
 # ------------------------------------------------------------------
 x-state-sync:
-  initial_snapshot: "On Node first contact: GET /status then GET /entities; seed registry."
-  reconciliation: "Periodic GET /entities (interval per node); authoritative values overwrite observed."
-  command_result: "Command responses set cmd_status + desired; only snapshot matches clear desired to confirmed."
+  initial_snapshot: "On Node first contact: GET /calib (entities) + GET /firmware (device metadata); seed registry."
+  reconciliation: "Periodic GET /calib per target; authoritative values overwrite observed; entities absent from a snapshot become STALE; an empty snapshot keeps the previous set but marks it offline."
+  device_registry: "device_id = calib device_uid (base-10); ip from the calib ip field; port = target port; name/fw_version/model refreshed from /firmware."
+  command_result: "Non-200 maps to a canonical error; only a /calib snapshot matching desired confirms (clears) a pending command."
   recovery: "Reboot/IP change/timeout recovered by re-polling configured node targets; never trust IP as identity."
-  availability: "Entity available = reported on the last snapshot; node online = last HTTP round-trip within timeout."
+  availability: "Entity available = avail on the last snapshot; node online = last HTTP round-trip within timeout."

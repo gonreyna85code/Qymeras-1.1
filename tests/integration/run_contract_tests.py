@@ -1,7 +1,7 @@
 """Run the v1 contract tests against the mock Node.
 
-Validates docs/api-contract.yaml over real HTTP: envelopes, schemas, canonical
-error codes, command accepted/rejected semantics and state snapshots.
+Validates docs/api-contract.yaml over real HTTP: bare /calib schema, /firmware,
+toggle/dimmer wire semantics and HTTP-status-only error mapping.
 """
 import os
 import subprocess

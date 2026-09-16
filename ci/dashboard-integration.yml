@@ -33,10 +33,17 @@ jobs:
         run: python tests/integration/run_contract_tests.py
       - name: Run Dashboard host mirrors
         run: python tests/integration/run_dashboard_tests.py
-      - name: Boot mock Node and probe status
+      - name: Boot mock Node and probe contract endpoints
         run: |
           python tests/integration/start_node_mock.py 8123 > /tmp/mock.log 2>&1 &
           MOCK_PID=$!
           sleep 2
-          curl -fsS http://127.0.0.1:8123/api/v1/status | grep -q '"api_version": "1.0"'
+          python - <<'EOF'
+          import json, urllib.request
+          with urllib.request.urlopen("http://127.0.0.1:8123/calib", timeout=5) as r:
+              body = json.loads(r.read().decode())
+          assert isinstance(body, list) and len(body) >= 1
+          assert 1 <= body[0]["type"] <= 12
+          print("mock calib OK")
+          EOF
           kill $MOCK_PID

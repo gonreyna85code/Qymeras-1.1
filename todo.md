@@ -2,16 +2,16 @@
 
 ## Dashboard v1 Node HTTP Integration (2026-09-16)
 - [x] Delete legacy UDP transport (`src/network/udp`, ports, ACK machine) ✅
-- [x] `docs/api-contract.yaml` working draft (envelopes, schemas, 11 canonical codes) ✅
+- [x] `docs/api-contract.yaml` **authoritative** Node HTTP contract (bare `/calib` array, `/firmware`, `POST /toggle`|`/dimmer` form, HTTP-status-only errors, no envelope) ✅
 - [x] `src/network/qymera_node_client.{h,c}` single v1 HTTP boundary ✅
 - [x] Control machine: node HTTP accept → ACKED/FAILED, snapshot → CONFIRMED/FAILED, OFFLINE reliability ✅
 - [x] Node targets config: NVS blob `node_targets_v1`, `GET`/`POST /api/v1/nodes`, Nodes UI view ✅
 - [x] Registry/skill v1 fields (api/protocol version, fw, ip, port, available) ✅
 - [x] Firmware builds green (esp32_devkit / c3 / s3) ✅
-- [x] Host mirrors `tests/host_sanity.py` 355/355 ✅
-- [x] Contract suite `tests/integration/` (mock_node, test_contract, runners) ✅
-- [x] CI: `.github/workflows/ci.yml` + `ci/dashboard-integration.yml` reference ✅
-- [ ] Authoritative firmware v1 API (firmware repo) — gate
+- [x] Reconciled to authoritative firmware 1.0.0 surface (removed fabricated `/api/v1/status`+`/entities/<id>/command` envelope contract; control layer guards toggle-flip semantics) ✅
+- [x] Host mirrors `tests/host_sanity.py` 363/363 ✅
+- [x] Contract suite `tests/integration/` (mock_node, test_contract 36/36, runners, standalone mock) ✅
+- [x] CI: `.github/workflows/ci.yml` + `ci/dashboard-integration.yml` smoke now assert bare `/calib` ✅
 - [ ] Hardware validation with a real Node (mock-tested only so far)
 
 ## Priority Order

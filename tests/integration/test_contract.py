@@ -1,8 +1,10 @@
 """Contract tests against the mock Node (tests/integration/mock_node.py).
 
-Validates the working-draft v1 surface in docs/api-contract.yaml: envelopes,
-schemas, canonical error codes, command accepted/rejected semantics and state
-application. Runs against the in-process mock Node over real HTTP; the
+Validates the authoritative Qymera 1.0.0 firmware wire surface in
+docs/api-contract.yaml against the real mocked endpoints: GET /calib (bare
+entity array, no envelope), GET /firmware, POST /toggle (id=<uid>, flips
+state), POST /dimmer (id=<uid>&value=0..100) and HTTP-status-only errors with
+text/plain bodies. Runs against the in-process mock Node over real HTTP; the
 firmware's qymera_node_client consumes exactly this surface (mirrored in
 tests/host_sanity.py). Run via run_contract_tests.py or pytest.
 """
@@ -12,8 +14,10 @@ import socket
 import urllib.error
 import urllib.request
 
-from mock_node import (CANONICAL_ERROR_CODES, ENTITY_TYPES,
-                       ENTITY_CAPABILITIES, DEVICE_CAPABILITIES, MockNode)
+from mock_node import (CALIB_FIELDS, CALIB_TYPE_RELAY, CALIB_TYPE_DIMMER,
+                       CALIB_TYPE_TEMP, MockNode)
+
+_FORM_CT = "application/x-www-form-urlencoded"
 
 _CHECKS = []
 
@@ -30,143 +34,117 @@ def _free_port():
     return port
 
 
-def _request(port, path, method="GET", body=None):
+def _request(port, path, method="GET", data=None, content_type=None, headers=None):
     url = "http://127.0.0.1:%d%s" % (port, path)
-    if isinstance(body, bytes):
-        data = body
-    else:
-        data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
+    payload = None
+    if isinstance(data, str):
+        payload = data.encode("utf-8")
+    elif data is not None:
+        payload = json.dumps(data).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, method=method)
+    if content_type:
+        req.add_header("Content-Type", content_type)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
     try:
         resp = urllib.request.urlopen(req, timeout=5)
-        return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+        raw = resp.read().decode("utf-8", "replace")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = raw
+        return resp.getcode(), body, dict(resp.headers)
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode("utf-8"))
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            body = json.loads(raw)
+        except ValueError:
+            body = raw
+        return e.code, body, dict(e.headers)
     except urllib.error.URLError:
-        return 0, None
+        return 0, None, {}
 
 
 def run():
     node = MockNode()
     port = node.serve(_free_port())
 
-    # ---- status ------------------------------------------------------------
-    code, env = _request(port, "/api/v1/status")
-    _check("status: HTTP 200", code == 200)
-    _check("status: ok envelope true", env.get("ok") is True and "data" in env)
-    d = env["data"]
-    _check("status: device fields", all(k in d for k in (
-        "device_id", "name", "model", "firmware_version", "api_version",
-        "protocol_version", "ip", "online")))
-    _check("status: version negotiation carried",
-           d.get("api_version") and d.get("protocol_version"))
-    _check("status: device capabilities subset",
-           set(d.get("capabilities", [])) <= set(DEVICE_CAPABILITIES))
+    # ---- /calib: bare array, no envelope ----------------------------------
+    code, body, headers = _request(port, "/calib")
+    _check("calib: HTTP 200", code == 200)
+    _check("calib: CORS wildcard", headers.get("Access-Control-Allow-Origin") == "*")
+    _check("calib: bare array (no {ok,data} envelope)",
+           isinstance(body, list) and len(body) == 3 and not (isinstance(body, dict) and "ok" in body))
+    for e in body:
+        _check("calib: schema fields present", all(k in e for k in CALIB_FIELDS))
+        _check("calib: type is int 1..12", isinstance(e["type"], int) and 1 <= e["type"] <= 12)
+        _check("calib: uid + device_uid u32", isinstance(e["id"], int) and isinstance(e["device_uid"], int))
+        _check("calib: avail/state are booleans", isinstance(e["avail"], bool) and isinstance(e["state"], bool))
+    relay = next(e for e in body if e["type"] == CALIB_TYPE_RELAY)
+    temp = next(e for e in body if e["type"] == CALIB_TYPE_TEMP)
+    _check("calib: numeric value + correction carried",
+           isinstance(temp["value"], (int, float)) and isinstance(temp["correction"], (int, float)))
+    _check("calib: owner ip carried", bool(relay["ip"]))
 
-    # ---- entities ----------------------------------------------------------
-    code, env = _request(port, "/api/v1/entities")
-    _check("entities: HTTP 200", code == 200)
-    ents = env["data"]
-    _check("entities: snapshot array", isinstance(ents, list) and len(ents) == 3)
-    for e in ents:
-        _check("entities: schema fields present", all(k in e for k in (
-            "entity_id", "device_id", "name", "type", "capabilities",
-            "state", "config", "value", "available")))
-        _check("entities: type in contract enum", e["type"] in ENTITY_TYPES)
-        _check("entities: capabilities in contract enum",
-               set(e.get("capabilities", [])) <= set(ENTITY_CAPABILITIES))
-    relay = next(e for e in ents if e["entity_id"] == "relay1")
-    _check("entities: state.value present", "value" in relay["state"])
-    _check("entities: config.minmax parseable",
-           "native_min" in relay["config"] and "native_max" in relay["config"])
+    # ---- /firmware ----------------------------------------------------------
+    code, fw, _ = _request(port, "/firmware")
+    _check("firmware: HTTP 200", code == 200)
+    _check("firmware: product/version/platform",
+           all(k in fw for k in ("product", "version", "platform")))
 
-    # ---- command accepted -> state applied (authentic snapshot) -------------
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": True})
-    _check("command: accepted+done", code == 200 and env.get("accepted") is True
-           and env.get("status") == "done")
-    _check("command: target echoes entity",
-           env.get("target", {}).get("entity_id") == "relay1")
-    _check("command: resulting state echoed",
-           env.get("result", {}).get("value") is True)
-    _, env2 = _request(port, "/api/v1/entities")
-    relay2 = next(e for e in env2["data"] if e["entity_id"] == "relay1")
-    _check("command: subsequent snapshot shows applied state",
-           relay2["value"] is True and relay2["state"]["value"] is True)
+    # ---- /toggle: flips relay state ----------------------------------------
+    code, text, _ = _request(port, "/toggle", "POST", "id=1", _FORM_CT)
+    _check("toggle: relay -> 200 text/plain OK", code == 200 and text == "OK")
+    _, body, _ = _request(port, "/calib")
+    relay_on = next(e for e in body if e["type"] == CALIB_TYPE_RELAY)
+    _check("toggle: snapshot shows flipped state True", relay_on["state"] is True)
+    _request(port, "/toggle", "POST", "id=1", _FORM_CT)
+    _, body, _ = _request(port, "/calib")
+    relay_off = next(e for e in body if e["type"] == CALIB_TYPE_RELAY)
+    _check("toggle: second toggle flips back False", relay_off["state"] is False)
 
-    # dimmer path + range check
-    code, env = _request(port, "/api/v1/entities/dim1/command",
-                         "POST", {"action": "set_dimmer", "value": 80})
-    _check("command: dimmer accepted 0..100", code == 200 and env.get("accepted") is True)
-    code, env = _request(port, "/api/v1/entities/dim1/command",
-                         "POST", {"action": "set_dimmer", "value": 250})
-    _check("command: dimmer out of range -> INVALID_VALUE",
-           (code == 400 and env.get("ok") is False and
-            env["error"].get("code") == "INVALID_VALUE"))
+    # toggle errors
+    code, body, _ = _request(port, "/toggle", "POST", "id=3", _FORM_CT)  # temp
+    _check("toggle: non-actuator type -> 400", code == 400 and isinstance(body, str))
+    code, _, _ = _request(port, "/toggle", "POST", "id=", _FORM_CT)
+    _check("toggle: missing id -> 400", code == 400)
+    code, _, _ = _request(port, "/toggle", "POST", "id=abc", _FORM_CT)
+    _check("toggle: non-numeric id -> 400", code == 400)
+    code, _, _ = _request(port, "/toggle", "POST", "id=999", _FORM_CT)
+    _check("toggle: unknown id -> 404", code == 404)
+    code, _, _ = _request(port, "/toggle", "POST", "id=1")  # json content-type
+    _check("toggle: form parsed regardless of JSON header", code == 200)
 
-    # ---- command rejections --------------------------------------------------
-    code, env = _request(port, "/api/v1/entities/nope/command",
-                         "POST", {"action": "set_relay", "value": True})
-    _check("command: unknown entity -> ENTITY_NOT_FOUND + 404",
-           code == 404 and env.get("ok") is False and
-           env["error"].get("code") == "ENTITY_NOT_FOUND")
+    # ---- /dimmer: sets level 0..100 -----------------------------------------
+    code, text, _ = _request(port, "/dimmer", "POST", "id=2&value=80", _FORM_CT)
+    _check("dimmer: set level -> 200 text/plain OK", code == 200 and text == "OK")
+    _, body, _ = _request(port, "/calib")
+    dim = next(e for e in body if e["type"] == CALIB_TYPE_DIMMER)
+    _check("dimmer: snapshot shows level 80 / ON", dim["value"] == 80.0 and dim["state"] is True)
 
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": 7})
-    _check("command: wrong value type -> INVALID_VALUE",
-           code == 400 and env.get("ok") is False and
-           env["error"].get("code") == "INVALID_VALUE")
+    code, _, _ = _request(port, "/dimmer", "POST", "id=2&value=101", _FORM_CT)
+    _check("dimmer: out of range 101 -> 400", code == 400)
+    code, _, _ = _request(port, "/dimmer", "POST", "id=2", _FORM_CT)
+    _check("dimmer: missing value -> 400", code == 400)
+    code, _, _ = _request(port, "/dimmer", "POST", "id=1&value=50", _FORM_CT)  # relay
+    _check("dimmer: wrong actuator type -> 400", code == 400)
+    code, _, _ = _request(port, "/dimmer", "POST", "id=999&value=50", _FORM_CT)
+    _check("dimmer: unknown id -> 404", code == 404)
 
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "explode"})
-    _check("command: unknown action -> COMMAND_NOT_SUPPORTED",
-           code == 400 and env.get("ok") is False and
-           env["error"].get("code") == "COMMAND_NOT_SUPPORTED")
+    # ---- unknown path -> 404 -------------------------------------------------
+    code, _, _ = _request(port, "/nope")
+    _check("unknown path -> 404", code == 404)
 
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": True,
-                                  "device_id": "other"})
-    _check("command: device_id mismatch -> ENTITY_NOT_FOUND",
-           code == 400 and env.get("ok") is False and
-           env["error"].get("code") == "ENTITY_NOT_FOUND")
-
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", b"not json")
-    _check("command: malformed body -> INVALID_REQUEST",
-           code == 400 and env.get("ok") is False and
-           env["error"].get("code") == "INVALID_REQUEST")
-
-    # injected rejection surfaces canonical code on HTTP 200 (accepted:false)
-    node.reject_command_code = "DEVICE_OFFLINE"
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": False})
-    _check("command: rejection carried in envelope (accepted:false)",
-           code == 200 and env.get("accepted") is False and
-           env.get("status") == "error" and
-           env["error"].get("code") == "DEVICE_OFFLINE")
-
-    node.reject_command_code = "RATE_LIMITED"
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": False})
-    _check("command: RATE_LIMITED canonical", env["error"].get("code") == "RATE_LIMITED")
-
-    # node offline -> DEVICE_OFFLINE error envelope
-    node.online = False
-    code, env = _request(port, "/api/v1/entities/relay1/command",
-                         "POST", {"action": "set_relay", "value": False})
-    _check("command: node offline -> DEVICE_OFFLINE",
-           code == 503 and env.get("ok") is False and
-           env["error"].get("code") == "DEVICE_OFFLINE")
-    node.online = True
-
-    # ---- envelope + canonical code integrity ---------------------------------
-    _check("code registry: full canonical set present",
-           set(CANONICAL_ERROR_CODES) == set(CANONICAL_ERROR_CODES))
-    for code, env in ((404, {"ok": False, "error": {"code": "ENTITY_NOT_FOUND"}}),):
-        _check("code: ok:false requires error.code", env["error"]["code"])
-    _check("codes: no HTTP-only leakage in accepted path",
-           all(code not in ("HTTP",) for code in CANONICAL_ERROR_CODES))
+    # ---- rate limit applies to protected POSTs only --------------------------
+    ok = 0
+    for _ in range(6):
+        c, _, _ = _request(port, "/calib/set", "POST", "id=1", _FORM_CT)
+        if c == 200:
+            ok += 1
+    code, _, _ = _request(port, "/calib/set", "POST", "id=1", _FORM_CT)
+    _check("calib/set: 7th rapid call after burst 6 -> 429", ok == 6 and code == 429)
+    code, _, _ = _request(port, "/toggle", "POST", "id=1", _FORM_CT)
+    _check("toggle: exempt from rate limit after 429", code == 200)
 
     node.stop()
 

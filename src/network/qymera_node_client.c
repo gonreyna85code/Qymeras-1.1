@@ -1,16 +1,28 @@
 /**
- * Qymera Dashboard - Node v1 HTTP Client (implementation)
+ * Qymera Dashboard - Node HTTP Client (implementation)
  *
- * Plain-socket HTTP/1.1 client for the v1 Node application API. Uses an
- * internal bounded JSON scanner (no external parser dependency) so the module
- * runs on the ESP32 and can be mirrored by host tests and the mock Node in
- * tests/integration.
+ * Plain-socket HTTP/1.1 client for the authoritative Qymera 1.0.0 Node API
+ * (github.com/gonreyna85code/Qymera). Uses an internal bounded JSON scanner
+ * (no external parser dependency) so the module runs on the ESP32 and can be
+ * mirrored by host tests and the mock Node in tests/integration.
+ *
+ * Wire contract:
+ *   GET  /calib      -> BARE JSON array of entities (no envelope):
+ *                      id, index, device_uid, name, value, correction, avail,
+ *                      pulse, state, pulse_ms, persist, fade, type(1..12),
+ *                      local, age_ms, ip.
+ *   GET  /firmware   -> {product, version, platform, state, latest, channel,
+ *                      available, progress, error}.
+ *   POST /toggle     -> form id=<uid>; HTTP 200 text/plain "OK" flips state.
+ *   POST /dimmer     -> form id=<uid>&value=0..100; HTTP 200 text/plain "OK".
+ *   Errors are HTTP status only (400/401/404/405/429); no JSON error codes.
  */
 #include "qymera_node_client.h"
 #include "qymera_hal.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -22,6 +34,8 @@
 #define NODE_NS     "qymera_cfg"
 #define NODE_TARGETS_KEY "node_targets_v1"
 
+#define QYMERA_MAX_NODE_DEVICES 4 /* distinct device_uids tracked per target */
+
 /* =========================
  * Per-target runtime state
  * ========================= */
@@ -30,7 +44,10 @@ typedef struct {
     bool active;                 /* i < targets.count */
     uint32_t next_poll_ms;
     uint32_t consecutive_failures;
-    char node_device_id[QYMERA_DEVICE_ID_LEN]; /* device synced for this target */
+    /* device_uids (as decimal strings) whose entities appeared in the last
+     * successful /calib snapshot; used to offline devices on poll failure. */
+    char node_device_ids[QYMERA_MAX_NODE_DEVICES][QYMERA_DEVICE_ID_LEN];
+    uint8_t node_device_count;
 } qymera_node_target_state_t;
 
 struct qymera_node_client_s {
@@ -113,6 +130,20 @@ static bool json_parse_num(const char *p, float *out) {
     return true;
 }
 
+static bool json_parse_uint(const char *p, uint32_t *out) {
+    if (!p) return false;
+    p = json_skip_ws(p);
+    if (*p < '0' || *p > '9') return false;
+    uint32_t v = 0;
+    while (*p >= '0' && *p <= '9') {
+        if (v > (UINT32_MAX - (uint32_t)(*p - '0')) / 10) return false;
+        v = v * 10 + (uint32_t)(*p - '0');
+        p++;
+    }
+    *out = v;
+    return true;
+}
+
 static bool json_parse_bool(const char *p, bool *out) {
     if (!p) return false;
     p = json_skip_ws(p);
@@ -152,64 +183,38 @@ static bool json_next_object(const char *text, size_t *idx, const char **start, 
     return false;
 }
 
-static qymera_entity_type_t type_from_str(const char *s) {
-    static const char *names[] = {
-        "none", "sensor.temperature", "sensor.humidity", "sensor.luminosity",
-        "sensor.pressure", "sensor.level", "sensor.airq", "sensor.rain",
-        "sensor.contact", "sensor.generic", "actuator.relay", "actuator.dimmer",
-        "virtual.digital", "virtual.analog", "inference.result", "time"
-    };
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        if (strcmp(s, names[i]) == 0) return (qymera_entity_type_t)i;
+/* =========================
+ * Calib type mapping (firmware `type` int 1..12)
+ * ========================= */
+
+static qymera_entity_type_t calib_type_to_entity(uint32_t t) {
+    switch (t) {
+        case 1:  return QYMERA_ENTITY_SENSOR_LUMINOSITY;   /* LUMI   */
+        case 2:  return QYMERA_ENTITY_SENSOR_HUMIDITY;     /* HUMI   */
+        case 3:  return QYMERA_ENTITY_SENSOR_TEMPERATURE;  /* TEMP   */
+        case 4:  return QYMERA_ENTITY_SENSOR_PRESSURE;     /* PRESS  */
+        case 5:  return QYMERA_ENTITY_SENSOR_LEVEL;        /* LEVEL  */
+        case 6:  return QYMERA_ENTITY_SENSOR_AIRQ;         /* AIRQ   */
+        case 7:  return QYMERA_ENTITY_SENSOR_RAIN;         /* RAIN   */
+        case 8:  return QYMERA_ENTITY_ACTUATOR_DIMMER;     /* DIMMER */
+        case 9:  return QYMERA_ENTITY_ACTUATOR_RELAY;      /* RELAY  */
+        case 10: return QYMERA_ENTITY_TIME;                /* TIME   */
+        case 11: return QYMERA_ENTITY_SENSOR_GENERIC;      /* GENERIC*/
+        case 12: return QYMERA_ENTITY_SENSOR_CONTACT;      /* CONTACT*/
+        default: return QYMERA_ENTITY_NONE;
     }
-    return QYMERA_ENTITY_NONE;
 }
 
-static qymera_capability_t cap_from_str(const char *s) {
-    if (strcmp(s, "sensor.numeric") == 0) return QYMERA_CAP_SENSOR_NUMERIC;
-    if (strcmp(s, "sensor.digital") == 0) return QYMERA_CAP_SENSOR_DIGITAL;
-    if (strcmp(s, "actuator.relay") == 0) return QYMERA_CAP_ACTUATOR_RELAY;
-    if (strcmp(s, "actuator.dimmer") == 0) return QYMERA_CAP_ACTUATOR_DIMMER;
-    if (strcmp(s, "actuator.generic") == 0) return QYMERA_CAP_ACTUATOR_GENERIC;
-    if (strcmp(s, "inference.result") == 0) return QYMERA_CAP_INFERENCE_RESULT;
-    if (strcmp(s, "time") == 0) return QYMERA_CAP_TIME_SOURCE;
-    return QYMERA_CAP_NONE;
-}
-
-static uint8_t json_parse_capabilities(const char *chunk, qymera_capability_t *caps, uint8_t max) {
-    const char *k = json_find_key(chunk, "capabilities");
-    if (!k) return 0;
-    k = json_skip_ws(k);
-    if (*k != '[') return 0;
-    const char *p = k + 1;
-    uint8_t n = 0;
-    while (*p) {
-        p = json_skip_ws(p);
-        if (*p == ']' || *p == '\0') break;
-        if (*p == '"') {
-            char buf[24];
-            if (json_parse_str(p, buf, sizeof(buf))) {
-                qymera_capability_t c = cap_from_str(buf);
-                if (c != QYMERA_CAP_NONE && n < max) caps[n++] = c;
-            }
-            while (*p && *p != '"') { if (*p == '\\') p++; p++; }
-            if (*p == '"') p++;
-        } else {
-            p++;
-        }
-        p = json_skip_ws(p);
-        if (*p == ',') p++;
+static void calib_type_caps(uint32_t t, qymera_capability_t *caps, uint8_t *ncap) {
+    caps[0] = QYMERA_CAP_SENSOR_NUMERIC;
+    switch (t) {
+        case 8:  caps[0] = QYMERA_CAP_ACTUATOR_DIMMER; break;
+        case 9:  caps[0] = QYMERA_CAP_ACTUATOR_RELAY;  break;
+        case 10: caps[0] = QYMERA_CAP_TIME_SOURCE;     break;
+        case 12: caps[0] = QYMERA_CAP_SENSOR_DIGITAL;  break;
+        default: break;
     }
-    return n;
-}
-
-/* native min/max ship inside the entity's "config":{...}; the scanner reads
- * them from the entity chunk directly (keys are unique in the object). */
-static void parse_config_minmax(const char *chunk, float *min, float *max) {
-    const char *k = json_find_key(chunk, "native_min");
-    if (!json_parse_num(k, min)) *min = 0.0f;
-    k = json_find_key(chunk, "native_max");
-    if (!json_parse_num(k, max)) *max = 0.0f;
+    *ncap = 1;
 }
 
 /* =========================
@@ -253,13 +258,16 @@ static int http_read_chunk(int fd, char *buf, size_t cap) {
 }
 
 /* Perform one request. Returns QYMERA_OK if the round-trip completed (any
- * HTTP status); the response body is returned in resp (headers stripped). */
+ * HTTP status); the HTTP status code is returned in *status_out (0 if it
+ * could not be parsed) and the response body (headers stripped) in resp.
+ * `content_type` is used for the POST body (default form-urlencoded). */
 static qymera_err_t http_request(qymera_node_client_t *client,
                                  const char *host, uint16_t port,
                                  const char *method, const char *path,
-                                 const char *body,
-                                 char *resp, size_t resp_cap) {
+                                 const char *body, const char *content_type,
+                                 char *resp, size_t resp_cap, int *status_out) {
     (void)client;
+    if (status_out) *status_out = 0;
     int fd;
     if (!http_open(host, port, &fd)) return QYMERA_ERR_NETWORK;
 
@@ -271,7 +279,8 @@ static qymera_err_t http_request(qymera_node_client_t *client,
                      method, path, host, (unsigned)port);
     if (body) {
         n += snprintf(req + n, sizeof(req) - (size_t)n,
-                      "Content-Type: application/json\r\nContent-Length: %d\r\n",
+                      "Content-Type: %s\r\nContent-Length: %d\r\n",
+                      content_type ? content_type : "application/x-www-form-urlencoded",
                       (int)strlen(body));
     }
     n += snprintf(req + n, sizeof(req) - (size_t)n, "\r\n%s", body ? body : "");
@@ -306,13 +315,21 @@ static qymera_err_t http_request(qymera_node_client_t *client,
 
     if (filled == 0) return QYMERA_ERR_TIMEOUT;
 
+    if (status_out) {
+        *status_out = 0;
+        if (strncmp(resp, "HTTP/", 5) == 0) {
+            const char *sp = strchr(resp, ' ');
+            if (sp) *status_out = atoi(sp + 1);
+        }
+    }
+
     char *hdr_end = strstr(resp, "\r\n\r\n");
     if (hdr_end) {
         size_t body_len = filled - (size_t)(hdr_end + 4 - resp);
         memmove(resp, hdr_end + 4, body_len);
         resp[body_len] = '\0';
     }
-    return (resp[0] == '{' || resp[0] == '[') ? QYMERA_OK : QYMERA_ERR_PROTOCOL;
+    return QYMERA_OK;
 }
 
 /* =========================
@@ -345,142 +362,115 @@ static void node_mark_entities(qymera_node_client_t *client, const char *device_
     }
 }
 
-static qymera_err_t node_fetch_status(qymera_node_client_t *client, uint16_t target_idx) {
+static qymera_err_t node_fetch_firmware(qymera_node_client_t *client, uint16_t target_idx) {
     const qymera_node_target_t *t = &client->targets.targets[target_idx];
     char resp[QYMERA_NODE_HTTP_BUF];
-    qymera_err_t err = http_request(client, t->host, t->port, "GET", "/api/v1/status",
-                                    NULL, resp, sizeof(resp));
-    if (err != QYMERA_OK) return err;
+    int status = 0;
+    qymera_err_t err = http_request(client, t->host, t->port, "GET", "/firmware",
+                                    NULL, NULL, resp, sizeof(resp), &status);
+    if (err != QYMERA_OK || status != 200 || resp[0] != '{') return QYMERA_ERR_PROTOCOL;
 
-    char device_id[QYMERA_DEVICE_ID_LEN] = {0};
-    if (!json_parse_str(json_find_key(resp, "device_id"), device_id, sizeof(device_id))) {
-        return QYMERA_ERR_PROTOCOL;
-    }
-
-    char name[QYMERA_DEVICE_ID_LEN] = {0};
-    char model[32] = {0};
-    char fw[32] = {0};
-    char api[16] = {0};
-    char proto[16] = {0};
-    char ip[16] = {0};
-    json_parse_str(json_find_key(resp, "name"), name, sizeof(name));
-    json_parse_str(json_find_key(resp, "model"), model, sizeof(model));
-    json_parse_str(json_find_key(resp, "firmware_version"), fw, sizeof(fw));
-    json_parse_str(json_find_key(resp, "api_version"), api, sizeof(api));
-    json_parse_str(json_find_key(resp, "protocol_version"), proto, sizeof(proto));
-    json_parse_str(json_find_key(resp, "ip"), ip, sizeof(ip));
+    char product[QYMERA_DEVICE_ID_LEN] = {0};
+    char version[32] = {0};
+    char platform[32] = {0};
+    json_parse_str(json_find_key(resp, "product"), product, sizeof(product));
+    json_parse_str(json_find_key(resp, "version"), version, sizeof(version));
+    json_parse_str(json_find_key(resp, "platform"), platform, sizeof(platform));
 
     qymera_registry_t *reg = client->cfg.registry;
-    uint16_t dev_idx;
-    if (qymera_registry_find_device(reg, device_id, &dev_idx) == QYMERA_OK) {
+    for (uint8_t i = 0; i < client->state[target_idx].node_device_count; i++) {
+        const char *device_id = client->state[target_idx].node_device_ids[i];
+        uint16_t dev_idx;
+        if (qymera_registry_find_device(reg, device_id, &dev_idx) != QYMERA_OK) continue;
         qymera_device_t dev;
-        if (qymera_registry_get_device(reg, dev_idx, &dev) == QYMERA_OK) {
-            if (model[0]) snprintf(dev.model, sizeof(dev.model), "%s", model);
-            if (fw[0]) snprintf(dev.fw_version, sizeof(dev.fw_version), "%s", fw);
-            if (api[0]) snprintf(dev.api_version, sizeof(dev.api_version), "%s", api);
-            if (proto[0]) snprintf(dev.protocol_version, sizeof(dev.protocol_version), "%s", proto);
-            if (ip[0]) snprintf(dev.ip_addr, sizeof(dev.ip_addr), "%s", ip);
-            dev.port = t->port;
-            dev.online = true;
-            dev.state = 0;
-            qymera_registry_update_seen(reg, dev_idx);
-            qymera_registry_set_online(reg, dev_idx, true);
-        }
-    } else {
-        qymera_device_t dev;
-        memset(&dev, 0, sizeof(dev));
-        snprintf(dev.device_id, sizeof(dev.device_id), "%s", device_id);
-        snprintf(dev.name, sizeof(dev.name), "%s", name[0] ? name : device_id);
-        snprintf(dev.model, sizeof(dev.model), "%s", model);
-        snprintf(dev.fw_version, sizeof(dev.fw_version), "%s", fw);
-        snprintf(dev.api_version, sizeof(dev.api_version), "%s", api);
-        snprintf(dev.protocol_version, sizeof(dev.protocol_version), "%s", proto);
-        snprintf(dev.ip_addr, sizeof(dev.ip_addr), "%s", ip[0] ? ip : t->host);
-        dev.port = t->port;
-        dev.role = 1;
-        dev.state = 0;
-        dev.online = true;
-        dev.registered_at = qymera_timestamp_now();
-        dev.last_seen = dev.registered_at;
-        if (qymera_registry_register_device(reg, &dev, &dev_idx) != QYMERA_OK) {
-            return QYMERA_ERR_NO_SPACE;
-        }
+        if (qymera_registry_get_device(reg, dev_idx, &dev) != QYMERA_OK) continue;
+        if (product[0]) snprintf(dev.name, sizeof(dev.name), "%s", product);
+        if (version[0]) snprintf(dev.fw_version, sizeof(dev.fw_version), "%s", version);
+        if (platform[0]) snprintf(dev.model, sizeof(dev.model), "%s", platform);
+        qymera_registry_update_device(reg, dev_idx, &dev);
     }
-
-    strncpy(client->state[target_idx].node_device_id, device_id, QYMERA_DEVICE_ID_LEN - 1);
-    client->state[target_idx].node_device_id[QYMERA_DEVICE_ID_LEN - 1] = '\0';
     return QYMERA_OK;
 }
 
-static qymera_err_t node_fetch_entities(qymera_node_client_t *client, uint16_t target_idx) {
+static qymera_err_t node_fetch_calib(qymera_node_client_t *client, uint16_t target_idx) {
     const qymera_node_target_t *t = &client->targets.targets[target_idx];
-    const char *node_device_id = client->state[target_idx].node_device_id;
+    qymera_node_target_state_t *st = &client->state[target_idx];
     char resp[QYMERA_NODE_HTTP_BUF];
-    qymera_err_t err = http_request(client, t->host, t->port, "GET", "/api/v1/entities",
-                                    NULL, resp, sizeof(resp));
+    int status = 0;
+    qymera_err_t err = http_request(client, t->host, t->port, "GET", "/calib",
+                                    NULL, NULL, resp, sizeof(resp), &status);
     if (err != QYMERA_OK) return err;
-
-    const char *data = json_find_key(resp, "data");
-    if (!data) return QYMERA_ERR_PROTOCOL;
-    data = json_skip_ws(data);
-    if (*data != '[') return QYMERA_ERR_PROTOCOL;
+    if (status != 200) return QYMERA_ERR_PROTOCOL;
+    if (resp[0] != '[') return QYMERA_ERR_PROTOCOL;
 
     qymera_registry_t *reg = client->cfg.registry;
     uint16_t seen[QYMERA_MAX_ENTITIES];
     size_t seen_count = 0;
 
-    size_t idx = (size_t)(data - resp + 1);
+    char new_dev_ids[QYMERA_MAX_NODE_DEVICES][QYMERA_DEVICE_ID_LEN];
+    uint8_t new_dev_count = 0;
+
+    size_t idx = 0;
     const char *start = NULL, *end = NULL;
     while (json_next_object(resp, &idx, &start, &end)) {
         char entity_id[QYMERA_ENTITY_ID_LEN] = {0};
         char device_id[QYMERA_DEVICE_ID_LEN] = {0};
         char name[QYMERA_ENTITY_ID_LEN] = {0};
-        char type_str[24] = {0};
-        char unit[16] = {0};
-        float native_min = 0.0f, native_max = 0.0f;
+        char ip[16] = {0};
+        uint32_t entity_uid = 0, device_uid = 0, calib_type = 0, pulse_ms = 0, age_ms = 0;
+        float value = 0.0f, correction = 0.0f;
+        bool avail = true, state = false;
 
-        if (!json_parse_str(json_find_key(start, "entity_id"), entity_id, sizeof(entity_id))) continue;
-        json_parse_str(json_find_key(start, "device_id"), device_id, sizeof(device_id));
+        if (!json_parse_uint(json_find_key(start, "id"), &entity_uid)) continue;
+        json_parse_uint(json_find_key(start, "device_uid"), &device_uid);
+        json_parse_uint(json_find_key(start, "type"), &calib_type);
+        json_parse_uint(json_find_key(start, "pulse_ms"), &pulse_ms);
+        json_parse_uint(json_find_key(start, "age_ms"), &age_ms);
         json_parse_str(json_find_key(start, "name"), name, sizeof(name));
-        json_parse_str(json_find_key(start, "type"), type_str, sizeof(type_str));
-        json_parse_str(json_find_key(start, "unit"), unit, sizeof(unit));
-        parse_config_minmax(start, &native_min, &native_max);
+        json_parse_str(json_find_key(start, "ip"), ip, sizeof(ip));
+        json_parse_num(json_find_key(start, "value"), &value);
+        json_parse_num(json_find_key(start, "correction"), &correction);
+        json_parse_bool(json_find_key(start, "avail"), &avail);
+        json_parse_bool(json_find_key(start, "state"), &state);
 
-        if (!device_id[0]) snprintf(device_id, sizeof(device_id), "%s", node_device_id);
+        qymera_entity_type_t etype = calib_type_to_entity(calib_type);
+        if (etype == QYMERA_ENTITY_NONE) continue;
 
-        qymera_entity_type_t etype = type_from_str(type_str);
-        qymera_capability_t caps[4] = {0};
-        uint8_t ncap = json_parse_capabilities(start, caps, 4);
-        if (ncap == 0) {
-            if (etype == QYMERA_ENTITY_ACTUATOR_RELAY) { caps[0] = QYMERA_CAP_ACTUATOR_RELAY; ncap = 1; }
-            else if (etype == QYMERA_ENTITY_ACTUATOR_DIMMER) { caps[0] = QYMERA_CAP_ACTUATOR_DIMMER; ncap = 1; }
-            else if (etype >= QYMERA_ENTITY_SENSOR_TEMPERATURE && etype <= QYMERA_ENTITY_SENSOR_GENERIC) {
-                caps[0] = QYMERA_CAP_SENSOR_NUMERIC; ncap = 1;
+        snprintf(entity_id, sizeof(entity_id), "%u", (unsigned)entity_uid);
+        if (device_uid == 0) device_uid = entity_uid; /* defensive fallback */
+        snprintf(device_id, sizeof(device_id), "%u", (unsigned)device_uid);
+        if (!name[0]) snprintf(name, sizeof(name), "entity-%u", (unsigned)entity_uid);
+
+        if (new_dev_count < QYMERA_MAX_NODE_DEVICES) {
+            bool seen_dev = false;
+            for (uint8_t i = 0; i < new_dev_count; i++) {
+                if (strcmp(new_dev_ids[i], device_id) == 0) { seen_dev = true; break; }
             }
+            if (!seen_dev) snprintf(new_dev_ids[new_dev_count++], QYMERA_DEVICE_ID_LEN, "%s", device_id);
         }
 
-        const char *val_key = json_find_key(start, "value");
-        float numval = 0.0f;
-        bool has_num = json_parse_num(val_key, &numval);
-        bool raw_bool = false;
-        bool has_bool = has_num ? false : json_parse_bool(val_key, &raw_bool);
+        qymera_capability_t caps[4] = { QYMERA_CAP_NONE };
+        uint8_t ncap = 0;
+        calib_type_caps(calib_type, caps, &ncap);
 
-        bool available = true;
-        const char *avail_key = json_find_key(start, "available");
-        json_parse_bool(avail_key, &available);
-
+        qymera_device_t dev;
+        memset(&dev, 0, sizeof(dev));
+        snprintf(dev.device_id, sizeof(dev.device_id), "%s", device_id);
+        snprintf(dev.name, sizeof(dev.name), "%s", device_id);
+        snprintf(dev.model, sizeof(dev.model), "%s", "qymera-node");
+        snprintf(dev.api_version, sizeof(dev.api_version), "%s", "1.0");
+        snprintf(dev.protocol_version, sizeof(dev.protocol_version), "%s", "1.0");
+        snprintf(dev.ip_addr, sizeof(dev.ip_addr), "%s", ip[0] ? ip : t->host);
+        dev.port = t->port;
+        dev.chip_uid = device_uid;
+        dev.role = 1;
+        dev.online = true;
+        dev.state = 0;
         uint16_t dev_idx;
-        if (qymera_registry_find_device(reg, device_id, &dev_idx) != QYMERA_OK) {
-            qymera_device_t dev;
-            memset(&dev, 0, sizeof(dev));
-            snprintf(dev.device_id, sizeof(dev.device_id), "%s", device_id);
-            snprintf(dev.name, sizeof(dev.name), "%s", device_id);
-            snprintf(dev.ip_addr, sizeof(dev.ip_addr), "%s", t->host);
-            dev.port = t->port;
-            dev.role = 1;
-            dev.online = true;
-            dev.registered_at = qymera_timestamp_now();
-            dev.last_seen = dev.registered_at;
+        if (qymera_registry_find_device(reg, device_id, &dev_idx) == QYMERA_OK) {
+            qymera_registry_update_device(reg, dev_idx, &dev);
+            qymera_registry_set_online(reg, dev_idx, true);
+        } else {
             if (qymera_registry_register_device(reg, &dev, &dev_idx) != QYMERA_OK) continue;
         }
 
@@ -492,52 +482,74 @@ static qymera_err_t node_fetch_entities(qymera_node_client_t *client, uint16_t t
             memset(&ent, 0, sizeof(ent));
             snprintf(ent.device_id, sizeof(ent.device_id), "%s", device_id);
             snprintf(ent.entity_id, sizeof(ent.entity_id), "%s", entity_id);
-            snprintf(ent.name, sizeof(ent.name), "%s", name[0] ? name : entity_id);
+            snprintf(ent.name, sizeof(ent.name), "%s", name);
             ent.type = etype;
-            ent.native_min = native_min;
-            ent.native_max = native_max;
             for (uint8_t c = 0; c < ncap && c < QYMERA_ARRAY_SIZE(ent.capabilities); c++) {
                 ent.capabilities[c] = caps[c];
             }
             ent.capability_count = ncap;
-            if (unit[0]) snprintf(ent.unit, sizeof(ent.unit), "%s", unit);
+            if (etype == QYMERA_ENTITY_ACTUATOR_DIMMER) {
+                ent.native_min = 0.0f;
+                ent.native_max = 100.0f;
+                ent.unit[0] = '%';
+                ent.unit[1] = '\0';
+            } else if (etype == QYMERA_ENTITY_ACTUATOR_RELAY) {
+                ent.native_min = 0.0f;
+                ent.native_max = 1.0f;
+            }
+            ent.correction = correction;
+            ent.pulse_ms = pulse_ms;
             if (qymera_registry_register_entity(reg, dev_idx, &ent, &ent_idx) != QYMERA_OK) continue;
         }
 
-        qymera_entity_value_t value = {0};
-        value.valid = available;
-        value.timestamp = qymera_timestamp_now();
-        if (has_num) {
-            value.numeric_value = numval;
-            value.bool_value = (numval != 0.0f);
-        } else if (has_bool) {
-            value.bool_value = raw_bool;
-            value.numeric_value = raw_bool ? 1.0f : 0.0f;
-        } else {
-            value.valid = false;
+        qymera_entity_value_t v = {0};
+        v.valid = avail;
+        v.timestamp = qymera_timestamp_now();
+        if (calib_type == 9) { /* relay: authoritative ON/OFF is `state` */
+            v.bool_value = state;
+            v.numeric_value = state ? 1.0f : 0.0f;
+        } else if (calib_type == 8) { /* dimmer: level is `value`, ON = >0 */
+            v.numeric_value = value;
+            v.bool_value = value > 0.0f;
+        } else { /* sensors: raw reading + state bit when meaningful */
+            v.numeric_value = value;
+            v.bool_value = state;
         }
-        value.reliability = available ? QYMERA_RELIABILITY_CONFIRMED : QYMERA_RELIABILITY_STALE;
-        qymera_registry_update_entity_value(reg, ent_idx, &value);
+        v.reliability = avail ? QYMERA_RELIABILITY_CONFIRMED : QYMERA_RELIABILITY_STALE;
+        qymera_registry_update_entity_value(reg, ent_idx, &v);
 
         if (seen_count < QYMERA_MAX_ENTITIES) seen[seen_count++] = ent_idx;
 
         if (client->cfg.on_entity_state) {
             client->cfg.on_entity_state(client->cfg.callback_ctx, device_id, entity_id,
-                                        available, (uint8_t)etype,
-                                        value.numeric_value, value.bool_value);
+                                        avail, (uint8_t)etype,
+                                        v.numeric_value, v.bool_value);
         }
     }
 
-    node_mark_entities(client, node_device_id, seen, seen_count, QYMERA_RELIABILITY_STALE);
+    for (uint8_t i = 0; i < new_dev_count; i++) {
+        node_mark_entities(client, new_dev_ids[i], seen, seen_count, QYMERA_RELIABILITY_STALE);
+    }
+
+    /* Refresh tracked devices (keep the previous set on an empty snapshot so
+     * a later poll failure can still offline the last-known devices). */
+    if (new_dev_count > 0) {
+        st->node_device_count = 0;
+        for (uint8_t i = 0; i < new_dev_count; i++) {
+            snprintf(st->node_device_ids[st->node_device_count], QYMERA_DEVICE_ID_LEN, "%s", new_dev_ids[i]);
+            st->node_device_count++;
+        }
+    }
     return QYMERA_OK;
 }
 
 static void node_mark_offline(qymera_node_client_t *client, uint16_t target_idx) {
-    const char *device_id = client->state[target_idx].node_device_id;
-    if (!device_id || !device_id[0]) return;
     qymera_registry_t *reg = client->cfg.registry;
-    uint16_t dev_idx;
-    if (qymera_registry_find_device(reg, device_id, &dev_idx) == QYMERA_OK) {
+    for (uint8_t i = 0; i < client->state[target_idx].node_device_count; i++) {
+        const char *device_id = client->state[target_idx].node_device_ids[i];
+        if (!device_id || !device_id[0]) continue;
+        uint16_t dev_idx;
+        if (qymera_registry_find_device(reg, device_id, &dev_idx) != QYMERA_OK) continue;
         qymera_registry_set_online(reg, dev_idx, false);
         node_mark_entities(client, device_id, NULL, 0, QYMERA_RELIABILITY_OFFLINE);
         if (client->cfg.on_device_online) {
@@ -635,9 +647,9 @@ void qymera_node_client_tick(qymera_node_client_t *client) {
         if (now_ms < client->state[i].next_poll_ms) continue;
         client->state[i].next_poll_ms = now_ms + interval;
 
-        qymera_err_t err = node_fetch_status(client, i);
+        qymera_err_t err = node_fetch_calib(client, i);
         if (err == QYMERA_OK) {
-            err = node_fetch_entities(client, i);
+            err = node_fetch_firmware(client, i);
         }
         if (err == QYMERA_OK) {
             client->polls_ok++;
@@ -658,6 +670,28 @@ void qymera_node_client_tick(qymera_node_client_t *client) {
     }
 }
 
+/* Map a non-200 command status to a qymera_err_t + stable error code string. */
+static qymera_err_t command_status_error(qymera_node_client_t *client, int status,
+                                         char *err_code, size_t err_sz) {
+    const char *code;
+    qymera_err_t err;
+    switch (status) {
+        case 400:  code = "INVALID_INPUT";    err = QYMERA_ERR_INVALID_ARG;     break;
+        case 401:  code = "NOT_AUTHORIZED";   err = QYMERA_ERR_INVALID_STATE;   break;
+        case 404:  code = "ENTITY_NOT_FOUND"; err = QYMERA_ERR_NOT_FOUND;       break;
+        case 405:  code = "METHOD_NOT_ALLOWED"; err = QYMERA_ERR_PROTOCOL;      break;
+        case 408:  code = "TIMEOUT";          err = QYMERA_ERR_TIMEOUT;         break;
+        case 429:  code = "RATE_LIMITED";     err = QYMERA_ERR_BUSY;            break;
+        default:
+            if (status >= 500) { code = "DEVICE_OFFLINE"; err = QYMERA_ERR_NETWORK; }
+            else               { code = "PROTOCOL";       err = QYMERA_ERR_PROTOCOL; }
+            break;
+    }
+    if (err_code && err_sz) snprintf(err_code, err_sz, "%s", code);
+    client->commands_err++;
+    return err;
+}
+
 qymera_err_t qymera_node_client_send_command(qymera_node_client_t *client,
                                              const char *host, uint16_t port,
                                              const char *device_id,
@@ -665,61 +699,50 @@ qymera_err_t qymera_node_client_send_command(qymera_node_client_t *client,
                                              uint8_t opcode, float value_f,
                                              bool *accepted,
                                              char *err_code, size_t err_sz) {
+    (void)device_id;
     if (accepted) *accepted = false;
     if (!client || !host || !entity_id) return QYMERA_ERR_INVALID_ARG;
 
+    /* entity_id is the numeric uid reported by /calib (`id`), so it must be a
+     * sequence of decimal digits. */
     for (const char *p = entity_id; *p; p++) {
-        if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
-              (*p >= '0' && *p <= '9') || *p == '-' || *p == '_' || *p == '.')) {
-            return QYMERA_ERR_INVALID_ARG;
-        }
+        if (*p < '0' || *p > '9') return QYMERA_ERR_INVALID_ARG;
     }
 
-    char path[96];
-    snprintf(path, sizeof(path), "/api/v1/entities/%s/command", entity_id);
-
-    char body[256];
+    char path[32];
+    char body[48];
     if (opcode == 1) {
-        snprintf(body, sizeof(body),
-                 "{\"action\":\"set_relay\",\"value\":%s,\"device_id\":\"%s\"}",
-                 value_f != 0.0f ? "true" : "false", device_id ? device_id : "");
+        snprintf(path, sizeof(path), "/toggle");
+        snprintf(body, sizeof(body), "id=%s", entity_id);
+    } else if (opcode == 2) {
+        int level = (int)value_f;
+        if (level < 0) level = 0;
+        if (level > 100) level = 100;
+        snprintf(path, sizeof(path), "/dimmer");
+        snprintf(body, sizeof(body), "id=%s&value=%d", entity_id, (int)level);
     } else {
-        snprintf(body, sizeof(body),
-                 "{\"action\":\"set_dimmer\",\"value\":%.0f,\"device_id\":\"%s\"}",
-                 (double)value_f, device_id ? device_id : "");
+        return QYMERA_ERR_INVALID_CAPABILITY;
     }
 
     char resp[QYMERA_NODE_HTTP_BUF];
-    qymera_err_t err = http_request(client, host, port, "POST", path, body, resp, sizeof(resp));
+    int status = 0;
+    qymera_err_t err = http_request(client, host, port, "POST", path, body,
+                                    "application/x-www-form-urlencoded",
+                                    resp, sizeof(resp), &status);
     if (err != QYMERA_OK) {
         client->commands_err++;
+        if (err_code && err_sz) {
+            snprintf(err_code, err_sz, "%s", (err == QYMERA_ERR_TIMEOUT) ? "TIMEOUT" : "DEVICE_OFFLINE");
+        }
         return err;
     }
 
     client->commands_sent++;
-
-    bool ok = false;
-    if (json_parse_bool(json_find_key(resp, "ok"), &ok) && !ok) {
-        if (err_code && err_sz) {
-            char code[24] = {0};
-            json_parse_str(json_find_key(resp, "code"), code, sizeof(code));
-            snprintf(err_code, err_sz, "%s", code[0] ? code : "INTERNAL_ERROR");
-        }
-        client->commands_err++;
+    if (status == 200) {
+        if (accepted) *accepted = true;
         return QYMERA_OK;
     }
-
-    *accepted = false;
-    json_parse_bool(json_find_key(resp, "accepted"), accepted);
-    if (!*accepted) {
-        if (err_code && err_sz) {
-            char code[24] = {0};
-            json_parse_str(json_find_key(resp, "code"), code, sizeof(code));
-            snprintf(err_code, err_sz, "%s", code[0] ? code : "COMMAND_REJECTED");
-        }
-        client->commands_err++;
-    }
-    return QYMERA_OK;
+    return command_status_error(client, status, err_code, err_sz);
 }
 
 void qymera_node_client_stats(const qymera_node_client_t *client,

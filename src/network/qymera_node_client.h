@@ -1,25 +1,33 @@
 /**
- * Qymera Dashboard - Node v1 HTTP Client
+ * Qymera Dashboard - Node HTTP Client
  *
  * The single boundary between the Dashboard and remote Qymera Nodes under the
- * v1 integration contract (see docs/api-contract.yaml). The Dashboard NEVER
- * speaks raw UDP/ESP-NOW to Nodes; all Node discovery, state and command
- * traffic goes through this application-layer HTTP client.
+ * authoritative Qymera 1.0.0 firmware API (github.com/gonreyna85code/Qymera,
+ * see docs/api-contract.yaml). The Dashboard NEVER speaks raw UDP/ESP-NOW to
+ * Nodes; all Node discovery, state and command traffic goes through this
+ * application-layer HTTP client.
  *
  * Responsibilities:
  *   - Configured node targets (host:port), persisted as a small NVS blob.
- *   - Periodic reconcile: GET /api/v1/status + GET /api/v1/entities per
- *     target; upserts devices/entities into the registry; feeds authoritative
- *     entity state + device online/offline transitions to callbacks.
- *   - Commands: POST /api/v1/entities/<id>/command -> accepted & status/error.
- *   - Version negotiation data (api_version / protocol_version / firmware
- *     version / capabilities) is read from /status and stored on the device so
- *     the rest of the system can surface incompatible Nodes.
+ *   - Periodic reconcile: GET /calib per target. The Node answers a BARE JSON
+ *     array of entities {id, index, device_uid, name, value, correction,
+ *     avail, pulse, state, pulse_ms, persist, fade, type(1..12), local,
+ *     age_ms, ip}. Entity identity is `id` (u32 uid); owner identity is
+ *     `device_uid` (the Node's chip id for local entities). Upserts
+ *     devices/entities into the registry keyed by device_uid/id, and feeds
+ *     authoritative entity state + online/offline transitions to callbacks.
+ *   - Commands: POST /toggle (form id=<uid>, flips relay/dimmer state) and
+ *     POST /dimmer (form id=<uid>&value=0..100). HTTP 200 "OK" means the
+ *     command was accepted; errors are conveyed ONLY by HTTP status
+ *     (400 id/bad-value, 401 auth, 404 unknown id, 429 rate limited) with a
+ *     text/plain body — there are no JSON error codes on the wire.
+ *   - Device metadata (name/fw_version/model) is read from GET /firmware
+ *     {product, version, platform, ...}; the wire contract has no
+ *     api_version/protocol_version negotiation, so those device fields are
+ *     fixed to the 1.0.0 surface.
  *
- * The HTTP surface (paths, schema, error codes) implements the working draft
- * in docs/api-contract.yaml and is validated by tests/integration against the
- * mock Node. When the authoritative firmware v1 API lands, reconcile only
- * inside this module (and the mock/tests it drives).
+ * The HTTP surface (paths, schemas, status mapping) is validated by
+ * tests/integration against the mock Node and mirrored by tests/host_sanity.py.
  */
 #pragma once
 
@@ -88,9 +96,13 @@ qymera_err_t qymera_node_client_get_targets(const qymera_node_client_t *client,
 /* Periodic reconcile + offline marking. Call from core tick. */
 void qymera_node_client_tick(qymera_node_client_t *client);
 
-/* Dispatch one command to a node. host/port identify the node (the target
- * that owns the entity). `accepted` mirrors the node's response; on a node
- * error the canonical code is copied into err_code (when provided). */
+/* Dispatch one command to a node. host/port identify the node that owns the
+ * entity; entity_id is the entity's numeric uid (the `id` returned by /calib).
+ * opcode 1 = relay toggle (POST /toggle), opcode 2 = dimmer level (POST
+ * /dimmer id=<uid>&value=<value_f>). `accepted` mirrors the node's HTTP 200;
+ * on a non-200 status a qymera_err_t is returned and a stable error code
+ * string (DEVICE_OFFLINE / ENTITY_NOT_FOUND / INVALID_INPUT / NOT_AUTHORIZED
+ * / RATE_LIMITED / TIMEOUT / PROTOCOL) is copied into err_code. */
 qymera_err_t qymera_node_client_send_command(qymera_node_client_t *client,
                                              const char *host, uint16_t port,
                                              const char *device_id,

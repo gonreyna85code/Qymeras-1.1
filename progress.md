@@ -1,42 +1,43 @@
 # Qymeras 1.1 Progress Tracker
 
-## Current State (2026-09-16) — v1 Node HTTP Integration (Dashboard side)
+## Current State (2026-09-16) — v1 Node HTTP Integration (Dashboard side, reconciled)
 
-- **Branch:** `feature/ai-experiments`. HEAD after this phase: the v1 Node
-  integration commit (see git log for the phase 3I message).
-- **Scope completed in this phase:**
+- **Branch:** `feature/ai-experiments`. This phase reconciles the v1 Node
+  integration to the **authoritative Qymera 1.0.0 firmware API**
+  (`github.com/gonreyna85code/Qymera`, tag `v1.0.0`): `GET /calib` bare
+  entity array (no envelope), `GET /firmware`, `POST /toggle` (`id=<uid>`,
+  flips), `POST /dimmer` (`id=<uid>&value=0..100`), HTTP-status-only errors,
+  no `api_version`/`protocol_version` on the wire.
+- **Scope completed:**
   - Deleted the legacy **UDP transport** entirely (`src/network/udp/`,
     `QYMERA_UDP_PORT_*` macros, UDP discovery/control ports in network config,
     ACK wire state machine, `entity_id_hash`/`find_device_by_ip`). The
     Dashboard now reaches Nodes **only** through the v1 HTTP application API.
-  - Added `src/network/qymera_node_client.{h,c}` — the **single boundary** for
-    Node discovery/reconciliation/commands (status + entities snapshot upsert,
-    stale/offline marking, command dispatch, canonical error mapping).
-  - Reworked the control machine: dispatch via node client, node HTTP command
-    result → `ACKED`/`FAILED`, authoritative snapshot → `CONFIRMED`/`FAILED`,
-    plus new `QYMERA_RELIABILITY_OFFLINE`.
-  - `docs/api-contract.yaml` — working machine-readable draft (envelopes,
-    schemas, 11 canonical codes, version negotiation, state-sync rules);
-    authoritative copy stays in the firmware repo.
-  - Node targets: `GET`/`POST /api/v1/nodes`, persisted as `node_targets_v1`
-    blob in `qymera_cfg` NVS namespace (keeps `qymera_network_config_t` shape
-    stable); dashboard **Nodes** view added (host/port, online by device ip).
-  - Device `api_version`/`protocol_version`/`capability_mask`, `fw_version`,
-    `ip`, `port` surfaced in registry + skill serializers; entity `available`.
-  - Tests: controls mirrored in `tests/host_sanity.py` (**355/355 PASS**);
-    **contract suite** `tests/integration/test_contract.py` (PASS) against
-    `mock_node.py` over real HTTP; runner scripts + standalone mock.
-  - CI: `.github/workflows/ci.yml` (host mirrors + contract + 3 firmware
-    builds); `ci/dashboard-integration.yml` reference for the firmware repo.
+  - Reworked `src/network/qymera_node_client.{h,c}` onto the real surface:
+    `node_fetch_calib` (bare array ingest, `id`/`device_uid` uid identity,
+    calib `type` 1..12 → entity type/capability), `node_fetch_firmware`,
+    multi-device offline marking, and `send_command` → `POST /toggle` /
+    `POST /dimmer` with HTTP-status→canonical-error mapping.
+  - Added `qymera_registry_update_device` (registrar no longer silently drops
+    model/fw-updates from `/firmware`); `node_error_to_err` extended; control
+    layer short-circuits relay/dimmer when observed already equals desired
+    (toggle is a flip, not an absolute set — prevents unwanted inversion).
+  - `docs/api-contract.yaml` is now **authoritative** (was a working draft of
+    a fabricated `/api/v1/status` + `/entities/<id>/command` envelope API).
+  - Tests rewritten to the real wire: `mock_node.py` + `test_contract.py`
+    (**36/36 PASS**); `tests/host_sanity.py` NodeClientMirror
+    (**363/363 PASS**).
+  - CI smokes (`ci.yml`, `ci/dashboard-integration.yml`) now assert the bare
+    `/calib` array instead of `/api/v1/status`.
   - Firmware builds **green for esp32_devkit / esp32c3 / esp32s3**.
 - **Caveats to carry forward:**
   - `qymera_network_config_t` shrank (UDP ports removed) → persisted NVS blobs
     from pre-rebase firmware would size-mismatch and fail `load_network`;
     acceptable for this single-repo rebase, but hardware with old NVS must
     factory-reset.
-  - The Node v1 API is still the firmware repo's authoritative deliverable;
-    this phase pins the Dashboard side. When it lands, reconcile only inside
-    `qymera_node_client` + the mock/tests.
+  - `POST /toggle` flips state; the Dashboard compensates in the control layer
+    (no-op when observed == desired) — any future absolute-set node endpoint
+    would change that gate, inside the single boundary.
   - Hardware validation remains pending (mock-tested only).
 
 ## Phase 3I: v1 Node HTTP Integration — Dependency Map (2026-09-16)

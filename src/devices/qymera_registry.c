@@ -231,6 +231,36 @@ qymera_err_t qymera_registry_get_device(qymera_registry_t *registry, uint16_t de
     return QYMERA_OK;
 }
 
+qymera_err_t qymera_registry_update_device(qymera_registry_t *registry, uint16_t device_idx,
+                                           const qymera_device_t *device) {
+    if (!registry || !device || device_idx >= registry->max_devices) return QYMERA_ERR_INVALID_ARG;
+    qymera_device_t *d = &registry->devices[device_idx];
+    if (d->device_id[0] == '\0') return QYMERA_ERR_NOT_FOUND;
+
+    /* Preserve device identity + entity linkage; refresh mutable metadata. */
+    strncpy(d->name, device->name, sizeof(d->name) - 1);
+    d->name[sizeof(d->name) - 1] = '\0';
+    d->chip_uid = device->chip_uid;
+    strncpy(d->model, device->model, sizeof(d->model) - 1);
+    d->model[sizeof(d->model) - 1] = '\0';
+    strncpy(d->fw_version, device->fw_version, sizeof(d->fw_version) - 1);
+    d->fw_version[sizeof(d->fw_version) - 1] = '\0';
+    strncpy(d->api_version, device->api_version, sizeof(d->api_version) - 1);
+    d->api_version[sizeof(d->api_version) - 1] = '\0';
+    strncpy(d->protocol_version, device->protocol_version, sizeof(d->protocol_version) - 1);
+    d->protocol_version[sizeof(d->protocol_version) - 1] = '\0';
+    d->capability_mask = device->capability_mask;
+    d->role = device->role;
+    d->state = device->state;
+    strncpy(d->location, device->location, sizeof(d->location) - 1);
+    d->location[sizeof(d->location) - 1] = '\0';
+    strncpy(d->ip_addr, device->ip_addr, sizeof(d->ip_addr) - 1);
+    d->ip_addr[sizeof(d->ip_addr) - 1] = '\0';
+    d->port = device->port;
+    d->last_seen = qymera_timestamp_now();
+    return QYMERA_OK;
+}
+
 qymera_err_t qymera_registry_get_entity(qymera_registry_t *registry, uint16_t entity_idx, qymera_entity_t *entity) {
     if (!registry || !entity || entity_idx >= registry->max_entities) return QYMERA_ERR_INVALID_ARG;
     if (registry->entities[entity_idx].entity_id[0] == '\0') return QYMERA_ERR_NOT_FOUND;

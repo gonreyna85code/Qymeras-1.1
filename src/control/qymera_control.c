@@ -39,17 +39,20 @@ static bool control_entity_has_capability(qymera_control_context_t *context,
     return false;
 }
 
-/* Map the v1 canonical error code to a qymera_err_t (surface for callers). */
+/* Map the node error code string to a qymera_err_t (surface for callers).
+ * The wire carries HTTP status only; qymera_node_client maps status to these
+ * stable codes. */
 static qymera_err_t node_error_to_err(const char *code) {
     if (!code || !code[0]) return QYMERA_ERR_PROTOCOL;
     if (strcmp(code, "DEVICE_OFFLINE") == 0) return QYMERA_ERR_NETWORK;
     if (strcmp(code, "ENTITY_NOT_FOUND") == 0) return QYMERA_ERR_NOT_FOUND;
     if (strcmp(code, "DEVICE_NOT_FOUND") == 0) return QYMERA_ERR_NOT_FOUND;
     if (strcmp(code, "COMMAND_NOT_SUPPORTED") == 0) return QYMERA_ERR_INVALID_CAPABILITY;
-    if (strcmp(code, "INVALID_VALUE") == 0) return QYMERA_ERR_INVALID_ARG;
+    if (strcmp(code, "INVALID_VALUE") == 0 || strcmp(code, "INVALID_INPUT") == 0) return QYMERA_ERR_INVALID_ARG;
     if (strcmp(code, "NOT_AUTHORIZED") == 0) return QYMERA_ERR_INVALID_STATE;
     if (strcmp(code, "RATE_LIMITED") == 0) return QYMERA_ERR_BUSY;
     if (strcmp(code, "TIMEOUT") == 0) return QYMERA_ERR_TIMEOUT;
+    if (strcmp(code, "METHOD_NOT_ALLOWED") == 0) return QYMERA_ERR_PROTOCOL;
     return QYMERA_ERR_PROTOCOL;
 }
 
@@ -179,7 +182,17 @@ qymera_err_t qymera_control_set_relay(qymera_control_context_t *context,
         return QYMERA_OK;
     }
 
-    /* Remote device: bounded pending dispatch through the v1 Node API. */
+    /* Remote device: authoritative snapshot already at the requested state ->
+     * nothing to dispatch (the Node's /toggle flips state; toggling when the
+     * physical state already matches would invert it). */
+    if (entity.value.valid && entity.value.bool_value == state) {
+        qymera_registry_set_entity_desired(context->registry, entity_idx, &desired, QYMERA_CMD_STATE_CONFIRMED);
+        if (context->log) qymera_log_action(context->log, "control", "relay %s already %s (remote %s)",
+                                            entity_ref->entity_id, state ? "ON" : "OFF", device.ip_addr);
+        return QYMERA_OK;
+    }
+
+    /* Remote device: bounded pending dispatch through the Node HTTP API. */
     if (!context->node_client) return QYMERA_ERR_NETWORK;
 
     qymera_pending_command_t *entry = pending_alloc(context);
@@ -296,6 +309,14 @@ qymera_err_t qymera_control_set_dimmer(qymera_control_context_t *context,
             qymera_event_bus_publish(context->event_bus, &ev);
         }
         if (context->log) qymera_log_action(context->log, "control", "dimmer %s -> %u (local)", entity_ref->entity_id, level);
+        return QYMERA_OK;
+    }
+
+    /* Remote device: snapshot already at the requested level -> no dispatch. */
+    if (entity.value.valid && (int)entity.value.numeric_value == level) {
+        qymera_registry_set_entity_desired(context->registry, entity_idx, &desired, QYMERA_CMD_STATE_CONFIRMED);
+        if (context->log) qymera_log_action(context->log, "control", "dimmer %s already at %u (remote %s)",
+                                            entity_ref->entity_id, level, device.ip_addr);
         return QYMERA_OK;
     }
 

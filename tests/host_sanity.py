@@ -543,11 +543,12 @@ check("PENDING: after resolving one, new command succeeds", r_ == "OK")
 # ================================================================ Phase 2Z: Node Client
 # Portable model of the v1 HTTP node client boundaries
 # (src/network/qymera_node_client.c). The Dashboard talks to Nodes only
-# through this application-layer client: reconcile reads /status + /entities
-# and feeds authoritative state; commands POST /entities/<id>/command and
-# mirror the node's accepted + canonical error codes. Mirrors keep the JSON
-# scanners (status fields, entity elements, error mapping) honest without the
-# firmware socket layer.
+# through this application-layer client: reconcile reads GET /calib (bare
+# entity array) + GET /firmware and feeds authoritative state; commands are
+# POST /toggle (id=<uid>, flips) and POST /dimmer (id=<uid>&value=0..100)
+# reflecting the node's HTTP-status-only accepted + canonical error codes.
+# Mirrors keep the JSON scanners (calib fields, firmware fields, status->error
+# mapping) honest without the firmware socket layer.
 
 class NodeClientMirror:
     def __init__(self):
@@ -561,42 +562,50 @@ class NodeClientMirror:
     def set_targets(self, targets):
         self.targets = list(targets)[:MAX_NODE_TARGETS]
 
-    # ---- /status + /entities parsing (node_fetch_status / node_fetch_entities) ----
-    def parse_status(self, body):
-        """Extract the status fields the firmware reads. Returns dict."""
-        # Model after json_find_key scan; keep strictly field-scoped.
+    # ---- /calib + /firmware parsing (node_fetch_calib / node_fetch_firmware) ----
+    # calib `type` int (1..12) -> qymera entity type string (calib_type_to_entity)
+    CALIB_TYPE_ENUM = {
+        1: "sensor.luminosity", 2: "sensor.humidity", 3: "sensor.temperature",
+        4: "sensor.pressure", 5: "sensor.level", 6: "sensor.airq",
+        7: "sensor.rain", 8: "actuator.dimmer", 9: "actuator.relay",
+        10: "time", 11: "sensor.generic", 12: "sensor.contact",
+    }
+
+    def parse_firmware(self, body):
+        """Extract the /firmware fields the firmware client reads."""
         out = {}
-        for key, cast in (("device_id", str), ("name", str), ("model", str),
-                          ("firmware_version", str), ("api_version", str),
-                          ("protocol_version", str), ("online", bool)):
+        for key in ("product", "version", "platform"):
             v = self._key(body, key)
             if v is not None:
-                out[key] = cast(v)
+                out[key] = v
         return out
 
-    def parse_entities(self, body):
-        """Parse the /entities array the way node_fetch_entities does."""
+    def parse_calib(self, body):
+        """Parse the /calib array the way node_fetch_calib does (id is the
+        entity identity, device_uid is the owner identity)."""
         rows = []
         for elem in self._objects(body):
-            dev = self._key(elem, "device_id") or ""
-            ent = self._key(elem, "entity_id") or ""
-            etype = self._key(elem, "type") or "none"
+            ent = self._key(elem, "id") or ""
+            dev = self._key(elem, "device_uid") or ent
+            t = self._int(elem, "type")
+            etype = self.CALIB_TYPE_ENUM.get(t, "none")
             num = self._num(elem, "value")
-            raw_value = self._key(elem, "value")
-            bv = self._bool(elem, "bool_value")
-            if bv is not None:
-                has_bool = True
+            st = self._bool(elem, "state")
+            bv = bool(st) if st is not None else False
+            if etype == "actuator.relay":
+                numeric = 1.0 if bv else 0.0
+            elif etype == "actuator.dimmer":
+                numeric = num if num is not None else 0.0
+                bv = numeric > 0.0
             else:
-                has_bool = raw_value in ("true", "false") or isinstance(raw_value, bool)
-                bv = raw_value is True or raw_value == "true"
-            av = self._key(elem, "available")
-            if av is None:
-                av = self._key(elem, "online")
+                numeric = num if num is not None else 0.0
+            av = self._bool(elem, "avail")
             rows.append({
                 "device_id": dev, "entity_id": ent, "type": etype,
-                "numeric_value": num if num is not None else (1.0 if bv else 0.0),
-                "bool_value": bv if bv is not None else (num not in (None, 0, 0.0)),
-                "available": True if av is None else bool(av),
+                "numeric_value": numeric, "bool_value": bv,
+                "available": True if av is None else av,
+                "name": self._key(elem, "name") or "",
+                "ip": self._key(elem, "ip") or "",
             })
         return rows
 
@@ -620,6 +629,15 @@ class NodeClientMirror:
             return None
         try:
             return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _int(self, s, key):
+        v = self._key(s, key)
+        if v is None:
+            return None
+        try:
+            return int(v)
         except (TypeError, ValueError):
             return None
 
@@ -672,14 +690,24 @@ class NodeClientMirror:
                 flagged += 1
         return flagged
 
-    # ---- command result mapping (send_command accepted/err_code) ----
+    # ---- command wire-format + result mapping (send_command) ----
+    def build_command(self, entity_id, opcode, value_f):
+        """Wire form body: relay -> id=<uid>; dimmer -> id=<uid>&value=0..100."""
+        if opcode == 1:
+            return "id=%s" % entity_id
+        level = max(0, min(100, int(value_f)))
+        return "id=%s&value=%d" % (entity_id, level)
+
     def send_command(self, device_id, entity_id, opcode, value_f):
         self.commands_sent += 1
-        code = self.command_response or None
-        if code:
+        status = self.command_response or 200
+        if status != 200:
             self.commands_err += 1
-            return False, code                      # node rejected
-        return True, None                           # node accepted
+            code = {400: "INVALID_INPUT", 401: "NOT_AUTHORIZED",
+                    404: "ENTITY_NOT_FOUND", 405: "METHOD_NOT_ALLOWED",
+                    408: "TIMEOUT", 429: "RATE_LIMITED"}.get(status, "DEVICE_OFFLINE")
+            return False, code                      # non-200 => rejected
+        return True, None                           # 200 "OK" => accepted
 
 
 MAX_NODE_TARGETS = 4
@@ -693,49 +721,69 @@ check("NODE: set_targets caps at MAX_NODE_TARGETS", len(nc.targets) == 2)
 nc.set_targets([{"host": "n%d" % i, "port": 80, "poll_interval_ms": 0} for i in range(8)])
 check("NODE: target list capped to 4", len(nc.targets) == MAX_NODE_TARGETS)
 
-# --- /status parse: version fields preserved ---
-status = nc.parse_status('{"ok":true,"data":{"device_id":"nodeA","name":"Node A",'
-                         '"model":"ep32-s2","firmware_version":"1.2.3",'
-                         '"api_version":"v1","protocol_version":"1","online":true}}')
-check("NODE: status parses device fields", status.get("device_id") == "nodeA")
-check("NODE: status api_version/protocol captured",
-      status.get("api_version") == "v1" and status.get("protocol_version") == "1")
+# --- /firmware parse: product/version/platform captured ---
+fw = nc.parse_firmware('{"product":"nodeA","version":"1.0.0","platform":"esp32",'
+                       '"state":"active","latest":"1.0.0","available":false}')
+check("NODE: /firmware parses product/version/platform",
+      fw.get("product") == "nodeA" and fw.get("version") == "1.0.0" and fw.get("platform") == "esp32")
 
-# --- /entities parse: element fields + value/bool adaptation ---
-ents = nc.parse_entities(
-    '[{"device_id":"nodeA","entity_id":"relay1","type":"actuator.relay","value":true},'
-    '{"device_id":"nodeA","entity_id":"temp","type":"sensor.temperature","value":24.5},'
-    '{"device_id":"nodeA","entity_id":"dim","type":"actuator.dimmer","value":70,"available":true}]')
-check("NODE: entities parsed = 3", len(ents) == 3)
-relay = next(e for e in ents if e["entity_id"] == "relay1")
-check("NODE: bool value captured from value", relay["bool_value"] is True)
-temp = next(e for e in ents if e["entity_id"] == "temp")
-check("NODE: numeric value captured", abs(temp["numeric_value"] - 24.5) < 1e-6)
-dim = next(e for e in ents if e["entity_id"] == "dim")
-check("NODE: available honored", dim["available"] is True)
+# --- /calib parse: uid identity + type/value/bool adaptation ---
+ents = nc.parse_calib(
+    '[{"id":1,"device_uid":161,"name":"Relay One","value":0.0,"state":false,'
+    '"avail":true,"type":9,"ip":"10.0.0.2"},'
+    '{"id":2,"device_uid":161,"name":"Dimmer One","value":30.0,"state":true,'
+    '"avail":true,"type":8,"ip":"10.0.0.2"},'
+    '{"id":3,"device_uid":161,"name":"Temp One","value":24.5,"state":false,'
+    '"avail":true,"type":3,"ip":"10.0.0.2"}]')
+check("NODE: /calib parsed = 3", len(ents) == 3)
+relay = next(e for e in ents if e["entity_id"] == "1")
+check("NODE: calib id -> entity_id, device_uid -> device_id",
+      relay["entity_id"] == "1" and relay["device_id"] == "161")
+check("NODE: calib relay type mapped + state captured",
+      relay["type"] == "actuator.relay" and relay["bool_value"] is False)
+temp = next(e for e in ents if e["entity_id"] == "3")
+check("NODE: calib numeric reading captured", abs(temp["numeric_value"] - 24.5) < 1e-6)
+dim = next(e for e in ents if e["entity_id"] == "2")
+check("NODE: calib dimmer type + level captured",
+      dim["type"] == "actuator.dimmer" and dim["numeric_value"] == 30.0)
+check("NODE: calib avail honored", dim["available"] is True)
+check("NODE: calib ip/name carried",
+      temp["ip"] == "10.0.0.2" and temp["name"] == "Temp One")
 
 # --- reconcile: fresh entities ingested; unseen marked stale ---
 nc.store.clear(); nc.seen_entities = set()
-ing, stale = nc.reconcile([{"device_id": "nodeA", "entity_id": "relay1", "available": True},
-                           {"device_id": "nodeA", "entity_id": "temp", "available": True}])
+ing, stale = nc.reconcile([{"device_id": "161", "entity_id": "1", "available": True},
+                           {"device_id": "161", "entity_id": "3", "available": True}])
 check("NODE: reconcile ingests snapshot", ing == 2 and stale == 0)
-ing, stale = nc.reconcile([{"device_id": "nodeA", "entity_id": "temp", "available": True}])
+ing, stale = nc.reconcile([{"device_id": "161", "entity_id": "3", "available": True}])
 check("NODE: missing entity from snapshot -> STALE", stale == 1)
 
 # --- offline: all device entities marked unavailable ---
 nc.store.clear(); nc.seen_entities = set()
-nc.reconcile([{"device_id": "nodeA", "entity_id": "a", "available": True},
-              {"device_id": "nodeA", "entity_id": "b", "available": True}])
-off = nc.mark_offline("nodeA")
+nc.reconcile([{"device_id": "161", "entity_id": "a", "available": True},
+              {"device_id": "161", "entity_id": "b", "available": True}])
+off = nc.mark_offline("161")
 check("NODE: mark_offline flags all device entities", off == 2)
 
-# --- command accepted/rejected reflection ---
+# --- toggle is flip, not set: wire body carries only the uid ---
+check("NODE: relay wire body is id=<uid>", nc.build_command("42", 1, 1.0) == "id=42")
+check("NODE: dimmer wire body id=<uid>&value", nc.build_command("42", 2, 83.7) == "id=42&value=83")
+check("NODE: dimmer clamps >100", nc.build_command("42", 2, 250.0) == "id=42&value=100")
+check("NODE: dimmer clamps <0", nc.build_command("42", 2, -5.0) == "id=42&value=0")
+
+# --- command accepted/rejected reflection (HTTP status only) ---
 nc.command_response = None
-ok, code = nc.send_command("nodeA", "relay1", 1, 1.0)
+ok, code = nc.send_command("nodeA", "42", 1, 1.0)
 check("NODE: accepted command => accepted=true, no error", ok is True and code is None)
-nc.command_response = "DEVICE_OFFLINE"
-ok, code = nc.send_command("nodeA", "relay1", 1, 1.0)
-check("NODE: rejected command surfaces canonical code", ok is False and code == "DEVICE_OFFLINE")
+nc.command_response = 404
+ok, code = nc.send_command("nodeA", "42", 1, 1.0)
+check("NODE: HTTP 404 surfaces ENTITY_NOT_FOUND", ok is False and code == "ENTITY_NOT_FOUND")
+nc.command_response = 429
+ok, code = nc.send_command("nodeA", "42", 2, 50.0)
+check("NODE: HTTP 429 surfaces RATE_LIMITED", ok is False and code == "RATE_LIMITED")
+nc.command_response = 503
+ok, code = nc.send_command("nodeA", "42", 1, 1.0)
+check("NODE: HTTP 5xx surfaces DEVICE_OFFLINE", ok is False and code == "DEVICE_OFFLINE")
 nc.command_response = None
 
 # --- stale marking caps (O(n) bounded, no unbounded growth) ---

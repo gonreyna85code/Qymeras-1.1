@@ -179,6 +179,12 @@ qymera_err_t qymera_registry_update_entity_value(qymera_registry_t *registry, ui
  */
 qymera_err_t qymera_registry_get_device(qymera_registry_t *registry, uint16_t device_idx, qymera_device_t *device);
 
+/* Refresh mutable device metadata (name, model, firmware/version fields,
+ * chip_uid, ip/port, role, state, location) for an existing device. Entity
+ * linkage, online flag and registered_at are preserved. */
+qymera_err_t qymera_registry_update_device(qymera_registry_t *registry, uint16_t device_idx,
+                                           const qymera_device_t *device);
+
 /**
  * Get entity by index
  * @param registry   Registry handle
