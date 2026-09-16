@@ -178,8 +178,6 @@ static void app_boot(void) {
     strncpy(config.network.sta_ssid, WIFI_SSID, sizeof(config.network.sta_ssid) - 1);
     strncpy(config.network.sta_password, WIFI_PASSWORD, sizeof(config.network.sta_password) - 1);
     strncpy(config.network.sta_hostname, config.general.device_name, sizeof(config.network.sta_hostname) - 1);
-    config.network.udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
-    config.network.udp_control_port = QYMERA_UDP_PORT_CONTROL;
     config.network.report_interval_ms = 5000;
     
     config.ai.mode = QYMERA_AI_MODE_NONE;

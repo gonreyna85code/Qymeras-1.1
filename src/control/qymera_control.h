@@ -3,10 +3,13 @@
  *
  * Owns the strongly-typed control context used by the Control API, and the
  * bounded pending-command state machine that tracks remote relay/dimmer
- * commands from dispatch through ACK/state confirmation (or timeout/failure).
+ * commands from dispatch through node acceptance (HTTP command result) to
+ * authoritative snapshot-state confirmation (or timeout/failure).
  *
  * The Rule Engine stays transport-agnostic: it calls the Control API and never
- * sees the UDP transport or the pending-command table.
+ * sees the HTTP node client or the pending-command table. Remote commands are
+ * sent through qymera_node_client (the v1 application API); there is no raw
+ * UDP/ESP-NOW path to nodes.
  */
 #pragma once
 
@@ -24,13 +27,13 @@ extern "C" {
 
 /* Command lifecycle status (sequential for the happy path) */
 typedef enum {
-    QYMERA_CMD_REQUESTED = 0, /* Command created, not yet dispatched */
-    QYMERA_CMD_DISPATCHED,    /* Control accepted, not yet sent/acked */
-    QYMERA_CMD_WAITING_ACK,   /* Sent over UDP, awaiting remote ACK */
-    QYMERA_CMD_ACKED,         /* Remote ACKed (accepted), awaiting authoritative state */
-    QYMERA_CMD_STATE_CONFIRMED, /* Remote reported matching state: confirmed */
-    QYMERA_CMD_FAILED,        /* Remote error / invalid response / dispatch failed */
-    QYMERA_CMD_TIMEOUT,       /* No ACK/state within deadline */
+    QYMERA_CMD_REQUESTED = 0, /* Command created, not yet dispatched      */
+    QYMERA_CMD_DISPATCHED,    /* Control accepted, not yet sent/acked     */
+    QYMERA_CMD_WAITING_ACK,   /* Dispatched to node, awaiting accept      */
+    QYMERA_CMD_ACKED,         /* Node accepted (command result), awaiting authoritative state */
+    QYMERA_CMD_STATE_CONFIRMED, /* Node reported matching state: confirmed */
+    QYMERA_CMD_FAILED,        /* Node error / invalid response / dispatch failed */
+    QYMERA_CMD_TIMEOUT,       /* No acceptance/state within deadline      */
 } qymera_cmd_status_t;
 
 /* Reliability semantics for the registry value (replaces magic integers) */
@@ -39,13 +42,14 @@ typedef enum {
     QYMERA_RELIABILITY_PENDING,   /* Remote command dispatched, not confirmed */
     QYMERA_RELIABILITY_CONFIRMED, /* Matches authoritative remote state */
     QYMERA_RELIABILITY_STALE,     /* No recent report */
+    QYMERA_RELIABILITY_OFFLINE,   /* Owning device reported offline */
     QYMERA_RELIABILITY_FAILED,    /* Command failed / timed out */
 } qymera_reliability_t;
 
 typedef struct {
     bool used;
-    uint32_t cmd_seq;                 /* Correlation ID (header.seq == cmd_seq) */
-    char dest_ip[16];                 /* Where the command was sent */
+    uint32_t cmd_seq;                 /* Correlation ID (node command result) */
+    char dest_ip[16];                 /* Node address the command was sent to */
     char device_id[QYMERA_DEVICE_ID_LEN];
     char entity_id[QYMERA_ENTITY_ID_LEN];
     uint8_t opcode;                   /* 1=relay, 2=dimmer */
@@ -59,7 +63,7 @@ typedef struct {
 
 /* Forward declarations for pointers only */
 typedef struct qymera_registry_s qymera_registry_t;
-typedef struct qymera_udp_transport_s qymera_udp_transport_t;
+typedef struct qymera_node_client_s qymera_node_client_t;
 typedef struct qymera_event_bus_s qymera_event_bus_t;
 typedef struct qymera_log_s qymera_log_t;
 
@@ -67,7 +71,7 @@ typedef struct qymera_log_s qymera_log_t;
  * qymera_core_t* as a transport: it is given this typed struct. */
 typedef struct {
     qymera_registry_t *registry;
-    qymera_udp_transport_t *udp;
+    qymera_node_client_t *node_client;
     qymera_event_bus_t *event_bus;
     qymera_log_t *log;
     uint32_t cmd_seq;                 /* Next command correlation ID */
@@ -77,7 +81,7 @@ typedef struct {
 /* Lifecycle */
 qymera_err_t qymera_control_context_init(qymera_control_context_t *context,
                                           qymera_registry_t *registry,
-                                          qymera_udp_transport_t *udp,
+                                          qymera_node_client_t *node_client,
                                           qymera_event_bus_t *event_bus,
                                           qymera_log_t *log);
 void qymera_control_context_cleanup(qymera_control_context_t *context);
@@ -90,15 +94,11 @@ qymera_err_t qymera_control_set_dimmer(qymera_control_context_t *context,
                                        const qymera_entity_ref_t *entity_ref,
                                        uint8_t level, bool local_only);
 
-/* Runtime message handling (called from UDP transport receive path) */
-void qymera_control_on_ack(qymera_control_context_t *context,
-                           uint32_t ack_cmd_seq, uint8_t ack_result,
-                           const char *src_ip);
-void qymera_control_on_state(qymera_control_context_t *context,
-                             uint32_t entity_id, uint8_t entity_type,
-                             const float *value_f, const uint32_t *value_u32,
-                             bool has_float, bool has_u32,
-                             const char *src_ip);
+/* Runtime message handling (called from the node reconciliation path) */
+void qymera_control_on_remote_state(qymera_control_context_t *context,
+                                    const char *device_id, const char *entity_id,
+                                    bool available, uint8_t entity_type,
+                                    float numeric_value, bool bool_value);
 
 /* Periodic processing: resolve timeouts without blocking the main loop */
 void qymera_control_tick(qymera_control_context_t *context, uint32_t now_ms);

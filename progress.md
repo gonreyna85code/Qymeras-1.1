@@ -1,5 +1,81 @@
 # Qymeras 1.1 Progress Tracker
 
+## Current State (2026-09-16) — v1 Node HTTP Integration (Dashboard side)
+
+- **Branch:** `feature/ai-experiments`. HEAD after this phase: the v1 Node
+  integration commit (see git log for the phase 3I message).
+- **Scope completed in this phase:**
+  - Deleted the legacy **UDP transport** entirely (`src/network/udp/`,
+    `QYMERA_UDP_PORT_*` macros, UDP discovery/control ports in network config,
+    ACK wire state machine, `entity_id_hash`/`find_device_by_ip`). The
+    Dashboard now reaches Nodes **only** through the v1 HTTP application API.
+  - Added `src/network/qymera_node_client.{h,c}` — the **single boundary** for
+    Node discovery/reconciliation/commands (status + entities snapshot upsert,
+    stale/offline marking, command dispatch, canonical error mapping).
+  - Reworked the control machine: dispatch via node client, node HTTP command
+    result → `ACKED`/`FAILED`, authoritative snapshot → `CONFIRMED`/`FAILED`,
+    plus new `QYMERA_RELIABILITY_OFFLINE`.
+  - `docs/api-contract.yaml` — working machine-readable draft (envelopes,
+    schemas, 11 canonical codes, version negotiation, state-sync rules);
+    authoritative copy stays in the firmware repo.
+  - Node targets: `GET`/`POST /api/v1/nodes`, persisted as `node_targets_v1`
+    blob in `qymera_cfg` NVS namespace (keeps `qymera_network_config_t` shape
+    stable); dashboard **Nodes** view added (host/port, online by device ip).
+  - Device `api_version`/`protocol_version`/`capability_mask`, `fw_version`,
+    `ip`, `port` surfaced in registry + skill serializers; entity `available`.
+  - Tests: controls mirrored in `tests/host_sanity.py` (**355/355 PASS**);
+    **contract suite** `tests/integration/test_contract.py` (PASS) against
+    `mock_node.py` over real HTTP; runner scripts + standalone mock.
+  - CI: `.github/workflows/ci.yml` (host mirrors + contract + 3 firmware
+    builds); `ci/dashboard-integration.yml` reference for the firmware repo.
+  - Firmware builds **green for esp32_devkit / esp32c3 / esp32s3**.
+- **Caveats to carry forward:**
+  - `qymera_network_config_t` shrank (UDP ports removed) → persisted NVS blobs
+    from pre-rebase firmware would size-mismatch and fail `load_network`;
+    acceptable for this single-repo rebase, but hardware with old NVS must
+    factory-reset.
+  - The Node v1 API is still the firmware repo's authoritative deliverable;
+    this phase pins the Dashboard side. When it lands, reconcile only inside
+    `qymera_node_client` + the mock/tests.
+  - Hardware validation remains pending (mock-tested only).
+
+## Phase 3I: v1 Node HTTP Integration — Dependency Map (2026-09-16)
+
+### Audit summary (Phase 1 doc §2 dependency map, updated)
+- **AI isolation holds:** `qymera_llm_adapter_execute_tool` →
+  `qymera_skill_execute` (skill.c) only; no GPIO/UDP direct.
+- **No HTTP client lib:** raw BSD sockets (`qymera_llm_http_provider.c` and
+  now `qymera_node_client.c`); project uses Arduino framework over ESP-IDF
+  headers; `platformio.ini` pins espressif32@6.5.0.
+- **Limits:** 32 devices / 32 entities / 16 rules / 32 event queue / 128 log
+  entries / max 1280-byte packet (UDP, now unused) / 4 node targets.
+- **Storage:** `qymera_cfg` ns (`network`/`general`/`ai`/rules + `node_targets_v1`
+  blob); `load_network` size-checks the struct.
+- **Removed surface:** `qymera_udp.{c,h}`, `core_get_udp`, `control_on_ack`,
+  `control_on_state`, `udp_on_ack`/`udp_on_entity_state` callbacks,
+  `QYMERA_UDP_PORT_DISCOVERY/CONTROL`, UDP fields in `qymera_network_config_t`,
+  UDP port UI fields + `/wifi/connect` POST body fields.
+- **IP facts (kept):** attached ESP32 `192.168.1.19`; PC is Ethernet-only at
+  `192.168.1.16` (Ollama host); ignore virtual `172.x` adapters.
+
+### Dependency map (current)
+```
+main.cpp ─ qymera_core
+  core ─ registry / storage / log / event_bus / rule_engine / ai
+        └─ node_client (v1 HTTP boundary: reconcile + commands)
+             └─ control (pending machine) ─ on_remote_state (authoritative)
+  http_server ─ qymera_skill ─ {registry, rule_engine, control, storage}
+        ├─ /api/v1/nodes (target config)
+        └─ status/devices/entities/rules/ai/chat (skills)
+  Rule engine ─ control API (transport-agnostic; never sees the wire)
+```
+No module below `http_server` talks to Nodes; `qymera_node_client` is the
+only transport boundary.
+
+### Not-yet-done (persisted in repo docs; firmware-owner gate)
+- Authoritative firmware v1 API (firmware repo). Hardware validation with a
+  real Node. Reply envelope `UNSUPPORTED_API_VERSION` handling polish.
+
 ## Current State (2026-09-05)
 
 - **Branch:** `feature/ai-experiments` — AI implementation line for the next

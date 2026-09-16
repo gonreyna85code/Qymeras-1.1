@@ -23,9 +23,6 @@
 #define QYMERA_ENTITY_ID_LEN      32
 #define QYMERA_RULE_ID_LEN        64
 
-#define QYMERA_UDP_PORT_DISCOVERY 13345
-#define QYMERA_UDP_PORT_CONTROL   13346
-
 #define QYMERA_FEEDBACK_GUARD_MS  50   /* Window to ignore a rule's own action echo */
 
 /* =========================

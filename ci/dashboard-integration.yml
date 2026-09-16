@@ -1,0 +1,42 @@
+# Qymera firmware repo: dashboard-integration CI binding (reference)
+#
+# This file is the reference binding the Qymera (firmware) repo uses to gate
+# Dashboard integration on the v1 contract. The Dashboard is glued to a Node
+# through the single application HTTP boundary (docs/api-contract.yaml); this
+# job runs the contract + mock suite shipped with the Dashboard so any Node
+# change that breaks the surface fails before merge.
+#
+# To wire it, copy tests/integration/ (mock_node.py, test_contract.py,
+# run_contract_tests.py, run_dashboard_tests.py, start_node_mock.py) into the
+# firmware repo's dashboard-integration checkout, or point this job at the
+# Dashboard repo as a reusable workflow. When the authoritative Node v1 API
+# lands, extend the mock with the firmware's real schemas and keep the
+# Dashboard-side contract in sync (single boundary: qymera_node_client).
+
+name: dashboard-integration
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "develop"]
+
+jobs:
+  contract:
+    name: v1 contract (Dashboard side) vs mock Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run v1 contract tests
+        run: python tests/integration/run_contract_tests.py
+      - name: Run Dashboard host mirrors
+        run: python tests/integration/run_dashboard_tests.py
+      - name: Boot mock Node and probe status
+        run: |
+          python tests/integration/start_node_mock.py 8123 > /tmp/mock.log 2>&1 &
+          MOCK_PID=$!
+          sleep 2
+          curl -fsS http://127.0.0.1:8123/api/v1/status | grep -q '"api_version": "1.0"'
+          kill $MOCK_PID

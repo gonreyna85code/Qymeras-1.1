@@ -397,14 +397,21 @@ def entity_hash(eid):
 
 
 class PendingCtrl:
-    """Portable model of qymera_control_context_t + pending table + tick/ack/state."""
+    """Portable model of qymera_control_context_t + pending table + tick.
+
+    Mirrors the v1 HTTP command machine: dispatch allocates a slot in
+    DISPATCHED; the node command result (accepted?) bumps it to ACKED or
+    fails it immediately; authoritative entity state confirms/mismatches it;
+    tick times it out. There is no raw-ACK wire message any more - acceptance
+    comes from the node's HTTP command response and confirmation comes from
+    the node's authoritative status/entities snapshot."""
 
     def __init__(self):
         self.cmd_seq = 1
         self.pending = {}
         self.events = []
 
-    def alloc(self, device_id, entity_id, opcode, value, now):
+    def alloc(self, device_id, entity_id, opcode, value, now, accepted=True, err_code=""):
         if len(self.pending) >= MAX_PENDING:
             return None, "NO_SPACE"
         seq = self.cmd_seq
@@ -415,31 +422,33 @@ class PendingCtrl:
             "desired_bool": value not in (0, 0.0, False),
             "desired_numeric": float(value),
             "started_at": now, "deadline": now + TIMEOUT_MS,
-            "status": CMD_WAITING_ACK,
+            "status": CMD_DISPATCHED,
         }
         self.pending[seq] = rec
+        # set_relay/set_dimmer resolve synchronously against the node HTTP
+        # command response: rejected -> terminal FAILED (not pending).
+        if not accepted:
+            del self.pending[seq]
+            return seq, "FAILED"
+        rec["status"] = CMD_ACKED   # ACKED != CONFIRMED
         return seq, "OK"
 
-    def on_ack(self, seq, ack_result, src_ip, expected_ip):
+    def resolve(self, seq):
+        """Resolve an ACKED command the way node snapshot state does."""
         rec = self.pending.get(seq)
         if rec is None:
-            return "IGNORED_UNKNOWN"   # late / duplicate-already-resolved
-        if expected_ip is not None and src_ip != expected_ip:
-            return "IGNORED_SOURCE"    # wrong node
-        if ack_result != 0:
-            del self.pending[seq]
-            return "FAILED"
-        rec["status"] = CMD_ACKED       # ACKED != CONFIRMED
+            return "IGNORED_UNKNOWN"   # late / already resolved
         return "ACKED"
 
-    def on_state(self, device_id, entity_id, observed_bool, observed_val):
+    def on_state(self, device_id, entity_id, observed_bool, observed_val, available=True):
+        if not available:
+            return "UNAVAILABLE"       # stale/offline snapshot cannot confirm
         if device_id not in self.registry_devices:
             return "UNKNOWN_DEVICE"
         matched = False
         for seq, rec in list(self.pending.items()):
             if rec["device_id"] != device_id or rec["entity_id"] != entity_id:
                 continue
-            # desired matches observed ?
             if rec["desired_bool"] == observed_bool:
                 rec["status"] = CMD_STATE_CONFIRMED
                 del self.pending[seq]
@@ -462,68 +471,59 @@ class PendingCtrl:
 ctrl = PendingCtrl()
 ctrl.registry_devices = {"nodeA", "nodeB"}
 
-# --- happy path: requested -> dispatched -> waiting -> ack -> state confirm ---
+# --- happy path: requested -> dispatched -> accepted (ACKED) -> state confirm ---
 seq, r = ctrl.alloc("nodeA", "relay", 1, 1.0, 100)
 check("PENDING: dispatch allocates cmd_seq", r == "OK" and seq == 1)
-check("PENDING: status WAITING_ACK after dispatch", ctrl.pending[seq]["status"] == CMD_WAITING_ACK)
-r = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
-check("PENDING: matching ACK -> ACKED (not confirmed)", r == "ACKED" and ctrl.pending[seq]["status"] == CMD_ACKED)
+check("PENDING: accepted command is ACKED (not confirmed)",
+      ctrl.pending[seq]["status"] == CMD_ACKED)
 check("PENDING: ACKED != CONFIRMED (entry still present)",
       ctrl.pending.get(seq) is not None and ctrl.pending[seq]["status"] != CMD_STATE_CONFIRMED)
 r = ctrl.on_state("nodeA", "relay", True, 1.0)
 check("PENDING: authoritative state -> CONFIRMED and removed",
       r == "CONFIRMED" and ctrl.count() == 0)
 
-# --- duplicate ACK: second ack after resolution is ignored ---
-seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 200)
-r = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
-r2 = ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
-ctrl.on_state("nodeA", "relay", True, 1.0)
-check("PENDING: duplicate ACK while pending stays ACKED", r == "ACKED" and r2 == "ACKED")
-check("PENDING: duplicate ACK after removal ignored", ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
+# --- node rejection: accepted=false resolves immediately to FAILED ---
+seq, r = ctrl.alloc("nodeA", "relay", 1, 1.0, 150, accepted=False, err_code="DEVICE_OFFLINE")
+check("PENDING: node rejected command -> FAILED (not pending)",
+      r == "FAILED" and ctrl.pending.get(seq) is None)
 
-# --- wrong cmd_seq ---
+# --- resolved command is idempotent (ignore late resolves) ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 200)
+ctrl.on_state("nodeA", "relay", True, 1.0)
+check("PENDING: resolve after removal ignored", ctrl.resolve(seq) == "IGNORED_UNKNOWN")
+
+# --- unknown cmd_seq ---
 seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 300)
-check("PENDING: unknown cmd_seq ignored", ctrl.on_ack(999, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
-# late ACK does not resurrect a timed-out command
+check("PENDING: unknown cmd_seq ignored", ctrl.resolve(999) == "IGNORED_UNKNOWN")
+# late resolve does not resurrect a timed-out command
 ctrl.tick(300 + TIMEOUT_MS + 1)
 check("PENDING: timeout frees the slot", ctrl.count() == 0)
-check("PENDING: late ACK after timeout ignored", ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2") == "IGNORED_UNKNOWN")
+check("PENDING: late resolve after timeout ignored", ctrl.resolve(seq) == "IGNORED_UNKNOWN")
 
-# --- wrong source ---
-seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 400)
-r = ctrl.on_ack(seq, 0, "192.168.0.99", "10.0.0.2")   # spoofed source
-check("PENDING: wrong source ACK does not resolve command", r == "IGNORED_SOURCE" and ctrl.count() == 1)
+# --- state UNAVAILABLE does not confirm ---
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 350)
+r = ctrl.on_state("nodeA", "relay", True, 1.0, available=False)
+check("PENDING: unavailable snapshot does not confirm command", r == "UNAVAILABLE" and ctrl.count() == 1)
 ctrl.on_state("nodeA", "relay", True, 1.0)
 
-# --- ACK error result -> FAILED ---
-seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 500)
-r = ctrl.on_ack(seq, 1, "10.0.0.2", "10.0.0.2")       # result != 0 -> error
-check("PENDING: ACK error -> FAILED (not ACKED/CONFIRMED)", r == "FAILED" and ctrl.count() == 0)
-
 # --- timeout: desired kept, observed unchanged, status TIMEOUT ---
-seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 600)
-ctrl.tick(600 + TIMEOUT_MS - 1)
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 400)
+ctrl.tick(400 + TIMEOUT_MS - 1)
 check("PENDING: before deadline still pending", ctrl.count() == 1)
-ctrl.tick(600 + TIMEOUT_MS)
+ctrl.tick(400 + TIMEOUT_MS)
 check("PENDING: at deadline -> TIMEOUT, slot freed", ctrl.count() == 0)
 
 # --- state mismatch: desired ON, observed OFF ---
-seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 700)
-ctrl.on_ack(seq, 0, "10.0.0.2", "10.0.0.2")
+seq, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 500)
 r = ctrl.on_state("nodeA", "relay", False, 0.0)
 check("PENDING: desired!=observed -> FAILED mismatch (not silent overwrite)", r == "MISMATCH" and ctrl.count() == 0)
 
 # --- multi-device: same entity id, different device ---
-sA, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 800)
-sB, _ = ctrl.alloc("nodeB", "relay", 1, 1.0, 801)
+sA, _ = ctrl.alloc("nodeA", "relay", 1, 1.0, 600)
+sB, _ = ctrl.alloc("nodeB", "relay", 1, 1.0, 601)
 check("PENDING: multi-device independent (2 pending)", ctrl.count() == 2)
-ctrl.on_ack(sA, 0, "10.0.0.2", "10.0.0.2")
-check("PENDING: nodeA ack only resolves nodeA", ctrl.pending.get(sB) is not None)
-ctrl.on_ack(sB, 0, "10.0.0.3", "10.0.0.3")
-check("PENDING: both acked, still waiting state", ctrl.count() == 2)
 ctrl.on_state("nodeA", "relay", True, 1.0)
-check("PENDING: nodeA confirmed, nodeB pending", ctrl.count() == 1 and ctrl.pending.get(sB) is not None)
+check("PENDING: nodeA state only resolves nodeA", ctrl.pending.get(sB) is not None and ctrl.count() == 1)
 ctrl.on_state("nodeB", "relay", True, 1.0)
 check("PENDING: nodeB confirmed, all clear", ctrl.count() == 0)
 
@@ -536,10 +536,215 @@ check("PENDING: table fills to MAX_PENDING", crowded.count() == MAX_PENDING)
 seq_, r_ = crowded.alloc("nodeA", "extra", 1, 1.0, 2000)
 check("PENDING: overflow -> NO_SPACE", r_ == "NO_SPACE")
 first_seq = next(iter(crowded.pending))
-crowded.on_ack(first_seq, 0, "10.0.0.2", "10.0.0.2")
 crowded.on_state("nodeA", "ent0", True, 1.0)
 seq_, r_ = crowded.alloc("nodeA", "extra", 1, 1.0, 3000)
 check("PENDING: after resolving one, new command succeeds", r_ == "OK")
+
+# ================================================================ Phase 2Z: Node Client
+# Portable model of the v1 HTTP node client boundaries
+# (src/network/qymera_node_client.c). The Dashboard talks to Nodes only
+# through this application-layer client: reconcile reads /status + /entities
+# and feeds authoritative state; commands POST /entities/<id>/command and
+# mirror the node's accepted + canonical error codes. Mirrors keep the JSON
+# scanners (status fields, entity elements, error mapping) honest without the
+# firmware socket layer.
+
+class NodeClientMirror:
+    def __init__(self):
+        self.targets = []           # list of dict {host, port, poll_interval_ms}
+        self.devices = {}           # device_id -> state dict
+        self.store = {}             # (device_id, entity_id) -> entity dict
+        self.seen_entities = set()  # previous snapshot key set
+        self.polls_ok = self.polls_fail = 0
+        self.commands_sent = self.commands_err = 0
+
+    def set_targets(self, targets):
+        self.targets = list(targets)[:MAX_NODE_TARGETS]
+
+    # ---- /status + /entities parsing (node_fetch_status / node_fetch_entities) ----
+    def parse_status(self, body):
+        """Extract the status fields the firmware reads. Returns dict."""
+        # Model after json_find_key scan; keep strictly field-scoped.
+        out = {}
+        for key, cast in (("device_id", str), ("name", str), ("model", str),
+                          ("firmware_version", str), ("api_version", str),
+                          ("protocol_version", str), ("online", bool)):
+            v = self._key(body, key)
+            if v is not None:
+                out[key] = cast(v)
+        return out
+
+    def parse_entities(self, body):
+        """Parse the /entities array the way node_fetch_entities does."""
+        rows = []
+        for elem in self._objects(body):
+            dev = self._key(elem, "device_id") or ""
+            ent = self._key(elem, "entity_id") or ""
+            etype = self._key(elem, "type") or "none"
+            num = self._num(elem, "value")
+            raw_value = self._key(elem, "value")
+            bv = self._bool(elem, "bool_value")
+            if bv is not None:
+                has_bool = True
+            else:
+                has_bool = raw_value in ("true", "false") or isinstance(raw_value, bool)
+                bv = raw_value is True or raw_value == "true"
+            av = self._key(elem, "available")
+            if av is None:
+                av = self._key(elem, "online")
+            rows.append({
+                "device_id": dev, "entity_id": ent, "type": etype,
+                "numeric_value": num if num is not None else (1.0 if bv else 0.0),
+                "bool_value": bv if bv is not None else (num not in (None, 0, 0.0)),
+                "available": True if av is None else bool(av),
+            })
+        return rows
+
+    # minimal internal helpers mirroring the C scanner semantics
+    def _key(self, s, key):
+        if not isinstance(s, str):
+            return None
+        import re
+        m = re.search(r'"%s"\s*:\s*"([^"]*)"' % re.escape(key), s)
+        if m:
+            return m.group(1)
+        m = re.search(r'"%s"\s*:\s*(true|false)' % re.escape(key), s)
+        if m:
+            return m.group(1) == "true"
+        m = re.search(r'"%s"\s*:\s*([0-9.+-]+)' % re.escape(key), s)
+        return m.group(1) if m else None
+
+    def _num(self, s, key):
+        v = self._key(s, key)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def _bool(self, s, key):
+        v = self._key(s, key)
+        if v is None or isinstance(v, bool):
+            return v
+        return str(v).lower() in ("true", "1")
+
+    def _objects(self, s):
+        out = []
+        start = 0
+        while True:
+            i = s.find("{", start)
+            if i < 0:
+                break
+            j = s.find("}", i)
+            if j < 0:
+                break
+            out.append(s[i:j + 1])
+            start = j + 1
+        return out
+
+    # ---- reconcile semantics (node_fetch_entities -> mark stale/offline) ----
+    def reconcile(self, snapshot):
+        """Upsert entities from the snapshot into the store; entities present
+        in the previous snapshot but missing now go STALE. Recognizes the
+        'available' flag (offline -> OFFLINE). Returns (ingested, stale)."""
+        ingested = 0
+        stale = 0
+        seen = set()
+        for ent in snapshot:
+            key = (ent["device_id"], ent["entity_id"])
+            seen.add(key)
+            self.store[key] = ent
+            ingested += 1
+        for key in self.seen_entities:
+            if key not in seen:
+                stale += 1
+                if key in self.store:
+                    self.store[key]["available"] = False
+        self.seen_entities = seen
+        return ingested, stale
+
+    def mark_offline(self, device_id):
+        flagged = 0
+        for key in list(self.store.keys()):
+            if key[0] == device_id:
+                self.store[key]["available"] = False
+                flagged += 1
+        return flagged
+
+    # ---- command result mapping (send_command accepted/err_code) ----
+    def send_command(self, device_id, entity_id, opcode, value_f):
+        self.commands_sent += 1
+        code = self.command_response or None
+        if code:
+            self.commands_err += 1
+            return False, code                      # node rejected
+        return True, None                           # node accepted
+
+
+MAX_NODE_TARGETS = 4
+nc = NodeClientMirror()
+nc.seen_entities = set()
+
+# --- target config + persistence-capacity ---
+nc.set_targets([{"host": "10.0.0.2", "port": 80, "poll_interval_ms": 0},
+                {"host": "10.0.0.3", "port": 8080, "poll_interval_ms": 5000}])
+check("NODE: set_targets caps at MAX_NODE_TARGETS", len(nc.targets) == 2)
+nc.set_targets([{"host": "n%d" % i, "port": 80, "poll_interval_ms": 0} for i in range(8)])
+check("NODE: target list capped to 4", len(nc.targets) == MAX_NODE_TARGETS)
+
+# --- /status parse: version fields preserved ---
+status = nc.parse_status('{"ok":true,"data":{"device_id":"nodeA","name":"Node A",'
+                         '"model":"ep32-s2","firmware_version":"1.2.3",'
+                         '"api_version":"v1","protocol_version":"1","online":true}}')
+check("NODE: status parses device fields", status.get("device_id") == "nodeA")
+check("NODE: status api_version/protocol captured",
+      status.get("api_version") == "v1" and status.get("protocol_version") == "1")
+
+# --- /entities parse: element fields + value/bool adaptation ---
+ents = nc.parse_entities(
+    '[{"device_id":"nodeA","entity_id":"relay1","type":"actuator.relay","value":true},'
+    '{"device_id":"nodeA","entity_id":"temp","type":"sensor.temperature","value":24.5},'
+    '{"device_id":"nodeA","entity_id":"dim","type":"actuator.dimmer","value":70,"available":true}]')
+check("NODE: entities parsed = 3", len(ents) == 3)
+relay = next(e for e in ents if e["entity_id"] == "relay1")
+check("NODE: bool value captured from value", relay["bool_value"] is True)
+temp = next(e for e in ents if e["entity_id"] == "temp")
+check("NODE: numeric value captured", abs(temp["numeric_value"] - 24.5) < 1e-6)
+dim = next(e for e in ents if e["entity_id"] == "dim")
+check("NODE: available honored", dim["available"] is True)
+
+# --- reconcile: fresh entities ingested; unseen marked stale ---
+nc.store.clear(); nc.seen_entities = set()
+ing, stale = nc.reconcile([{"device_id": "nodeA", "entity_id": "relay1", "available": True},
+                           {"device_id": "nodeA", "entity_id": "temp", "available": True}])
+check("NODE: reconcile ingests snapshot", ing == 2 and stale == 0)
+ing, stale = nc.reconcile([{"device_id": "nodeA", "entity_id": "temp", "available": True}])
+check("NODE: missing entity from snapshot -> STALE", stale == 1)
+
+# --- offline: all device entities marked unavailable ---
+nc.store.clear(); nc.seen_entities = set()
+nc.reconcile([{"device_id": "nodeA", "entity_id": "a", "available": True},
+              {"device_id": "nodeA", "entity_id": "b", "available": True}])
+off = nc.mark_offline("nodeA")
+check("NODE: mark_offline flags all device entities", off == 2)
+
+# --- command accepted/rejected reflection ---
+nc.command_response = None
+ok, code = nc.send_command("nodeA", "relay1", 1, 1.0)
+check("NODE: accepted command => accepted=true, no error", ok is True and code is None)
+nc.command_response = "DEVICE_OFFLINE"
+ok, code = nc.send_command("nodeA", "relay1", 1, 1.0)
+check("NODE: rejected command surfaces canonical code", ok is False and code == "DEVICE_OFFLINE")
+nc.command_response = None
+
+# --- stale marking caps (O(n) bounded, no unbounded growth) ---
+nc.store.clear(); nc.seen_entities = set()
+big = [{"device_id": "nodeA", "entity_id": "x%d" % i, "available": True} for i in range(50)]
+ing, stale = nc.reconcile(big)
+check("NODE: large snapshot ingested", ing == 50)
+ing, stale = nc.reconcile([])
+check("NODE: empty snapshot invalidates previous entities", stale == 50)
 
 # ================================================================ Phase 3A: Skill API
 # Deterministic Skill layer mirror (qymera_skill.c). Structured calls only;

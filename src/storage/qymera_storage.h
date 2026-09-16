@@ -49,8 +49,6 @@ typedef struct {
     char ap_ssid[33];
     char ap_password[65];
     uint8_t ap_channel;
-    uint16_t udp_discovery_port;
-    uint16_t udp_control_port;
     uint32_t report_interval_ms;
 } qymera_network_config_t;
 

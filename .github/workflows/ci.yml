@@ -1,0 +1,46 @@
+name: dashboard-ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  host-tests:
+    name: Host sanity + v1 contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Dashboard host sanity suite (mirrors)
+        run: python tests/integration/run_dashboard_tests.py
+      - name: v1 Node contract tests (mock Node over HTTP)
+        run: python tests/integration/run_contract_tests.py
+      - name: Standalone mock Node smoke check
+        run: |
+          python tests/integration/start_node_mock.py 8123 > /tmp/mock.log 2>&1 &
+          MOCK_PID=$!
+          sleep 2
+          python - <<'EOF'
+          import json, urllib.request
+          with urllib.request.urlopen("http://127.0.0.1:8123/api/v1/status", timeout=5) as r:
+              env = json.loads(r.read().decode())
+          assert env["ok"] is True and env["data"]["api_version"] == "1.0"
+          print("mock status OK")
+          EOF
+          kill $MOCK_PID
+
+  firmware-build:
+    name: Firmware build (3 ESP32 targets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PlatformIO
+        run: pip install platformio==6.1.16
+      - name: Build board targets
+        run: |
+          pio run -e esp32_devkit
+          pio run -e esp32c3_devkit
+          pio run -e esp32s3_devkit

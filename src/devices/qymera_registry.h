@@ -52,6 +52,9 @@ typedef struct {
     uint32_t chip_uid;
     char model[32];
     char fw_version[32];
+    char api_version[16];      /* v1 contract: Dashboard<->Node API surface   */
+    char protocol_version[16]; /* v1 contract: Node-to-Node transport version */
+    uint32_t capability_mask;  /* device-level capabilities bitmask (reserved) */
     uint8_t role;  // 0=dashboard, 1=remote, 2=provisioning
     qymera_timestamp_t registered_at;
     qymera_timestamp_t last_seen;

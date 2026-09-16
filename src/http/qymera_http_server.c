@@ -177,19 +177,11 @@ static esp_err_t h_status_get(httpd_req_t *req) {
     }
     if (ip[0] == '\0') qymera_wifi_get_ap_ip(ip, sizeof(ip));
 
-    /* Load network config (UDP ports persist across reboots). */
+    /* Load network config for SSID/pass state (persists across reboots). */
     qymera_storage_t *st = qymera_core_get_storage(core);
     qymera_network_config_t ncfg;
     memset(&ncfg, 0, sizeof(ncfg));
     qymera_err_t lerr = qymera_storage_load_network(st, &ncfg);
-    uint16_t udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
-    uint16_t udp_control_port = QYMERA_UDP_PORT_CONTROL;
-    if (lerr == QYMERA_OK) {
-        udp_discovery_port = ncfg.udp_discovery_port;
-        udp_control_port = ncfg.udp_control_port;
-    } else if (lerr == QYMERA_ERR_NOT_FOUND) {
-        /* defaults already set above */
-    }
 
     char buf[512];
     const char *ai_mode = "none";
@@ -199,14 +191,19 @@ static esp_err_t h_status_get(httpd_req_t *req) {
         case QYMERA_AI_MODE_HYBRID: ai_mode = "hybrid"; break;
         default: break;
     }
+
+    qymera_node_client_t *nc = qymera_core_get_node_client(core);
+    uint32_t polls_ok = 0, polls_fail = 0, commands_sent = 0, commands_err = 0;
+    if (nc) qymera_node_client_stats(nc, &polls_ok, &polls_fail, &commands_sent, &commands_err);
+
     snprintf(buf, sizeof(buf),
         "{\"ok\":true,\"data\":{\"free_heap\":%u,\"uptime_ms\":%u,"
         "\"ip\":\"%s\",\"network\":\"%s\",\"ssid\":\"%s\","
-        "\"udp_discovery_port\":%u,\"udp_control_port\":%u,"
-        "\"device_count\":%zu,\"entity_count\":%zu,\"ai_mode\":\"%s\"}}",
+        "\"device_count\":%zu,\"entity_count\":%zu,\"ai_mode\":\"%s\","
+        "\"node\":{\"polls_ok\":%u,\"polls_fail\":%u,\"commands_sent\":%u,\"commands_err\":%u}}}",
         heap, up, ip, network, ssid,
-        udp_discovery_port, udp_control_port,
-        dc, ec, ai_mode);
+        dc, ec, ai_mode,
+        polls_ok, polls_fail, commands_sent, commands_err);
     http_send_json(req, buf);
     return ESP_OK;
 }
@@ -547,8 +544,6 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
     /* If no config was persisted yet, fill in sane defaults so we never save
      * uninitialized stack bytes into NVS. */
     if (lerr == QYMERA_ERR_NOT_FOUND) {
-        net.udp_discovery_port = QYMERA_UDP_PORT_DISCOVERY;
-        net.udp_control_port = QYMERA_UDP_PORT_CONTROL;
         net.report_interval_ms = 5000;
     }
     strncpy(net.sta_ssid, ssid, sizeof(net.sta_ssid) - 1);
@@ -562,16 +557,6 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
                                strcmp(enabled, "1") == 0);
         }
     }
-    /* Optional UDP port overrides (default values used if omitted). */
-    {
-        char port_str[8] = {0};
-        if (http_extract_json_str(body, "udp_discovery_port", port_str, sizeof(port_str))) {
-            net.udp_discovery_port = (uint16_t)atoi(port_str);
-        }
-        if (http_extract_json_str(body, "udp_control_port", port_str, sizeof(port_str))) {
-            net.udp_control_port = (uint16_t)atoi(port_str);
-        }
-    }
     qymera_err_t serr = qymera_storage_save_network(st, &net);
     if (serr != QYMERA_OK) {
         http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
@@ -580,6 +565,120 @@ static esp_err_t h_wifi_connect_post(httpd_req_t *req) {
     http_send_json(req, "{\"ok\":true,\"data\":{\"status\":\"rebooting\"}}");
     vTaskDelay(pdMS_TO_TICKS(300));
     qymera_system_restart();
+    return ESP_OK;
+}
+
+/* =========================
+ * Node target configuration (v1 forward boundary)
+ *
+ * GET /api/v1/nodes -> list of configured node targets (the Dashboard's
+ * remote Nodes). POST /api/v1/nodes with {"nodes":[{"host","port",
+ * "poll_interval_ms"}]} replaces the whole set (max QYMERA_MAX_NODE_TARGETS
+ * entries, host required). All Node traffic stays inside qymera_node_client;
+ * this endpoint only manages the target list it polls. Parse is deliberately
+ * minimal (flat object scan) to avoid pulling a JSON library into the router.
+ * ========================= */
+
+/* Iterate flat JSON objects in `body` starting after `cursor`.
+ * Returns true and sets *obj_start/*obj_end to the first object when found. */
+static bool http_next_json_object(const char *body, const char *cursor,
+                                  const char **obj_start, const char **obj_end) {
+    const char *s = strchr(cursor ? cursor : body, '{');
+    while (s) {
+        const char *e = s + 1;
+        while (*e && *e != '}') e++;
+        if (*e == '}') {
+            *obj_start = s;
+            *obj_end = e;
+            return true;
+        }
+        s = strchr(e, '{');
+    }
+    return false;
+}
+
+static esp_err_t h_nodes_get(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+    qymera_node_client_t *nc = core ? qymera_core_get_node_client(core) : NULL;
+    qymera_node_target_set_t set;
+    memset(&set, 0, sizeof(set));
+    if (nc) qymera_node_client_get_targets(nc, &set);
+
+    char buf[1024];
+    size_t o = 0;
+    o += snprintf(buf + o, sizeof(buf) - o, "\"nodes\":[");
+    for (uint8_t i = 0; i < set.count && o < sizeof(buf) - 64; i++) {
+        if (i) o += snprintf(buf + o, sizeof(buf) - o, ",");
+        o += snprintf(buf + o, sizeof(buf) - o,
+                      "{\"host\":\"%s\",\"port\":%u,\"poll_interval_ms\":%u}",
+                      set.targets[i].host, set.targets[i].port,
+                      set.targets[i].poll_interval_ms ? set.targets[i].poll_interval_ms : QYMERA_NODE_POLL_MS);
+    }
+    o += snprintf(buf + o, sizeof(buf) - o, "]");
+    o += snprintf(buf + o, sizeof(buf) - o, ",\"max_nodes\":%d}", QYMERA_MAX_NODE_TARGETS);
+    http_send_json(req, buf);
+    return ESP_OK;
+}
+
+static esp_err_t h_nodes_post(httpd_req_t *req) {
+    qymera_core_t *core = (qymera_core_t *)req->user_ctx;
+    qymera_node_client_t *nc = core ? qymera_core_get_node_client(core) : NULL;
+    if (!nc) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INTERNAL\"}}");
+        return ESP_OK;
+    }
+
+    char body[QYMERA_HTTP_BODY_SZ + 1] = {0};
+    int bl = httpd_req_recv(req, body, sizeof(body) - 1);
+    if (bl < 0) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"BAD_REQUEST\"}}");
+        return ESP_OK;
+    }
+    body[bl] = '\0';
+
+    qymera_node_target_set_t set;
+    memset(&set, 0, sizeof(set));
+
+    const char *cursor = NULL;
+    const char *obj_start = NULL, *obj_end = NULL;
+    while (set.count < QYMERA_MAX_NODE_TARGETS &&
+           http_next_json_object(body, cursor, &obj_start, &obj_end)) {
+        size_t len = (size_t)(obj_end - obj_start) + 1;
+        char obj[256];
+        if (len >= sizeof(obj)) len = sizeof(obj) - 1;
+        memcpy(obj, obj_start, len);
+        obj[len] = '\0';
+
+        char host[QYMERA_NODE_HOST_LEN] = {0};
+        if (!http_extract_json_str(obj, "host", host, sizeof(host)) || host[0] == '\0') {
+            cursor = obj_end;
+            continue;
+        }
+        uint32_t port = 80, poll = 0;
+        http_extract_json_num(obj, "port", &port);
+        http_extract_json_num(obj, "poll_interval_ms", &poll);
+        if (port == 0 || port > 65535) {
+            http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"INVALID_INPUT\","
+                                 "\"message\":\"node port out of range\"}}");
+            return ESP_OK;
+        }
+        qymera_node_target_t *t = &set.targets[set.count];
+        strncpy(t->host, host, sizeof(t->host) - 1);
+        t->port = (uint16_t)port;
+        t->poll_interval_ms = (uint16_t)(poll > 0xFFFF ? 0 : poll);
+        set.count++;
+        cursor = obj_end;
+    }
+
+    qymera_err_t err = qymera_node_client_set_targets(nc, &set);
+    if (err != QYMERA_OK) {
+        http_send_json(req, "{\"ok\":false,\"error\":{\"code\":\"STORAGE\"}}");
+        return ESP_OK;
+    }
+
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"nodes\":%u,\"max_nodes\":%d}", set.count, QYMERA_MAX_NODE_TARGETS);
+    http_send_json(req, buf);
     return ESP_OK;
 }
 
@@ -916,6 +1015,8 @@ static const httpd_uri_t routes[] = {
     { .uri = "/api/v1/logs", .method = HTTP_GET, .handler = h_logs_get },
     { .uri = "/api/v1/wifi/scan", .method = HTTP_GET, .handler = h_wifi_scan_get },
     { .uri = "/api/v1/wifi/connect", .method = HTTP_POST, .handler = h_wifi_connect_post },
+    { .uri = "/api/v1/nodes", .method = HTTP_GET, .handler = h_nodes_get },
+    { .uri = "/api/v1/nodes", .method = HTTP_POST, .handler = h_nodes_post },
     { .uri = "/api/v1/ai/config", .method = HTTP_GET, .handler = h_ai_config_get },
     { .uri = "/api/v1/ai/config", .method = HTTP_POST, .handler = h_ai_config_post },
     { .uri = "/api/v1/ai/chat", .method = HTTP_POST, .handler = h_ai_chat_post },

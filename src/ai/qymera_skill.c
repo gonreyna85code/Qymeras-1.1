@@ -324,6 +324,8 @@ static bool device_list_cb(uint16_t idx, const qymera_device_t *d, void *context
     out_str_json(o, d->name);
     out_add(o, ",\"model\":");
     out_str_json(o, d->model);
+    out_add(o, ",\"fw_version\":");
+    out_str_json(o, d->fw_version);
     out_add(o, ",\"role\":");
     out_str_json(o, device_role_str(d->role));
     out_add(o, ",\"online\":%s,\"state\":",
@@ -331,7 +333,13 @@ static bool device_list_cb(uint16_t idx, const qymera_device_t *d, void *context
     out_str_json(o, device_state_str(d->state));
     out_add(o, ",\"location\":");
     out_str_json(o, d->location);
-    out_add(o, "}");
+    out_add(o, ",\"api_version\":");
+    out_str_json(o, d->api_version);
+    out_add(o, ",\"protocol_version\":");
+    out_str_json(o, d->protocol_version);
+    out_add(o, ",\"ip\":");
+    out_str_json(o, d->ip_addr);
+    out_add(o, ",\"port\":%u}", d->port);
     return true;
 }
 
@@ -364,6 +372,7 @@ static bool entity_list_cb(uint16_t idx, const qymera_entity_t *e, void *context
     out_add(o, "],\"unit\":");
     out_str_json(o, e->unit);
     bool is_relay = entity_is_relay(e), is_dimmer = entity_is_dimmer(e);
+    out_add(o, ",\"available\":%s", e->value.valid ? "true" : "false");
     if (is_relay) {
         out_add(o, ",\"current\":%s,\"desired\":%s,\"cmd_status\":",
                 e->value.bool_value ? "true" : "false",
